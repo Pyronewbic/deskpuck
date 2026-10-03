@@ -631,9 +631,10 @@ static int dataCounter = 0;
     std::cout << "⏱️  Connection duration before packet loss: " << connectionDuration << " ms (" << connectionDuration / 1000 << "s " << connectionDuration % 1000 << "ms)" << std::endl;
     std::cout << "📊 Final data counter: " << dataReceiveCounter << " packets received" << std::endl;
 
-    std::cout << "🛑 Stopping program due to packet loss..." << std::endl;
-
-    exit(0);
+    // Cancelling the connection runs the normal disconnect path: release held
+    // input, then rescan so the Joy-Con can reconnect.
+    std::cout << "🔌 Disconnecting after packet loss; will rescan." << std::endl;
+    [self disconnect];
 }
 
 // Logging functions implementation
