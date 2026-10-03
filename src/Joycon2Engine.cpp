@@ -60,20 +60,29 @@ EngineOutput InputEngine::process(const Joycon2Report& report, double now) {
         rightStickCentreY_ = report.rightStickY;
         stickCentred_ = true;
     }
-    // A stick being clicked also tilts a little; don't let that scroll.
-    int wheel = 0;
-    if (!(report.buttons & kButtonLS)) {
-        wheel += wheelForStickDeviation(report.leftStickY - leftStickCentreY_);
+    if (settings_.scrollEnabled) {
+        // A stick being clicked also tilts a little; don't let that scroll.
+        int wheel = 0;
+        if (!(report.buttons & kButtonLS)) {
+            wheel += wheelForStickDeviation(report.leftStickY - leftStickCentreY_);
+        }
+        if (!(report.buttons & kButtonRS)) {
+            wheel += wheelForStickDeviation(report.rightStickY - rightStickCentreY_);
+        }
+        if (wheel > 127) wheel = 127;
+        if (wheel < -127) wheel = -127;
+        out.wheel = wheel;
     }
-    if (!(report.buttons & kButtonRS)) {
-        wheel += wheelForStickDeviation(report.rightStickY - rightStickCentreY_);
-    }
-    if (wheel > 127) wheel = 127;
-    if (wheel < -127) wheel = -127;
-    out.wheel = wheel;
 
     out.keys = keys_.update(report.buttons, now);
     return out;
+}
+
+std::vector<KeyEvent> InputEngine::applySettings(const EngineSettings& settings) {
+    std::vector<KeyEvent> released = keys_.releaseAll();
+    settings_ = settings;
+    keys_ = KeyRepeater(settings.keyMappings, settings.repeatDelay, settings.repeatInterval);
+    return released;
 }
 
 EngineOutput InputEngine::disconnected() {

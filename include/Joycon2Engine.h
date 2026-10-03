@@ -13,6 +13,7 @@ struct EngineSettings {
     double pointerSpeed = 1.0;
     double repeatDelay = 0.4;
     double repeatInterval = 0.06;
+    bool scrollEnabled = true;
 };
 
 // Mouse button bits as used by mouseMoveEventType: 1 left, 2 right, 4 middle.
@@ -34,6 +35,9 @@ public:
     EngineOutput process(const Joycon2Report& report, double now);
     // Releases every held mouse button and key.
     EngineOutput disconnected();
+    // Swaps settings mid-session. Returns key-ups for keys held under the old
+    // mapping; pointer baseline and scroll centre carry over.
+    std::vector<KeyEvent> applySettings(const EngineSettings& settings);
 
 private:
     EngineSettings settings_;

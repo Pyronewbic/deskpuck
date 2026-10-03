@@ -146,6 +146,41 @@ static void testNoScrollWhileStickClicked() {
     CHECK(engine.process(report(RS, 0, 0, 2167, 2167), 0.5).wheel == -10);
 }
 
+static void testScrollDisabled() {
+    EngineSettings settings;
+    settings.scrollEnabled = false;
+    InputEngine engine(settings);
+    engine.process(report(0, 0, 0, 2047, 2047), 0.0);
+    CHECK(engine.process(report(0, 0, 0, 2047, 2647), 0.1).wheel == 0);
+    CHECK(engine.process(report(0, 0, 0, 2647, 2047), 0.2).wheel == 0);
+
+    // Positive control: the same deflections scroll with scrolling on.
+    InputEngine enabled;
+    enabled.process(report(0, 0, 0, 2047, 2047), 0.0);
+    CHECK(enabled.process(report(0, 0, 0, 2047, 2647), 0.1).wheel == -50);
+    CHECK(enabled.process(report(0, 0, 0, 2647, 2047), 0.2).wheel == -50);
+}
+
+static void testApplySettings() {
+    InputEngine engine;
+    engine.process(report(RS, 1000, 0, 2047, 2100), 0.0);
+
+    // Remap RS from Return to Space while it is held: Return must be released.
+    EngineSettings remapped;
+    remapped.keyMappings = {{RS, 49}};
+    remapped.pointerSpeed = 2.0;
+    std::vector<KeyEvent> released = engine.applySettings(remapped);
+    CHECK(released.size() == 1 && released[0].keyCode == 36 && !released[0].isDown);
+
+    // Still held after the change: a fresh press under the new mapping.
+    EngineOutput out = engine.process(report(RS, 1050, 0, 2047, 2100), 0.1);
+    CHECK(out.keys.size() == 1 && out.keys[0].keyCode == 49 && out.keys[0].isDown);
+    // Pointer baseline survives (no jump) and the new speed applies: 50 * 2 / 5.
+    CHECK(out.dx == 20.0);
+    // Scroll centre survives: same stick position, no scroll.
+    CHECK(out.wheel == 0);
+}
+
 int main() {
     testMouseButtonMapping();
     testWheelLevels();
@@ -158,5 +193,7 @@ int main() {
     testNoJumpOnConnect();
     testDisconnectReleasesEverything();
     testNoScrollWhileStickClicked();
+    testScrollDisabled();
+    testApplySettings();
     return checkSummary("engine");
 }
