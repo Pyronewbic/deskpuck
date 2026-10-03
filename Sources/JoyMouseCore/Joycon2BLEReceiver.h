@@ -35,6 +35,9 @@ void Joycon2SetLogging(bool verbose, bool monitor);
 @property (assign, nonatomic) BOOL skipInitCommands;
 
 @property (copy, nonatomic) void (^onDeviceFound)(NSString* name, NSString* address);
+@property (copy, nonatomic) void (^onBluetoothStateChanged)(CBManagerState state);
+@property (copy, nonatomic) void (^onConnecting)(NSString* name);
+@property (copy, nonatomic) void (^onConnectionFailed)(void);
 @property (copy, nonatomic) void (^onConnected)(void);
 @property (copy, nonatomic) void (^onDisconnected)(void);
 @property (copy, nonatomic) void (^onReportReceived)(const Joycon2Report& report);

@@ -19,6 +19,8 @@
     uint8_t _postedMouseButtons;
 }
 
+@synthesize paused = _paused;
+
 - (instancetype)init {
     return [self initWithConfig:[JMConfig defaultConfig]];
 }
@@ -29,14 +31,30 @@
         if ([config validationProblems].count == 0) {
             _engine.applySettings(JMEngineSettingsFromConfig(config));
         }
+        _connectionState = JMConnectionStateBluetoothOff;
         _receiver = [[Joycon2BLEReceiver alloc] init];
         __weak JMController* weakSelf = self;
+        _receiver.onBluetoothStateChanged = ^(CBManagerState state) {
+            JMConnectionState next = JMConnectionStateBluetoothOff;
+            if (state == CBManagerStatePoweredOn) next = JMConnectionStateSearching;
+            if (state == CBManagerStateUnauthorized) next = JMConnectionStateBluetoothUnauthorized;
+            [weakSelf setState:next name:nil];
+        };
+        _receiver.onConnecting = ^(NSString* name) {
+            [weakSelf setState:JMConnectionStateConnecting name:name];
+        };
+        _receiver.onConnectionFailed = ^{
+            [weakSelf setState:JMConnectionStateSearching name:nil];
+        };
         _receiver.onConnected = ^{
             JMController* strongSelf = weakSelf;
-            if (strongSelf) strongSelf->_engine.connectionStarted();
+            if (!strongSelf) return;
+            strongSelf->_engine.connectionStarted();
+            [strongSelf setState:JMConnectionStateConnected name:strongSelf->_receiver.connectedPeripheral.name];
         };
         _receiver.onDisconnected = ^{
             [weakSelf handleDisconnect];
+            [weakSelf setState:JMConnectionStateSearching name:nil];
         };
         _receiver.onReportReceived = ^(const Joycon2Report& report) {
             [weakSelf handleReport:report];
@@ -53,6 +71,27 @@
     [_receiver startScan];
 }
 
+- (void)setState:(JMConnectionState)state name:(NSString*)name {
+    _connectionState = state;
+    _deviceName = [name copy];
+    if (self.stateDidChange) {
+        self.stateDidChange();
+    }
+}
+
+- (void)setPaused:(BOOL)paused {
+    if (paused == _paused) {
+        return;
+    }
+    _paused = paused;
+    if (paused) {
+        [self postOutput:_engine.disconnected()];
+    } else {
+        // Re-baseline so motion while paused does not jump the cursor.
+        _engine.connectionStarted();
+    }
+}
+
 - (BOOL)applyConfig:(JMConfig*)config error:(NSError**)error {
     NSArray* problems = [config validationProblems];
     if (problems.count > 0) {
@@ -67,11 +106,16 @@
 }
 
 - (void)handleReport:(const Joycon2Report&)report {
+    if (_paused) {
+        return;
+    }
     [self postOutput:_engine.process(report, CFAbsoluteTimeGetCurrent())];
 }
 
 - (void)handleDisconnect {
-    [self postOutput:_engine.disconnected()];
+    if (!_paused) {
+        [self postOutput:_engine.disconnected()];
+    }
 }
 
 - (void)postOutput:(const EngineOutput&)out {

@@ -105,9 +105,15 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
         case CBManagerStatePoweredOff:
         std::cout << "Bluetooth is powered off." << std::endl;
         break;
+        case CBManagerStateUnauthorized:
+        std::cerr << "Bluetooth permission denied." << std::endl;
+        break;
         default:
         detail() << "Bluetooth state changed." << std::endl;
         break;
+    }
+    if (self.onBluetoothStateChanged) {
+        self.onBluetoothStateChanged(central.state);
     }
 }
 
@@ -144,6 +150,9 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
             if (![self.connectingPeripherals containsObject:peripheral.identifier] && ![self.connectedPeripherals containsObject:peripheral.identifier]) {
                 std::cout << "Connecting to " << deviceName << "..." << std::endl;
+                if (self.onConnecting) {
+                    self.onConnecting(peripheral.name ?: @"Joy-Con");
+                }
                 [self.connectingPeripherals addObject:peripheral.identifier];
                 detail() << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]
                 << ", Connected: " << [self.connectedPeripherals count] << std::endl;
@@ -159,6 +168,9 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if ([self.connectingPeripherals containsObject:peripheral.identifier] && ![self.connectedPeripherals containsObject:peripheral.identifier]) {
                         std::cout << "Connection to " << deviceName << " timed out" << std::endl;
+                        if (self.onConnectionFailed) {
+                            self.onConnectionFailed();
+                        }
                         [self.connectingPeripherals removeObject:peripheral.identifier];
                         detail() << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]
                         << ", Connected: " << [self.connectedPeripherals count] << std::endl;
@@ -218,6 +230,9 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
         [self startScan];
     });
 
+    if (self.onConnectionFailed) {
+        self.onConnectionFailed();
+    }
     if (self.onError) {
         self.onError(error.localizedDescription);
     }
