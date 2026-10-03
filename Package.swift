@@ -5,6 +5,7 @@ let package = Package(
     name: "JoyMouse",
     platforms: [.macOS(.v13)],
     products: [
+        .executable(name: "JoyMouse", targets: ["JoyMouse"]),
         .executable(name: "joymouse-cli", targets: ["joymouse-cli"]),
     ],
     targets: [
@@ -17,6 +18,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "joymouse-cli", dependencies: ["JoyMouseCore"]),
+        .executableTarget(name: "JoyMouse", dependencies: ["JoyMouseCore"]),
     ],
     cxxLanguageStandard: .cxx17
 )
