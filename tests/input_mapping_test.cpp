@@ -1,16 +1,9 @@
 #include "Joycon2InputMapping.h"
 
+#include "check.h"
+
 #include <cmath>
-#include <cstdio>
 #include <vector>
-
-static int checks = 0;
-static int failures = 0;
-
-#define CHECK(cond) do { \
-    checks++; \
-    if (!(cond)) { failures++; std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } \
-} while (0)
 
 // Two displays: main 1920x1080 at origin, second 1280x1024 to its right, offset 200px down.
 static const CGRect mainDisplay = CGRectMake(0, 0, 1920, 1080);
@@ -211,10 +204,5 @@ int main() {
     testRepeatDisableSentinels();
     testDefaultMappings();
 
-    std::printf("%d checks, %d failures\n", checks, failures);
-    if (checks == 0) {
-        std::printf("FAIL: no checks ran\n");
-        return 1;
-    }
-    return failures == 0 ? 0 : 1;
+    return checkSummary("input_mapping");
 }
