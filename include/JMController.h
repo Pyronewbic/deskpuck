@@ -10,6 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithConfig:(JMConfig*)config NS_DESIGNATED_INITIALIZER;
 - (instancetype)init;
 
+// Off by default: only connection status and errors are printed.
++ (void)setVerboseLogging:(BOOL)verbose monitorReports:(BOOL)monitor;
+
 - (void)start;
 // Takes effect immediately. Refuses a config with validation problems.
 - (BOOL)applyConfig:(JMConfig*)config error:(NSError**)error;

@@ -41,6 +41,10 @@
     return self;
 }
 
++ (void)setVerboseLogging:(BOOL)verbose monitorReports:(BOOL)monitor {
+    Joycon2SetLogging(verbose, monitor);
+}
+
 - (void)start {
     [_receiver startScan];
 }

@@ -16,6 +16,8 @@ extern int dataReceiveCounter;
 
 std::string getTimestamp();
 void log(const std::string& level, const std::string& message);
+// verbose: connection detail. monitor: a live readout of every report.
+void Joycon2SetLogging(bool verbose, bool monitor);
 
 @interface Joycon2BLEReceiver : NSObject<CBCentralManagerDelegate, CBPeripheralDelegate>
 
