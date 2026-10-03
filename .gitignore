@@ -1,2 +1,5 @@
-LICENSE
 build/
+.build/
+dist/
+.venv/
+.DS_Store
