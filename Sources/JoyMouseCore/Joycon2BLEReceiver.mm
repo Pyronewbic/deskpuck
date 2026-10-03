@@ -167,7 +167,7 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if ([self.connectingPeripherals containsObject:peripheral.identifier] && ![self.connectedPeripherals containsObject:peripheral.identifier]) {
-                        std::cout << "Connection to " << deviceName << " timed out" << std::endl;
+                        std::cout << "Connection to " << [(peripheral.name ?: @"Unknown") UTF8String] << " timed out" << std::endl;
                         if (self.onConnectionFailed) {
                             self.onConnectionFailed();
                         }
