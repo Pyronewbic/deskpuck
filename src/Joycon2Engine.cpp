@@ -4,6 +4,7 @@
 
 static const uint32_t kButtonR = 0x00004000;
 static const uint32_t kButtonZR = 0x00008000;
+static const uint32_t kButtonRS = 0x00040000;
 static const uint32_t kButtonLS = 0x00080000;
 static const uint32_t kButtonL = 0x40000000;
 static const uint32_t kButtonZL = 0x80000000;
@@ -59,8 +60,14 @@ EngineOutput InputEngine::process(const Joycon2Report& report, double now) {
         rightStickCentreY_ = report.rightStickY;
         stickCentred_ = true;
     }
-    int wheel = wheelForStickDeviation(report.leftStickY - leftStickCentreY_) +
-                wheelForStickDeviation(report.rightStickY - rightStickCentreY_);
+    // A stick being clicked also tilts a little; don't let that scroll.
+    int wheel = 0;
+    if (!(report.buttons & kButtonLS)) {
+        wheel += wheelForStickDeviation(report.leftStickY - leftStickCentreY_);
+    }
+    if (!(report.buttons & kButtonRS)) {
+        wheel += wheelForStickDeviation(report.rightStickY - rightStickCentreY_);
+    }
     if (wheel > 127) wheel = 127;
     if (wheel < -127) wheel = -127;
     out.wheel = wheel;

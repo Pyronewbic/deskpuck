@@ -132,6 +132,20 @@ static void testDisconnectReleasesEverything() {
     CHECK(out.dx == 0.0 && out.dy == 0.0 && out.wheel == 0);
 }
 
+static void testNoScrollWhileStickClicked() {
+    InputEngine engine;
+    engine.process(report(0, 0, 0, 2047, 2047), 0.0);
+    // Pressing the right stick in tilts it slightly; that must not scroll.
+    CHECK(engine.process(report(RS, 0, 0, 2047, 2167), 0.1).wheel == 0);
+    // Same for the left stick on a left Joy-Con.
+    CHECK(engine.process(report(LS, 0, 0, 2167, 2047), 0.2).wheel == 0);
+    // Positive control: the same tilts scroll once the stick is released.
+    CHECK(engine.process(report(0, 0, 0, 2047, 2167), 0.3).wheel == -10);
+    CHECK(engine.process(report(0, 0, 0, 2167, 2047), 0.4).wheel == -10);
+    // Clicking one stick does not silence the other.
+    CHECK(engine.process(report(RS, 0, 0, 2167, 2167), 0.5).wheel == -10);
+}
+
 int main() {
     testMouseButtonMapping();
     testWheelLevels();
@@ -143,5 +157,6 @@ int main() {
     testButtonBitsExact();
     testNoJumpOnConnect();
     testDisconnectReleasesEverything();
+    testNoScrollWhileStickClicked();
     return checkSummary("engine");
 }
