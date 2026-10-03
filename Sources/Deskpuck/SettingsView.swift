@@ -1,6 +1,15 @@
 import DeskpuckCore
 import SwiftUI
 
+extension Color {
+    // Brand indigo; lighter in dark mode so toggles and sliders keep their contrast.
+    static let deskpuckAccent = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x8C / 255.0, green: 0x73 / 255.0, blue: 0xF0 / 255.0, alpha: 1)
+            : NSColor(srgbRed: 0x5B / 255.0, green: 0x3F / 255.0, blue: 0xD0 / 255.0, alpha: 1)
+    })
+}
+
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
@@ -80,6 +89,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .tint(Color.deskpuckAccent)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
     }

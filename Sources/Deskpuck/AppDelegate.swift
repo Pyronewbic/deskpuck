@@ -93,10 +93,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         let connected = controller.connectionState == .connected
-        let symbol = controller.isPaused ? "pause.circle" : (connected ? "gamecontroller.fill" : "gamecontroller")
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Deskpuck")
-        image?.isTemplate = true
-        statusItem.button?.image = image
+        if controller.isPaused {
+            let paused = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Deskpuck, paused")
+            paused?.isTemplate = true
+            statusItem.button?.image = paused
+        } else {
+            statusItem.button?.image = StatusGlyph.image()
+        }
+        // Dimmed until a Joy-Con is connected.
         statusItem.button?.appearsDisabled = !connected
     }
 
