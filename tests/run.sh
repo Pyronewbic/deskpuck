@@ -6,8 +6,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build/tests
 
-CORE=Sources/JoyMouseCore
-CORE_SOURCES="$CORE/JMConfig.mm $CORE/Joycon2Engine.cpp $CORE/Joycon2InputMapping.cpp $CORE/Joycon2Packet.cpp"
+CORE=Sources/DeskpuckCore
+CORE_SOURCES="$CORE/DPConfig.mm $CORE/Joycon2Engine.cpp $CORE/Joycon2InputMapping.cpp $CORE/Joycon2Packet.cpp"
 CXXFLAGS="-std=c++17 -fobjc-arc -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-sanitize-recover=all"
 
 total=0

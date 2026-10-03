@@ -1,19 +1,19 @@
-#import "JMController.h"
+#import "DPController.h"
 
 #if !__has_feature(objc_arc)
-#error "JoyMouseCore must be built with ARC"
+#error "DeskpuckCore must be built with ARC"
 #endif
 
 #import <ApplicationServices/ApplicationServices.h>
 
-#import "JMConfigEngine.h"
+#import "DPConfigEngine.h"
 #import "Joycon2BLEReceiver.h"
 #include "Joycon2Engine.h"
 #include "Joycon2InputMapping.h"
 
 #include <cmath>
 
-@implementation JMController {
+@implementation DPController {
     Joycon2BLEReceiver* _receiver;
     InputEngine _engine;
     uint8_t _postedMouseButtons;
@@ -22,39 +22,39 @@
 @synthesize paused = _paused;
 
 - (instancetype)init {
-    return [self initWithConfig:[JMConfig defaultConfig]];
+    return [self initWithConfig:[DPConfig defaultConfig]];
 }
 
-- (instancetype)initWithConfig:(JMConfig*)config {
+- (instancetype)initWithConfig:(DPConfig*)config {
     self = [super init];
     if (self) {
         if ([config validationProblems].count == 0) {
-            _engine.applySettings(JMEngineSettingsFromConfig(config));
+            _engine.applySettings(DPEngineSettingsFromConfig(config));
         }
-        _connectionState = JMConnectionStateBluetoothOff;
+        _connectionState = DPConnectionStateBluetoothOff;
         _receiver = [[Joycon2BLEReceiver alloc] init];
-        __weak JMController* weakSelf = self;
+        __weak DPController* weakSelf = self;
         _receiver.onBluetoothStateChanged = ^(CBManagerState state) {
-            JMConnectionState next = JMConnectionStateBluetoothOff;
-            if (state == CBManagerStatePoweredOn) next = JMConnectionStateSearching;
-            if (state == CBManagerStateUnauthorized) next = JMConnectionStateBluetoothUnauthorized;
+            DPConnectionState next = DPConnectionStateBluetoothOff;
+            if (state == CBManagerStatePoweredOn) next = DPConnectionStateSearching;
+            if (state == CBManagerStateUnauthorized) next = DPConnectionStateBluetoothUnauthorized;
             [weakSelf setState:next name:nil];
         };
         _receiver.onConnecting = ^(NSString* name) {
-            [weakSelf setState:JMConnectionStateConnecting name:name];
+            [weakSelf setState:DPConnectionStateConnecting name:name];
         };
         _receiver.onConnectionFailed = ^{
-            [weakSelf setState:JMConnectionStateSearching name:nil];
+            [weakSelf setState:DPConnectionStateSearching name:nil];
         };
         _receiver.onConnected = ^{
-            JMController* strongSelf = weakSelf;
+            DPController* strongSelf = weakSelf;
             if (!strongSelf) return;
             strongSelf->_engine.connectionStarted();
-            [strongSelf setState:JMConnectionStateConnected name:strongSelf->_receiver.connectedPeripheral.name];
+            [strongSelf setState:DPConnectionStateConnected name:strongSelf->_receiver.connectedPeripheral.name];
         };
         _receiver.onDisconnected = ^{
             [weakSelf handleDisconnect];
-            [weakSelf setState:JMConnectionStateSearching name:nil];
+            [weakSelf setState:DPConnectionStateSearching name:nil];
         };
         _receiver.onReportReceived = ^(const Joycon2Report& report) {
             [weakSelf handleReport:report];
@@ -71,7 +71,7 @@
     [_receiver startScan];
 }
 
-- (void)setState:(JMConnectionState)state name:(NSString*)name {
+- (void)setState:(DPConnectionState)state name:(NSString*)name {
     _connectionState = state;
     _deviceName = [name copy];
     if (self.stateDidChange) {
@@ -92,16 +92,16 @@
     }
 }
 
-- (BOOL)applyConfig:(JMConfig*)config error:(NSError**)error {
+- (BOOL)applyConfig:(DPConfig*)config error:(NSError**)error {
     NSArray* problems = [config validationProblems];
     if (problems.count > 0) {
         if (error) {
-            *error = [NSError errorWithDomain:@"JMConfig" code:1
+            *error = [NSError errorWithDomain:@"DPConfig" code:1
                                      userInfo:@{NSLocalizedDescriptionKey: [problems componentsJoinedByString:@" "]}];
         }
         return NO;
     }
-    [self postKeys:_engine.applySettings(JMEngineSettingsFromConfig(config))];
+    [self postKeys:_engine.applySettings(DPEngineSettingsFromConfig(config))];
     return YES;
 }
 

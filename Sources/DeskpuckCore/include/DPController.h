@@ -1,21 +1,21 @@
 #import <Foundation/Foundation.h>
 
-#import "JMConfig.h"
+#import "DPConfig.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef NS_ENUM(NSInteger, JMConnectionState) {
-    JMConnectionStateBluetoothOff,
-    JMConnectionStateBluetoothUnauthorized,
-    JMConnectionStateSearching,
-    JMConnectionStateConnecting,
-    JMConnectionStateConnected,
+typedef NS_ENUM(NSInteger, DPConnectionState) {
+    DPConnectionStateBluetoothOff,
+    DPConnectionStateBluetoothUnauthorized,
+    DPConnectionStateSearching,
+    DPConnectionStateConnecting,
+    DPConnectionStateConnected,
 };
 
 // Connects to a Joy-Con 2 and turns its reports into mouse and keyboard events.
-@interface JMController : NSObject
+@interface DPController : NSObject
 
-- (instancetype)initWithConfig:(JMConfig*)config NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithConfig:(DPConfig*)config NS_DESIGNATED_INITIALIZER;
 - (instancetype)init;
 
 // Off by default: only connection status and errors are printed.
@@ -23,7 +23,7 @@ typedef NS_ENUM(NSInteger, JMConnectionState) {
 
 - (void)start;
 
-@property (nonatomic, readonly) JMConnectionState connectionState;
+@property (nonatomic, readonly) DPConnectionState connectionState;
 // Name of the Joy-Con being connected or connected to.
 @property (nonatomic, readonly, copy, nullable) NSString* deviceName;
 // Called on the main queue after connectionState or deviceName changes.
@@ -33,7 +33,7 @@ typedef NS_ENUM(NSInteger, JMConnectionState) {
 // does not move the cursor.
 @property (nonatomic, getter=isPaused) BOOL paused;
 // Takes effect immediately. Refuses a config with validation problems.
-- (BOOL)applyConfig:(JMConfig*)config error:(NSError**)error;
+- (BOOL)applyConfig:(DPConfig*)config error:(NSError**)error;
 
 @end
 

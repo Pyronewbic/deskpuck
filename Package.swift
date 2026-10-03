@@ -2,23 +2,23 @@
 import PackageDescription
 
 let package = Package(
-    name: "JoyMouse",
+    name: "Deskpuck",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "JoyMouse", targets: ["JoyMouse"]),
-        .executable(name: "joymouse-cli", targets: ["joymouse-cli"]),
+        .executable(name: "Deskpuck", targets: ["Deskpuck"]),
+        .executable(name: "deskpuck-cli", targets: ["deskpuck-cli"]),
     ],
     targets: [
         .target(
-            name: "JoyMouseCore",
+            name: "DeskpuckCore",
             linkerSettings: [
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("CoreBluetooth"),
                 .linkedFramework("Foundation"),
             ]
         ),
-        .executableTarget(name: "joymouse-cli", dependencies: ["JoyMouseCore"]),
-        .executableTarget(name: "JoyMouse", dependencies: ["JoyMouseCore"]),
+        .executableTarget(name: "deskpuck-cli", dependencies: ["DeskpuckCore"]),
+        .executableTarget(name: "Deskpuck", dependencies: ["DeskpuckCore"]),
     ],
     cxxLanguageStandard: .cxx17
 )

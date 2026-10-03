@@ -1,18 +1,18 @@
 #!/bin/bash
-# Build dist/JoyMouse.app, signed with a persistent identity so macOS keeps
+# Build dist/Deskpuck.app, signed with a persistent identity so macOS keeps
 # its Accessibility permission across rebuilds.
 #
 # Usage: scripts/make-app.sh [--adhoc]
 #   --adhoc  sign ad hoc instead (Accessibility must be re-granted after every build)
-# Env: JOYMOUSE_SIGN_IDENTITY  signing identity name (default: "JoyMouse Dev")
+# Env: DESKPUCK_SIGN_IDENTITY  signing identity name (default: "Deskpuck Dev")
 # Exit: 0 built, 1 build failed, 2 signing identity missing
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 VERSION="0.1.0"
-IDENTITY="${JOYMOUSE_SIGN_IDENTITY:-JoyMouse Dev}"
-APP="dist/JoyMouse.app"
+IDENTITY="${DESKPUCK_SIGN_IDENTITY:-Deskpuck Dev}"
+APP="dist/Deskpuck.app"
 
 adhoc=0
 for arg in "$@"; do
@@ -24,7 +24,7 @@ done
 
 if [ "$adhoc" -eq 1 ]; then
     sign_as="-"
-    echo "WARNING: ad hoc signature. macOS will forget JoyMouse's Accessibility permission on every rebuild." >&2
+    echo "WARNING: ad hoc signature. macOS will forget Deskpuck's Accessibility permission on every rebuild." >&2
 else
     # No -v: a self-signed identity is "not trusted", which -v would hide, but codesign accepts it.
     identities=$(security find-identity -p codesigning)
@@ -45,11 +45,11 @@ EOF
     sign_as="$IDENTITY"
 fi
 
-swift build -c release --product JoyMouse
+swift build -c release --product Deskpuck
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/JoyMouse "$APP/Contents/MacOS/JoyMouse"
+cp .build/release/Deskpuck "$APP/Contents/MacOS/Deskpuck"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD)" "$APP/Contents/Info.plist"

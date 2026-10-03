@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-enum JoyMouseApp {
+enum DeskpuckApp {
     @MainActor
     static func main() {
         let app = NSApplication.shared

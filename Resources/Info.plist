@@ -5,17 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>JoyMouse</string>
+	<string>Deskpuck</string>
 	<key>CFBundleExecutable</key>
-	<string>JoyMouse</string>
+	<string>Deskpuck</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.pyronewbic.joymouse</string>
+	<string>com.pyronewbic.deskpuck</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>JoyMouse</string>
+	<string>Deskpuck</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>JoyMouse connects to your Joy-Con over Bluetooth to read its buttons and mouse sensor.</string>
+	<string>Deskpuck connects to your Joy-Con over Bluetooth to read its buttons and mouse sensor.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License. Based on Joycon2forMac by seitanmen.</string>
 </dict>

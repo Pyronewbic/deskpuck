@@ -1,4 +1,4 @@
-// Draws the JoyMouse app icon and writes it as an .icns file.
+// Draws the Deskpuck app icon and writes it as an .icns file.
 // Usage: swift scripts/make-icon.swift <output.icns> [preview.png]
 import AppKit
 

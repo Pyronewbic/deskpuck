@@ -1,4 +1,4 @@
-import JoyMouseCore
+import DeskpuckCore
 import SwiftUI
 
 struct SettingsView: View {

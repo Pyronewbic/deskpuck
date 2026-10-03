@@ -4,16 +4,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Joy-Con button names that can be mapped to keys. R, ZR, ZL, L and LS are
 // mouse buttons and cannot be mapped.
-FOUNDATION_EXPORT NSArray<NSString*>* JMMappableButtons(void);
+FOUNDATION_EXPORT NSArray<NSString*>* DPMappableButtons(void);
 
-FOUNDATION_EXPORT const double JMPointerSpeedMin;     // 0.1
-FOUNDATION_EXPORT const double JMPointerSpeedMax;     // 10
-FOUNDATION_EXPORT const double JMRepeatDelayMax;      // 5 s
-FOUNDATION_EXPORT const double JMRepeatIntervalMax;   // 2 s; 0 turns repeat off
+FOUNDATION_EXPORT const double DPPointerSpeedMin;     // 0.1
+FOUNDATION_EXPORT const double DPPointerSpeedMax;     // 10
+FOUNDATION_EXPORT const double DPRepeatDelayMax;      // 5 s
+FOUNDATION_EXPORT const double DPRepeatIntervalMax;   // 2 s; 0 turns repeat off
 
 // User settings, stored as JSON. Loading never fails: anything unusable falls
 // back to its default and is described in `warnings`.
-@interface JMConfig : NSObject <NSCopying>
+@interface DPConfig : NSObject <NSCopying>
 
 // Button name -> macOS virtual key code (0-127).
 @property (nonatomic, copy) NSDictionary<NSString*, NSNumber*>* keyMappings;

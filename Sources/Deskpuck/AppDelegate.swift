@@ -1,21 +1,21 @@
 import AppKit
 import ApplicationServices
-import JoyMouseCore
+import DeskpuckCore
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let controller: JMController
+    private let controller: DPController
     private let settings: SettingsModel
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var accessibilityTimer: Timer?
 
     override init() {
-        let url = JMConfig.defaultFileURL()
+        let url = DPConfig.defaultFileURL()
         var warnings: NSArray?
-        let config = JMConfig(contentsOf: url, warnings: &warnings)
-        controller = JMController(config: config)
+        let config = DPConfig(contentsOf: url, warnings: &warnings)
+        controller = DPController(config: config)
         settings = SettingsModel(controller: controller, fileURL: url, config: config,
                                  warnings: (warnings as? [String]) ?? [])
         super.init()
@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(item("Settings...", action: #selector(showSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(item("Quit JoyMouse", action: #selector(NSApplication.terminate(_:)), key: "q", target: NSApp))
+        menu.addItem(item("Quit Deskpuck", action: #selector(NSApplication.terminate(_:)), key: "q", target: NSApp))
     }
 
     private func item(_ title: String, action: Selector, key: String = "", symbol: String? = nil,
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateIcon() {
         let connected = controller.connectionState == .connected
         let symbol = controller.isPaused ? "pause.circle" : (connected ? "gamecontroller.fill" : "gamecontroller")
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "JoyMouse")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Deskpuck")
         image?.isTemplate = true
         statusItem.button?.image = image
         statusItem.button?.appearsDisabled = !connected
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: settings)))
-            window.title = "JoyMouse Settings"
+            window.title = "Deskpuck Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()

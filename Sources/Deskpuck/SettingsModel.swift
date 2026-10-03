@@ -1,5 +1,5 @@
 import Foundation
-import JoyMouseCore
+import DeskpuckCore
 
 @MainActor
 final class SettingsModel: ObservableObject {
@@ -14,14 +14,14 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var loadWarnings: [String]
     @Published private(set) var saveError: String?
 
-    static let defaultRepeatRate = 1.0 / JMConfig.default().repeatInterval
+    static let defaultRepeatRate = 1.0 / DPConfig.default().repeatInterval
 
-    private let controller: JMController
+    private let controller: DPController
     private let fileURL: URL
     private var loading = false
     private var pendingSave: DispatchWorkItem?
 
-    init(controller: JMController, fileURL: URL, config: JMConfig, warnings: [String]) {
+    init(controller: DPController, fileURL: URL, config: DPConfig, warnings: [String]) {
         self.controller = controller
         self.fileURL = fileURL
         loadWarnings = warnings
@@ -35,7 +35,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func restoreDefaults() {
-        load(JMConfig.default())
+        load(DPConfig.default())
         commit()
     }
 
@@ -47,8 +47,8 @@ final class SettingsModel: ObservableObject {
         mappings[button] = code == KeyChoice.none.code ? nil : code
     }
 
-    var config: JMConfig {
-        let config = JMConfig.default()
+    var config: DPConfig {
+        let config = DPConfig.default()
         config.keyMappings = mappings.mapValues { NSNumber(value: $0) }
         config.pointerSpeed = pointerSpeed
         config.scrollEnabled = scrollEnabled
@@ -57,7 +57,7 @@ final class SettingsModel: ObservableObject {
         return config
     }
 
-    private func load(_ config: JMConfig) {
+    private func load(_ config: DPConfig) {
         loading = true
         mappings = config.keyMappings.mapValues { $0.intValue }
         pointerSpeed = config.pointerSpeed

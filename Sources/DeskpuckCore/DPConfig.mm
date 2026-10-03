@@ -1,5 +1,5 @@
-#import "JMConfig.h"
-#import "JMConfigEngine.h"
+#import "DPConfig.h"
+#import "DPConfigEngine.h"
 
 #include "Joycon2InputMapping.h"
 #include "Joycon2Packet.h"
@@ -12,14 +12,14 @@
 #include <unistd.h>
 #include <vector>
 
-const double JMPointerSpeedMin = 0.1;
-const double JMPointerSpeedMax = 10.0;
-const double JMRepeatDelayMax = 5.0;
-const double JMRepeatIntervalMax = 2.0;
+const double DPPointerSpeedMin = 0.1;
+const double DPPointerSpeedMax = 10.0;
+const double DPRepeatDelayMax = 5.0;
+const double DPRepeatIntervalMax = 2.0;
 
 static const double kConfigVersion = 1;
 static const size_t kMaxConfigBytes = 64 * 1024;
-static NSString* const kErrorDomain = @"JMConfig";
+static NSString* const kErrorDomain = @"DPConfig";
 
 static NSString* const kVersionKey = @"version";
 static NSString* const kKeyMappingsKey = @"keyMappings";
@@ -28,7 +28,7 @@ static NSString* const kRepeatDelayKey = @"repeatDelay";
 static NSString* const kRepeatIntervalKey = @"repeatInterval";
 static NSString* const kScrollEnabledKey = @"scrollEnabled";
 
-NSArray<NSString*>* JMMappableButtons(void) {
+NSArray<NSString*>* DPMappableButtons(void) {
     static NSArray<NSString*>* buttons;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -79,10 +79,10 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
     *value = number;
 }
 
-@implementation JMConfig
+@implementation DPConfig
 
 + (instancetype)defaultConfig {
-    JMConfig* config = [[JMConfig alloc] init];
+    DPConfig* config = [[DPConfig alloc] init];
     EngineSettings defaults;
     NSMutableDictionary* mappings = [NSMutableDictionary dictionary];
     for (const ButtonKeyMapping& mapping : defaults.keyMappings) {
@@ -101,11 +101,11 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
 
 + (NSURL*)defaultFileURL {
     NSURL* support = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
-    return [[support URLByAppendingPathComponent:@"JoyMouse" isDirectory:YES] URLByAppendingPathComponent:@"config.json"];
+    return [[support URLByAppendingPathComponent:@"Deskpuck" isDirectory:YES] URLByAppendingPathComponent:@"config.json"];
 }
 
 - (id)copyWithZone:(NSZone*)zone {
-    JMConfig* copy = [[JMConfig allocWithZone:zone] init];
+    DPConfig* copy = [[DPConfig allocWithZone:zone] init];
     copy.keyMappings = self.keyMappings;
     copy.pointerSpeed = self.pointerSpeed;
     copy.repeatDelay = self.repeatDelay;
@@ -115,7 +115,7 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
 }
 
 + (instancetype)configWithJSONObject:(id)object warnings:(NSMutableArray*)warnings {
-    JMConfig* config = [self defaultConfig];
+    DPConfig* config = [self defaultConfig];
     if (![object isKindOfClass:[NSDictionary class]]) {
         [warnings addObject:@"Config is not a JSON object; using defaults."];
         return config;
@@ -139,7 +139,7 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
     if (mappings && ![mappings isKindOfClass:[NSDictionary class]]) {
         [warnings addObject:@"keyMappings must be an object; using the default mappings."];
     } else if (mappings) {
-        NSSet* mappable = [NSSet setWithArray:JMMappableButtons()];
+        NSSet* mappable = [NSSet setWithArray:DPMappableButtons()];
         NSMutableDictionary* parsed = [NSMutableDictionary dictionary];
         for (NSString* button in [[mappings allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
             double code;
@@ -159,9 +159,9 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
     double pointerSpeed = config.pointerSpeed;
     double repeatDelay = config.repeatDelay;
     double repeatInterval = config.repeatInterval;
-    readSetting(dict, kPointerSpeedKey, JMPointerSpeedMin, JMPointerSpeedMax, &pointerSpeed, warnings);
-    readSetting(dict, kRepeatDelayKey, 0, JMRepeatDelayMax, &repeatDelay, warnings);
-    readSetting(dict, kRepeatIntervalKey, 0, JMRepeatIntervalMax, &repeatInterval, warnings);
+    readSetting(dict, kPointerSpeedKey, DPPointerSpeedMin, DPPointerSpeedMax, &pointerSpeed, warnings);
+    readSetting(dict, kRepeatDelayKey, 0, DPRepeatDelayMax, &repeatDelay, warnings);
+    readSetting(dict, kRepeatIntervalKey, 0, DPRepeatIntervalMax, &repeatInterval, warnings);
     config.pointerSpeed = pointerSpeed;
     config.repeatDelay = repeatDelay;
     config.repeatInterval = repeatInterval;
@@ -177,7 +177,7 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
 
 + (instancetype)configWithJSONData:(NSData*)data warnings:(NSArray<NSString*>**)warnings {
     NSMutableArray* found = [NSMutableArray array];
-    JMConfig* config;
+    DPConfig* config;
     NSError* error = nil;
     id object = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
     if (!object) {
@@ -246,7 +246,7 @@ static void readSetting(NSDictionary* dict, NSString* key, double min, double ma
 - (NSArray<NSString*>*)validationProblems {
     // Same rules as loading, so what the app can save is exactly what it can load.
     NSMutableArray* problems = [NSMutableArray array];
-    [JMConfig configWithJSONObject:[self dictionaryRepresentation] warnings:problems];
+    [DPConfig configWithJSONObject:[self dictionaryRepresentation] warnings:problems];
     return problems;
 }
 
@@ -318,11 +318,11 @@ static BOOL failWithErrno(NSError** error, NSString* what) {
 
 @end
 
-EngineSettings JMEngineSettingsFromConfig(JMConfig* config) {
+EngineSettings DPEngineSettingsFromConfig(DPConfig* config) {
     EngineSettings settings;
     settings.keyMappings.clear();
     // Fixed button order keeps simultaneous key events in a stable order.
-    for (NSString* button in JMMappableButtons()) {
+    for (NSString* button in DPMappableButtons()) {
         NSNumber* code = config.keyMappings[button];
         uint32_t mask = 0;
         if (code && joycon2ButtonMask(button.UTF8String, &mask)) {
