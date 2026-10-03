@@ -120,6 +120,9 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
 static uint8_t currentMouseBtnState = 0;
 
+static const double keyRepeatDelay = 0.4;
+static const double keyRepeatInterval = 0.06;
+
 @implementation Joycon2VirtualHID
 
 @synthesize initialized = _initialized;
@@ -275,7 +278,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         uint32_t buttons = buttonsNum ? (uint32_t)[buttonsNum floatValue] : 0;
         if (buttons & (1 << 14) || buttons & (1LL << 31)) mouseBtn |= 1; // Left click (R or ZL)
         if (buttons & (1 << 15) || buttons & (1LL << 30)) mouseBtn |= 2; // Right click (ZR or L)
-        if (buttons & (1 << 18) || buttons & (1 << 19)) mouseBtn |= 4; // Middle click (RS or LS)
+        if (buttons & (1 << 19)) mouseBtn |= 4; // Middle click (LS); RS is mapped to Return
         mouseReport[1] = mouseBtn;
 
         // Mouse movement (DeltaX, DeltaY from Joy-Con mouse data)
@@ -375,6 +378,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         [self handleMouseMovement:deltaX deltaY:deltaY];
         [self handleMouseButtons:mouseBtnState];
         [self handleMouseWheel:wheel];
+        [self handleKeyButtons:buttons];
 
         lastMouseBtnState = mouseBtnState;
 
@@ -464,6 +468,20 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
 
     lastMouseBtnState = mouseBtnState;
     currentMouseBtnState = mouseBtnState;
+}
+
+// Repeat is driven by incoming packets (~30/s), so it stops if the Joy-Con drops
+- (void)handleKeyButtons:(uint32_t)buttons {
+    static KeyRepeater keyRepeater(defaultButtonKeyMappings(), keyRepeatDelay, keyRepeatInterval);
+
+    for (const KeyEvent& key : keyRepeater.update(buttons, CFAbsoluteTimeGetCurrent())) {
+        CGEventRef keyEvent = CGEventCreateKeyboardEvent(NULL, key.keyCode, key.isDown);
+        if (key.isRepeat) {
+            CGEventSetIntegerValueField(keyEvent, kCGKeyboardEventAutorepeat, 1);
+        }
+        CGEventPost(kCGHIDEventTap, keyEvent);
+        CFRelease(keyEvent);
+    }
 }
 
 - (void)handleMouseWheel:(int8_t)wheel {

@@ -44,3 +44,39 @@ CGEventType mouseMoveEventType(uint8_t mouseBtnState, CGMouseButton* button) {
     *button = kCGMouseButtonLeft;
     return kCGEventMouseMoved;
 }
+
+const std::vector<ButtonKeyMapping>& defaultButtonKeyMappings() {
+    static const std::vector<ButtonKeyMapping> mappings = {
+        {0x00040000, 36},  // RS (right stick click) -> Return
+        {0x00000200, 126}, // X -> Up
+        {0x00000400, 125}, // B -> Down
+        {0x00000100, 123}, // Y -> Left
+        {0x00000800, 124}, // A -> Right
+    };
+    return mappings;
+}
+
+KeyRepeater::KeyRepeater(std::vector<ButtonKeyMapping> mappings, double repeatDelay, double repeatInterval)
+    : mappings_(std::move(mappings)),
+      nextRepeatAt_(mappings_.size(), 0),
+      repeatDelay_(repeatDelay),
+      repeatInterval_(repeatInterval),
+      repeatEnabled_(repeatDelay >= 0 && repeatInterval > 0) {}
+
+std::vector<KeyEvent> KeyRepeater::update(uint32_t buttons, double now) {
+    std::vector<KeyEvent> events;
+    for (size_t i = 0; i < mappings_.size(); i++) {
+        const ButtonKeyMapping& mapping = mappings_[i];
+        bool isDown = buttons & mapping.buttonMask;
+        bool wasDown = lastButtons_ & mapping.buttonMask;
+        if (isDown != wasDown) {
+            events.push_back({mapping.keyCode, isDown, false});
+            nextRepeatAt_[i] = now + repeatDelay_;
+        } else if (isDown && repeatEnabled_ && now >= nextRepeatAt_[i]) {
+            events.push_back({mapping.keyCode, true, true});
+            nextRepeatAt_[i] = now + repeatInterval_;
+        }
+    }
+    lastButtons_ = buttons;
+    return events;
+}
