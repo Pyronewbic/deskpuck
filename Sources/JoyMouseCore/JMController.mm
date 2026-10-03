@@ -1,5 +1,9 @@
 #import "JMController.h"
 
+#if !__has_feature(objc_arc)
+#error "JoyMouseCore must be built with ARC"
+#endif
+
 #import <ApplicationServices/ApplicationServices.h>
 
 #import "JMConfigEngine.h"

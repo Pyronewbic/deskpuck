@@ -3,12 +3,13 @@
 #include <cstdio>
 #include <cstring>
 
-static int usage(const char* program) {
-    fprintf(stderr, "Usage: %s [--config PATH] [--verbose] [--monitor]\n", program);
-    fprintf(stderr, "  --config PATH  settings file (default: %s)\n", [JMConfig defaultFileURL].path.UTF8String);
-    fprintf(stderr, "  --verbose      print Bluetooth connection detail\n");
-    fprintf(stderr, "  --monitor      show a live readout of every Joy-Con report\n");
-    return 1;
+static int usage(const char* program, int status) {
+    FILE* out = status == 0 ? stdout : stderr;
+    fprintf(out, "Usage: %s [--config PATH] [--verbose] [--monitor]\n", program);
+    fprintf(out, "  --config PATH  settings file (default: %s)\n", [JMConfig defaultFileURL].path.UTF8String);
+    fprintf(out, "  --verbose      print Bluetooth connection detail\n");
+    fprintf(out, "  --monitor      show a live readout of every Joy-Con report\n");
+    return status;
 }
 
 int main(int argc, const char* argv[]) {
@@ -23,9 +24,11 @@ int main(int argc, const char* argv[]) {
                 verbose = YES;
             } else if (strcmp(argv[i], "--monitor") == 0) {
                 monitor = YES;
+            } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+                return usage(argv[0], 0);
             } else if (strcmp(argv[i], "--mouse") != 0) {
                 // --mouse is accepted for compatibility; mouse output is the only mode.
-                return usage(argv[0]);
+                return usage(argv[0], 1);
             }
         }
 

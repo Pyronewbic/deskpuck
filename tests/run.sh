@@ -6,7 +6,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build/tests
 
-CORE_SOURCES="src/JMConfig.mm src/Joycon2Engine.cpp src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp"
+CORE=Sources/JoyMouseCore
+CORE_SOURCES="$CORE/JMConfig.mm $CORE/Joycon2Engine.cpp $CORE/Joycon2InputMapping.cpp $CORE/Joycon2Packet.cpp"
 CXXFLAGS="-std=c++17 -fobjc-arc -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-sanitize-recover=all"
 
 total=0
@@ -18,7 +19,7 @@ for test_source in tests/*_test.cpp tests/*_test.mm; do
     binary="build/tests/$name"
     total=$((total + 1))
     # shellcheck disable=SC2086
-    if ! clang++ $CXXFLAGS -framework CoreGraphics -framework Foundation -Iinclude $CORE_SOURCES "$test_source" -o "$binary"; then
+    if ! clang++ $CXXFLAGS -framework CoreGraphics -framework Foundation -I"$CORE" -I"$CORE/include" $CORE_SOURCES "$test_source" -o "$binary"; then
         echo "FAIL $name: did not compile"
         failed=$((failed + 1))
         continue

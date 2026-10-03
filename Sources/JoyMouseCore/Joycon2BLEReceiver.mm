@@ -1,4 +1,4 @@
-#import "../include/Joycon2BLEReceiver.h"
+#import "Joycon2BLEReceiver.h"
 #include "Joycon2Packet.h"
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <Foundation/Foundation.h>
