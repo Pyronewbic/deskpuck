@@ -9,7 +9,9 @@
 	<key>CFBundleExecutable</key>
 	<string>Deskpuck</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>Deskpuck</string>
+	<key>CFBundleIconName</key>
+	<string>Deskpuck</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.pyronewbic.deskpuck</string>
 	<key>CFBundleInfoDictionaryVersion</key>

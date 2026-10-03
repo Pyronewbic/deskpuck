@@ -40,7 +40,7 @@ Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
 
 ## Build from source
 
-Requires Xcode command line tools (Swift 5.9 or later).
+The tests and `swift build` need only the Xcode command line tools (Swift 5.9 or later). `make-app.sh` needs Xcode 26 to compile the app icon.
 
 ```sh
 tests/run.sh                 # unit tests (AddressSanitizer and UBSan on)

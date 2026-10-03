@@ -45,6 +45,11 @@ EOF
     sign_as="$IDENTITY"
 fi
 
+if ! xcrun --find actool >/dev/null 2>&1; then
+    echo "actool not found. The app icon needs Xcode 26 (xcode-select -s /Applications/Xcode.app)." >&2
+    exit 1
+fi
+
 swift build -c release --product Deskpuck
 
 rm -rf "$APP"
@@ -53,7 +58,15 @@ cp .build/release/Deskpuck "$APP/Contents/MacOS/Deskpuck"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD)" "$APP/Contents/Info.plist"
-swift scripts/make-icon.swift "$APP/Contents/Resources/AppIcon.icns"
+# Resources/Deskpuck.icon is the layered macOS 26 icon; actool also derives a .icns for older macOS.
+icon_plist=$(mktemp -t deskpuck-icon)
+xcrun actool Resources/Deskpuck.icon --compile "$APP/Contents/Resources" --app-icon Deskpuck \
+    --platform macosx --minimum-deployment-target 13.0 --target-device mac \
+    --output-partial-info-plist "$icon_plist" >/dev/null
+for key in CFBundleIconFile CFBundleIconName; do
+    plutil -replace "$key" -string "$(plutil -extract "$key" raw "$icon_plist")" "$APP/Contents/Info.plist"
+done
+rm -f "$icon_plist"
 
 codesign --force --sign "$sign_as" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
