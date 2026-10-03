@@ -105,6 +105,22 @@ static void testButtonBitsExact() {
     CHECK(out.mouseButtons == 1);
 }
 
+static void testNoJumpOnConnect() {
+    // The sensor counter is absolute; its first value says nothing about motion.
+    InputEngine engine;
+    EngineOutput out = engine.process(report(0, 12000, -9000), 0.0);
+    CHECK(out.dx == 0.0 && out.dy == 0.0);
+
+    // Same after a reconnect, where the counter may have moved while disconnected.
+    engine.connectionStarted();
+    out = engine.process(report(0, 5000, 300), 0.1);
+    CHECK(out.dx == 0.0 && out.dy == 0.0);
+
+    // Positive control: the next report moves from the new baseline.
+    out = engine.process(report(0, 5050, 300), 0.2);
+    CHECK(out.dx == 10.0 && out.dy == 0.0);
+}
+
 int main() {
     testMouseButtonMapping();
     testWheelLevels();
@@ -114,5 +130,6 @@ int main() {
     testPointerSpeed();
     testKeysPassThrough();
     testButtonBitsExact();
+    testNoJumpOnConnect();
     return checkSummary("engine");
 }

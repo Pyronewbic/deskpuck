@@ -28,7 +28,8 @@ class InputEngine {
 public:
     explicit InputEngine(const EngineSettings& settings = EngineSettings());
 
-    // Call when a controller connects; the next report recentres the scroll stick.
+    // Call when a controller connects; the next report recentres the scroll stick
+    // and becomes the baseline for pointer motion.
     void connectionStarted();
     EngineOutput process(const Joycon2Report& report, double now);
 
@@ -37,6 +38,7 @@ private:
     KeyRepeater keys_;
     int16_t lastMouseX_ = 0;
     int16_t lastMouseY_ = 0;
+    bool haveMousePosition_ = false;
     bool stickCentred_ = false;
     int leftStickCentreY_ = 2047;
     int rightStickCentreY_ = 2047;

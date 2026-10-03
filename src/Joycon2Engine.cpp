@@ -34,11 +34,17 @@ InputEngine::InputEngine(const EngineSettings& settings)
 
 void InputEngine::connectionStarted() {
     stickCentred_ = false;
+    haveMousePosition_ = false;
 }
 
 EngineOutput InputEngine::process(const Joycon2Report& report, double now) {
     EngineOutput out;
 
+    if (!haveMousePosition_) {
+        lastMouseX_ = report.mouseX;
+        lastMouseY_ = report.mouseY;
+        haveMousePosition_ = true;
+    }
     int16_t rawDx = (int16_t)(report.mouseX - lastMouseX_);
     int16_t rawDy = (int16_t)(report.mouseY - lastMouseY_);
     lastMouseX_ = report.mouseX;
