@@ -23,6 +23,9 @@
             JMController* strongSelf = weakSelf;
             if (strongSelf) strongSelf->_engine.connectionStarted();
         };
+        _receiver.onDisconnected = ^{
+            [weakSelf handleDisconnect];
+        };
         _receiver.onReportReceived = ^(const Joycon2Report& report) {
             [weakSelf handleReport:report];
         };
@@ -35,7 +38,14 @@
 }
 
 - (void)handleReport:(const Joycon2Report&)report {
-    EngineOutput out = _engine.process(report, CFAbsoluteTimeGetCurrent());
+    [self postOutput:_engine.process(report, CFAbsoluteTimeGetCurrent())];
+}
+
+- (void)handleDisconnect {
+    [self postOutput:_engine.disconnected()];
+}
+
+- (void)postOutput:(const EngineOutput&)out {
     [self postMoveDx:out.dx dy:out.dy];
     [self postMouseButtons:out.mouseButtons];
     [self postWheel:out.wheel];

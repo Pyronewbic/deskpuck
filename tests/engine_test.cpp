@@ -121,6 +121,17 @@ static void testNoJumpOnConnect() {
     CHECK(out.dx == 10.0 && out.dy == 0.0);
 }
 
+static void testDisconnectReleasesEverything() {
+    InputEngine engine;
+    EngineOutput held = engine.process(report(R | RS), 0.0);
+    CHECK(held.mouseButtons == 1 && held.keys.size() == 1);
+
+    EngineOutput out = engine.disconnected();
+    CHECK(out.mouseButtons == 0);
+    CHECK(out.keys.size() == 1 && out.keys[0].keyCode == 36 && !out.keys[0].isDown);
+    CHECK(out.dx == 0.0 && out.dy == 0.0 && out.wheel == 0);
+}
+
 int main() {
     testMouseButtonMapping();
     testWheelLevels();
@@ -131,5 +142,6 @@ int main() {
     testKeysPassThrough();
     testButtonBitsExact();
     testNoJumpOnConnect();
+    testDisconnectReleasesEverything();
     return checkSummary("engine");
 }

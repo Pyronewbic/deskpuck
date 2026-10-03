@@ -32,6 +32,8 @@ public:
     // and becomes the baseline for pointer motion.
     void connectionStarted();
     EngineOutput process(const Joycon2Report& report, double now);
+    // Releases every held mouse button and key.
+    EngineOutput disconnected();
 
 private:
     EngineSettings settings_;

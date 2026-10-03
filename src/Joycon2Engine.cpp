@@ -68,3 +68,9 @@ EngineOutput InputEngine::process(const Joycon2Report& report, double now) {
     out.keys = keys_.update(report.buttons, now);
     return out;
 }
+
+EngineOutput InputEngine::disconnected() {
+    EngineOutput out;
+    out.keys = keys_.releaseAll();
+    return out;
+}

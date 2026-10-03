@@ -34,6 +34,7 @@ void log(const std::string& level, const std::string& message);
 
 @property (copy, nonatomic) void (^onDeviceFound)(NSString* name, NSString* address);
 @property (copy, nonatomic) void (^onConnected)(void);
+@property (copy, nonatomic) void (^onDisconnected)(void);
 @property (copy, nonatomic) void (^onReportReceived)(const Joycon2Report& report);
 @property (copy, nonatomic) void (^onError)(NSString* error);
 

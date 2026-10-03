@@ -222,6 +222,10 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
     [self invalidateCommandTimer];
 
+    if (self.onDisconnected) {
+        self.onDisconnected();
+    }
+
     [self.connectedPeripherals removeObject:peripheral.identifier];
     [self.connectingPeripherals removeObject:peripheral.identifier];
     std::cout << "📊 Connection state updated - Connecting: " << [self.connectingPeripherals count]

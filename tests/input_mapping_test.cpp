@@ -194,6 +194,26 @@ static void testDefaultMappings() {
     CHECK(keyFor(0x00008000) == -1);
 }
 
+static void testReleaseAll() {
+    KeyRepeater keys(testMappings, 0.4, 0.06);
+    keys.update(A | X, 0.0);
+    std::vector<KeyEvent> ups = keys.releaseAll();
+    CHECK(ups.size() == 2);
+    CHECK(ups.size() == 2 && isEvent(ups[0], 124, false, false) && isEvent(ups[1], 126, false, false));
+
+    // Released keys stay released: no repeats while the controller is gone, and a
+    // second release has nothing left to send.
+    CHECK(keys.releaseAll().empty());
+
+    // Still holding A on reconnect counts as a fresh press.
+    std::vector<KeyEvent> again = keys.update(A, 5.0);
+    CHECK(again.size() == 1 && isEvent(again[0], 124, true, false));
+
+    // Nothing held: nothing to release.
+    KeyRepeater idle(testMappings, 0.4, 0.06);
+    CHECK(idle.releaseAll().empty());
+}
+
 int main() {
     testClampToDisplays();
     testMouseMoveEventType();
@@ -203,6 +223,7 @@ int main() {
     testUnmappedButtonsIgnored();
     testRepeatDisableSentinels();
     testDefaultMappings();
+    testReleaseAll();
 
     return checkSummary("input_mapping");
 }

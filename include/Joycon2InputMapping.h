@@ -29,6 +29,8 @@ class KeyRepeater {
 public:
     KeyRepeater(std::vector<ButtonKeyMapping> mappings, double repeatDelay, double repeatInterval);
     std::vector<KeyEvent> update(uint32_t buttons, double now);
+    // Key-up for every held key, e.g. when the controller disconnects mid-press.
+    std::vector<KeyEvent> releaseAll();
 
 private:
     std::vector<ButtonKeyMapping> mappings_;

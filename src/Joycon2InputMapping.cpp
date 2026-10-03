@@ -80,3 +80,14 @@ std::vector<KeyEvent> KeyRepeater::update(uint32_t buttons, double now) {
     lastButtons_ = buttons;
     return events;
 }
+
+std::vector<KeyEvent> KeyRepeater::releaseAll() {
+    std::vector<KeyEvent> events;
+    for (const ButtonKeyMapping& mapping : mappings_) {
+        if (lastButtons_ & mapping.buttonMask) {
+            events.push_back({mapping.keyCode, false, false});
+        }
+    }
+    lastButtons_ = 0;
+    return events;
+}
