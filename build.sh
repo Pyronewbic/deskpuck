@@ -23,7 +23,7 @@ echo "Building Joycon2VirtualHID ($BUILD_TYPE)..."
 clang++ -x objective-c++ -std=c++17 -fobjc-arc $DEBUG_FLAG \
     -framework Foundation -framework CoreBluetooth -framework ApplicationServices \
     -Iinclude \
-    src/JMController.mm src/Joycon2BLEReceiver.mm src/Joycon2Engine.cpp \
+    src/JMConfig.mm src/JMController.mm src/Joycon2BLEReceiver.mm src/Joycon2Engine.cpp \
     src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp src/main_ble.mm \
     -o build/Joycon2VirtualHID
 echo "Build successful! Executable: build/Joycon2VirtualHID ($BUILD_TYPE)"

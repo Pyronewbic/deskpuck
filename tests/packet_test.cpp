@@ -146,6 +146,29 @@ static void testButtonNames() {
     CHECK(joycon2ButtonNames(0xFFFFFFFF).size() == 23);
 }
 
+static void testButtonLookups() {
+    uint32_t mask = 0;
+    CHECK(joycon2ButtonMask("RS", &mask) && mask == 0x00040000);
+    CHECK(joycon2ButtonMask("ZL", &mask) && mask == 0x80000000u);
+    std::string name;
+    CHECK(joycon2ButtonName(0x00000800, &name) && name == "A");
+
+    // Unknown names and multi-bit masks are rejected, leaving outputs untouched.
+    mask = 7;
+    CHECK(!joycon2ButtonMask("Q", &mask) && mask == 7);
+    CHECK(!joycon2ButtonMask("rs", &mask));
+    CHECK(!joycon2ButtonMask("", &mask));
+    name = "unchanged";
+    CHECK(!joycon2ButtonName(0x00000C00, &name) && name == "unchanged");
+    CHECK(!joycon2ButtonName(0x000000FF, &name));
+
+    // Every name round-trips through its mask.
+    for (const std::string& each : joycon2ButtonNames(0xFFFFFFFF)) {
+        std::string back;
+        CHECK(joycon2ButtonMask(each, &mask) && joycon2ButtonName(mask, &back) && back == each);
+    }
+}
+
 int main() {
     testCapturedReports();
     testLittleEndianReads();
@@ -153,5 +176,6 @@ int main() {
     testSyntheticFields();
     testShortReportsRejected();
     testButtonNames();
+    testButtonLookups();
     return checkSummary("packet");
 }

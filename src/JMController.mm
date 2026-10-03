@@ -2,6 +2,7 @@
 
 #import <ApplicationServices/ApplicationServices.h>
 
+#import "JMConfigEngine.h"
 #import "Joycon2BLEReceiver.h"
 #include "Joycon2Engine.h"
 #include "Joycon2InputMapping.h"
@@ -15,8 +16,15 @@
 }
 
 - (instancetype)init {
+    return [self initWithConfig:[JMConfig defaultConfig]];
+}
+
+- (instancetype)initWithConfig:(JMConfig*)config {
     self = [super init];
     if (self) {
+        if ([config validationProblems].count == 0) {
+            _engine.applySettings(JMEngineSettingsFromConfig(config));
+        }
         _receiver = [[Joycon2BLEReceiver alloc] init];
         __weak JMController* weakSelf = self;
         _receiver.onConnected = ^{
@@ -35,6 +43,19 @@
 
 - (void)start {
     [_receiver startScan];
+}
+
+- (BOOL)applyConfig:(JMConfig*)config error:(NSError**)error {
+    NSArray* problems = [config validationProblems];
+    if (problems.count > 0) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"JMConfig" code:1
+                                     userInfo:@{NSLocalizedDescriptionKey: [problems componentsJoinedByString:@" "]}];
+        }
+        return NO;
+    }
+    [self postKeys:_engine.applySettings(JMEngineSettingsFromConfig(config))];
+    return YES;
 }
 
 - (void)handleReport:(const Joycon2Report&)report {

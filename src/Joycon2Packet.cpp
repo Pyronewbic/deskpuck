@@ -53,15 +53,18 @@ bool parseJoycon2Report(const uint8_t* data, size_t size, Joycon2Report* report)
     return true;
 }
 
+namespace {
+const struct { uint32_t mask; const char* name; } kButtons[] = {
+    {0x00000100, "Y"}, {0x00000200, "X"}, {0x00000400, "B"}, {0x00000800, "A"},
+    {0x00001000, "SR"}, {0x00002000, "SL"}, {0x00004000, "R"}, {0x00008000, "ZR"},
+    {0x00010000, "MINUS"}, {0x00020000, "PLUS"}, {0x00040000, "RS"}, {0x00080000, "LS"},
+    {0x00100000, "HOME"}, {0x00200000, "CAPTURE"}, {0x00400000, "CHAT"},
+    {0x01000000, "DOWN"}, {0x02000000, "UP"}, {0x04000000, "RIGHT"}, {0x08000000, "LEFT"},
+    {0x10000000, "SR_L"}, {0x20000000, "SL_L"}, {0x40000000, "L"}, {0x80000000, "ZL"},
+};
+}
+
 std::vector<std::string> joycon2ButtonNames(uint32_t buttons) {
-    static const struct { uint32_t mask; const char* name; } kButtons[] = {
-        {0x00000100, "Y"}, {0x00000200, "X"}, {0x00000400, "B"}, {0x00000800, "A"},
-        {0x00001000, "SR"}, {0x00002000, "SL"}, {0x00004000, "R"}, {0x00008000, "ZR"},
-        {0x00010000, "MINUS"}, {0x00020000, "PLUS"}, {0x00040000, "RS"}, {0x00080000, "LS"},
-        {0x00100000, "HOME"}, {0x00200000, "CAPTURE"}, {0x00400000, "CHAT"},
-        {0x01000000, "DOWN"}, {0x02000000, "UP"}, {0x04000000, "RIGHT"}, {0x08000000, "LEFT"},
-        {0x10000000, "SR_L"}, {0x20000000, "SL_L"}, {0x40000000, "L"}, {0x80000000, "ZL"},
-    };
     std::vector<std::string> names;
     for (const auto& button : kButtons) {
         if (buttons & button.mask) {
@@ -69,4 +72,24 @@ std::vector<std::string> joycon2ButtonNames(uint32_t buttons) {
         }
     }
     return names;
+}
+
+bool joycon2ButtonMask(const std::string& name, uint32_t* mask) {
+    for (const auto& button : kButtons) {
+        if (name == button.name) {
+            *mask = button.mask;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool joycon2ButtonName(uint32_t mask, std::string* name) {
+    for (const auto& button : kButtons) {
+        if (mask == button.mask) {
+            *name = button.name;
+            return true;
+        }
+    }
+    return false;
 }

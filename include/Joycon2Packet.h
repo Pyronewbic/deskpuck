@@ -40,3 +40,6 @@ void parseStick(const uint8_t* data, size_t offset, uint16_t* x, uint16_t* y);
 bool parseJoycon2Report(const uint8_t* data, size_t size, Joycon2Report* report);
 
 std::vector<std::string> joycon2ButtonNames(uint32_t buttons);
+// Single-button lookups by the names above; false if unknown.
+bool joycon2ButtonMask(const std::string& name, uint32_t* mask);
+bool joycon2ButtonName(uint32_t mask, std::string* name);
