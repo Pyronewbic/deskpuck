@@ -1,273 +1,60 @@
-# Joycon2 for Mac
+# JoyMouse
 
-A project to connect to a Nintendo Switch 2 controller via Bluetooth Low Energy (BLE) and enable the use of received data on macOS.
+Use a Nintendo Switch 2 Joy-Con (R) as a Mac mouse and keyboard: slide it on a desk to move the pointer, click with the shoulder buttons, scroll with the stick, and map the other buttons to keys.
 
-Bluetooth Low Energy（BLE）経由でNintendo Switch2コントローラーに接続し、受信データをMacOS上で使用できるようにするプロジェクトです。
+It runs as a normal app with Bluetooth and Accessibility permission. No kernel extension, and no need to turn off System Integrity Protection.
 
-Due to significant code revisions currently underway, specifications are subject to change.
+Based on [seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac) (MIT). Bluetooth protocol details from [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research).
 
-For the game to recognize Joy-Con2 as a gamepad, it requires either developing a user-space driver for Joy-Con 2 using DriverKit or creating a real-time signal conversion layer using CoreHID.
-As both options require participation in the Apple Developer Program and incur costs that are not justified, we are suspending development at this point with the current implementation.
+Tested on macOS 26 on Apple Silicon.
 
-ゲームがJoy-Con2をゲームパッドとして認識するにはDriverKitでJoy-Con2のユーザスペースドライバを開発するか、CoreHIDを使って信号のリアルタイム変換レイヤーを作る必要があります。
-そのどちらもApple Developer Programへの参加とコストに見合わないため現在の実装を以て一度中断します。
+## Install
 
-## Features
+1. Open `JoyMouse-<version>.dmg` and drag JoyMouse to Applications.
+2. Open JoyMouse. macOS blocks it the first time because it is not notarized by Apple. Click **Done**.
+3. Open **System Settings > Privacy & Security**, scroll to Security, and click **Open Anyway** next to the JoyMouse message. Confirm with your password or Touch ID.
+4. When asked, allow **Bluetooth** and **Accessibility** access. Accessibility is what lets JoyMouse move the pointer and press keys.
+5. Hold the **SYNC** button on the Joy-Con until its lights flash. The menu bar icon fills in once it connects.
 
-- **Real-time Data Display**: Shows live data from Joy-Con controllers including:
-  - Button states (A, B, X, Y, →, ↓, ↑, ←, L, R, ZL, ZR, LS, RS, SL(L), SR(L), SL(R), SR(R), SELECT(-), START(+), CAMERA, HOME, CHAT)
-  - Trigger positions (Can be detected with the NGC controller)
-  - Analog stick positions (Left/Right stick X/Y values)
-  - Motion sensors (Accelerometer, Gyroscope, Magnetometer)
-  - IR camera data (Mouse tracking)
-  - Battery voltage and current
-  - Temperature sensor
+If step 3 shows no Open Anyway button, run this in Terminal instead:
 
-- **HID Emulation**: Emulates mouse and gamepad inputs based on Joy-Con data
-  - Mouse mode: Controls cursor movement, clicks, and scrolling
-  - Gamepad mode: Reserved for future gamepad emulation
-
-- **Auto-discovery**: Automatically detects and connects to Nintendo Switch2 controllers
-
-## Requirements
-
-- **macOS 10.15 or later**
-- **Xcode Command Line Tools** (for compilation)
-- **Nintendo Switch 2 controller** (L or R)
-
-## Building
-
-1. **Clone or download** this repository
-2. **Navigate to the project directory**:
-   ```bash
-   cd Joycon2forMac
-   ```
-3. **Run the build script**:
-   ```bash
-   ./build.sh [BUILD_MODE] [BUILD_TYPE]
-   ```
-   - `BUILD_MODE`: `FULL` (default, includes BLE and HID emulation) or `BLE_ONLY` (BLE communication only)
-   - `BUILD_TYPE`: `debug` (default) or `release`
-
-   Examples:
-   ```bash
-   ./build.sh FULL debug    # Build full version in debug mode
-   ./build.sh BLE_ONLY release  # Build BLE-only version in release mode
-   ```
-
-   The executables will be created in the `build/` directory:
-   - `Joycon2VirtualHID` (FULL mode)
-   - `Joycon2BLEReceiver` (BLE_ONLY mode)
-
-## Running
-[Video](https://github.com/seitanmen/Joycon2forMac/issues/1#issue-3438387487)
-
-
-1. **Ensure Bluetooth is enabled** on your Mac
-2. **Put your Switch2 Controller into pairing mode** (press and hold the SYNC button)
-3. **Run the application**:
-   ```bash
-   ./build/Joycon2VirtualHID --mouse  # For mouse-only HID emulation
-   ./build/Joycon2VirtualHID --gamepad  # For gamepad-only HID emulation (not implemented yet)
-   ./build/Joycon2BLEReceiver  # For BLE-only mode (data display only)
-   ```
-4. **The app will**:
-   - Scan for Switch2 Controller devices
-   - Automatically connect when found
-   - Display real-time sensor data (BLE_ONLY mode)
-   - Emulate HID inputs based on the selected mode (HID modes)
-   - Allow runtime mode switching with Shift+M (mouse) or Shift+G (gamepad) in HID modes
-
-## Output Format
-
-The application displays data in the following format:
-
-```
-=================================================
-Joy-Con 2 (R) Data:
-=================================================
-Elapsed: 7555 ms
-Packet_HEX: 4F 24 0 0 0 0 0 E0 FF F FF F7 7F C 28 79 0 0 0 0 FF 11 9 C 0 47 FF 8A 2 45 FE B E 0 76 7 0 0 0 0 0 1 62 D2 60 0 8 0 E1 FA E2 4 76 E 7 0 FF FF 13 0 0 0 0
-PacketID: 9295
-Buttons: 00000000
-Pressed: None
-Analog_Triggers: L=0, R=0
-LeftStick: X=2047, Y=2047
-RightStick: X=2060, Y=1938
-Accel: X=-1311, Y=1250, Z=3702
-Gyro: X=7, Y=-1, Z=19
-Mag: X=18176, Y=-29953, Z=17666
-Mouse: X=0, Y=0, DeltaX=0, DeltaY=0
-Battery: 3.60V, 2.56mA
-Temperature: 25.1°C
+```sh
+xattr -dr com.apple.quarantine /Applications/JoyMouse.app
 ```
 
-## Data Fields
+## Use
 
-- **Packet_HEX**: Raw data packet received from the BLE characteristic AB7DE9BE-89FE-49AD-828F-118F09DF7FD2 (63 bytes)
-- **PacketID**: Sequential packet identifier
-- **Buttons**: Raw button state (hex format)
-- **Pressed**: List of currently pressed buttons
-- **Analog_Triggers**: Analog trigger positions (L/R)
-- **LeftStick/RightStick**: Analog stick positions (0-4095 range)
-- **Mouse**: IR camera tracking data (X, Y, DeltaX, DeltaY)
-- **Accel**: Accelerometer readings (X, Y, Z axes)
-- **Gyro**: Gyroscope readings (X, Y, Z axes)
-- **Mag**: Magnetometer readings (X, Y, Z axes)
-- **Battery**: Voltage (V) and current (mA)
-- **Temperature**: Controller temperature in Celsius
+| Joy-Con (R)          | Default                         |
+| -------------------- | ------------------------------- |
+| Slide on a surface   | Move the pointer                |
+| R / ZR               | Left click / right click        |
+| Stick up and down    | Scroll                          |
+| Stick click          | Return                          |
+| X / B / Y / A        | Up / Down / Left / Right arrows |
 
-## Troubleshooting
+Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. Use **Pause Mouse Control** to set the Joy-Con down without moving the pointer.
 
-### Connection Issues
-- Ensure your Switch2 Controller is charged and in pairing mode
-- Check that Bluetooth is enabled on your Mac
-- Make sure no other device is connected to the Switch2 Controller
+Settings are saved to `~/Library/Application Support/JoyMouse/config.json`.
 
-### Build Issues
-- Install Xcode Command Line Tools: `xcode-select --install`
-- Ensure clang++ is available (included with Xcode Command Line Tools)
-- Clean build: `rm -rf build && ./build.sh`
+## Build from source
 
-### Permission Issues
-- The app requires Bluetooth permissions (automatically granted)
-- If you see permission errors, check System Preferences > Security & Privacy > Bluetooth
+Requires Xcode command line tools (Swift 5.9 or later).
 
-## Architecture
+```sh
+tests/run.sh                 # unit tests (AddressSanitizer and UBSan on)
+swift build -c release       # app and command-line tool
+scripts/make-app.sh          # dist/JoyMouse.app
+scripts/make-dmg.sh          # dist/JoyMouse-<version>.dmg and .zip
+```
 
-This application is built using:
-- **Objective-C++**: For Core Bluetooth integration
-- **Core Bluetooth Framework**: macOS native BLE support
-- **IOKit Framework**: For HID device emulation
-- **ApplicationServices Framework**: For mouse event simulation
-- **clang++**: Compiler for building the executables
+`make-app.sh` signs with a self-signed certificate named "JoyMouse Dev" so macOS keeps the Accessibility permission across rebuilds; it prints the one-time steps to create it. `--adhoc` skips it, but then the permission resets on every build.
 
-## Code Architecture
+The command-line tool does the same without a menu bar icon:
 
-This application is built using Objective-C++ and leverages macOS's Core Bluetooth framework for BLE communication. The codebase is organized into the following key components:
-
-### Main Classes
-
-#### `Joycon2BLEReceiver` (Joycon2BLEReceiver.h / Joycon2BLEReceiver.mm)
-The core class that handles all BLE operations and data processing.
-
-**Key Properties:**
-- `centralManager`: CBCentralManager for BLE device discovery and connection
-- `connectedPeripheral`: Currently connected Joy-Con device
-- `writeCharacteristic`: BLE characteristic for sending commands to Joy-Con
-- `subscribeCharacteristic`: BLE characteristic for receiving sensor data
-- `connectingPeripherals` / `connectedPeripherals`: Sets tracking connection states
-- `deviceType`: Detected device type (L/R/Pro Controller)
-- `dataTimeoutTimer`: Timer for detecting data reception timeouts
-- `commandTimer`: Timer for periodic command sending
-- `displayInterval`: Controls how often data packets are displayed
-- `skipInitCommands`: Flag to skip initialization commands
-
-**Key Methods:**
-- `startScan()`: Begins scanning for BLE devices
-- `stopScan()`: Stops the scanning process
-- `connectToDevice(address)`: Connects to a specific device by UUID
-- `disconnect()`: Disconnects from the current device
-- `sendInitializationCommandsOnce()`: Sends required initialization commands to Joy-Con
-
-### Data Parsing Functions
-
-The application includes several utility functions for parsing binary data from Joy-Con:
-
-- `parseJoycon2Data(data)`: Main data parsing function that extracts all sensor values
-- `parseStick(data, offset)`: Parses analog stick positions (X/Y coordinates)
-- `parseButtons(buttons)`: Converts button bitmask to human-readable button names
-- `toInt16/toUint16/toUint24/toUint32`: Byte array to numeric value conversion functions
-
-
-### Initialization Process
-
-When a Joy-Con is connected, the application follows this sequence:
-
-1. **Device Discovery**: Scans for BLE devices with manufacturer ID 0x0553 (Nintendo)
-2. **Service Discovery**: Discovers available BLE services on the device
-3. **Characteristic Discovery**: Finds write and subscribe characteristics
-4. **Initialization Commands**: Sends two specific commands to enable data streaming:
-   - Command 1: `0c91010200040000FF000000` (enables standard data)
-   - Command 2: `0c91010400040000FF000000` (enables extended data)
-5. **Notification Setup**: Enables notifications for real-time data reception
-6. **Data Reception**: Begins receiving and parsing 63-byte data packets
-
-### Connection Management
-
-The application implements robust connection management:
-
-- **Auto-reconnection**: Automatically retries connection on failure
-- **Timeout Handling**: 30-second data timeout with program termination
-- **State Tracking**: Maintains sets of connecting and connected devices
-- **Error Recovery**: Handles various BLE error conditions gracefully
-
-### Logging System
-
-The application includes a comprehensive logging system with timestamps and log levels:
-- `log(level, message)`: Main logging function
-- `getTimestamp()`: Generates formatted timestamps with milliseconds
-- Log levels: SECTION, INFO, SUCCESS, ERROR, DATA
-
-### Source Files Description
-
-#### English
-- **include/Joycon2BLEReceiver.h**: Header file for the Joycon2BLEReceiver class. Defines interfaces for BLE communication with Joy-Con devices, including properties, delegate methods, and utility functions.
-- **include/Joycon2VirtualHID.h**: Header file for the Joycon2VirtualHID class. Defines interfaces for emulating virtual HID devices, handling mouse and gamepad inputs with runtime mode switching.
-- **src/Joycon2BLEReceiver.mm**: Implementation of the Joycon2BLEReceiver class. Handles BLE scanning, connection, data reception, parsing, logging, and sending initialization commands.
-- **src/Joycon2VirtualHID.mm**: Implementation of the Joycon2VirtualHID class. Converts Joy-Con data to HID reports and simulates mouse movements, clicks, and scrolling using CGEvent. Supports mode switching via keyboard shortcuts.
-- **src/main_ble.mm**: Main function for BLE receiver mode. Initializes Joycon2BLEReceiver and Joycon2VirtualHID, starts scanning, and supports command-line options for emulation modes.
-
-#### 日本語
-- **include/Joycon2BLEReceiver.h**: Joycon2BLEReceiverクラスのヘッダーファイル。Joy-ConデバイスとのBLE通信のためのインターフェースを定義。プロパティ、デリゲートメソッド、ユーティリティ関数を含む。
-- **include/Joycon2VirtualHID.h**: Joycon2VirtualHIDクラスのヘッダーファイル。仮想HIDデバイスをエミュレートするためのインターフェースを定義。マウスやゲームパッドの入力を扱い、ランタイムモード切り替えをサポート。
-- **src/Joycon2BLEReceiver.mm**: Joycon2BLEReceiverクラスの実装。BLEスキャン、接続、データ受信、パース、ログ出力、初期化コマンド送信を行う。
-- **src/Joycon2VirtualHID.mm**: Joycon2VirtualHIDクラスの実装。Joy-ConデータをHIDレポートに変換し、CGEventでマウス移動、クリック、スクロールをシミュレート。キーボードショートカットによるモード切り替えをサポート。
-- **src/main_ble.mm**: BLE受信モードのメイン関数。Joycon2BLEReceiverとJoycon2VirtualHIDを初期化し、スキャンを開始。エミュレーションモードのコマンドラインオプションをサポート。
-
-## Acknowledgments
-
-This project learned a great deal from the following projects.
-
-[TheFrano/joycon2cpp](https://github.com/TheFrano/joycon2cpp)
-
-[Tamagosushio/joycon2cpp](https://github.com/Tamagosushio/joycon2cpp)
-
-[yujimny/Joycon2test](https://github.com/yujimny/Joycon2test)
-
-We thank the authors for their contributions to the Joy-Con BLE communication implementation.
+```sh
+.build/release/joymouse-cli [--config PATH] [--verbose] [--monitor]
+```
 
 ## License
 
-MIT License
-
-Copyright (c) 2025 seitanmen 
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-
-## Contributing
-
-Feel free to submit issues or pull requests for improvements.
-
-## Notes
-
-**Disclaimer:** Nintendo Switch 2, Joy-Con 2, Switch 2 Pro Controller, and GameCube Controller are registered trademarks of Nintendo Co., Ltd. This project is not affiliated with Nintendo Co., Ltd. in any way and has not been authorized, endorsed, or provided by Nintendo Co., Ltd.
-
-**免責事項:** Nintendo Switch2及びJoy-Con2、Switch2 Pro Controller、ゲームキューブコントローラーは任天堂株式会社の登録商標です。本プロジェクトは任天堂株式会社と一切関係がなく、任天堂株式会社による承認・後援・提供を受けていません。
+MIT. See [LICENSE](LICENSE).
