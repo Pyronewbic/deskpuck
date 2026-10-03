@@ -9,11 +9,13 @@ mkdir -p build/tests
 CORE_SOURCES="src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp"
 CXXFLAGS="-std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-sanitize-recover=all"
 
+total=0
 ran=0
 failed=0
 for test_source in tests/*_test.cpp; do
     name=$(basename "$test_source" .cpp)
     binary="build/tests/$name"
+    total=$((total + 1))
     # shellcheck disable=SC2086
     if ! clang++ $CXXFLAGS -framework CoreGraphics -Iinclude $CORE_SOURCES "$test_source" -o "$binary"; then
         echo "FAIL $name: did not compile"
@@ -21,7 +23,14 @@ for test_source in tests/*_test.cpp; do
         continue
     fi
     ran=$((ran + 1))
-    if ! "$binary"; then
+    output=$("$binary" 2>&1)
+    status=$?
+    echo "$output"
+    if [ "$status" -ne 0 ]; then
+        failed=$((failed + 1))
+    elif ! echo "$output" | grep -qE '^[a-z_]+: [1-9][0-9]* checks, 0 failures$'; then
+        # An exit 0 without a summary means the suite never reached its checks.
+        echo "FAIL $name: exited 0 without a passing check summary"
         failed=$((failed + 1))
     fi
 done
@@ -31,7 +40,7 @@ if [ "$ran" -eq 0 ]; then
     exit 1
 fi
 if [ "$failed" -ne 0 ]; then
-    echo "FAILED: $failed of $((ran + failed)) suites"
+    echo "FAILED: $failed of $total suites"
     exit 1
 fi
 echo "OK: $ran suites passed"
