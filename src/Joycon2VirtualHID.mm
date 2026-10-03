@@ -7,6 +7,7 @@
 #ifndef HID_ENABLE
 #import "Joycon2BLEReceiver.h"
 #endif
+#include "Joycon2InputMapping.h"
 
 // HID report descriptor for a game controller and mouse based on Joy-Con data
 static const uint8_t reportDescriptor[] = {
@@ -116,6 +117,8 @@ typedef enum {
 @end
 
 CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon);
+
+static uint8_t currentMouseBtnState = 0;
 
 @implementation Joycon2VirtualHID
 
@@ -398,19 +401,23 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
         CGPoint currentPos = CGEventGetLocation(tempEvent);
         CFRelease(tempEvent);
         CFRelease(eventSource);
+        CGPoint previousPos = currentPos;
 
         // deltaX, deltaY をスケーリング（制限なしで滑らかに）
         const double scale = 5.0;
         currentPos.x += (double)deltaX / scale;
         currentPos.y += (double)deltaY / scale;
 
-        // 画面境界内に座標を制限
-        CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
-        currentPos.x = fmax(screenBounds.origin.x, fmin(currentPos.x, screenBounds.origin.x + screenBounds.size.width));
-        currentPos.y = fmax(screenBounds.origin.y, fmin(currentPos.y, screenBounds.origin.y + screenBounds.size.height));
+        currentPos = clampToDisplays(currentPos, previousPos, systemDisplayLookup(), CGDisplayBounds(CGMainDisplayID()));
 
-        // マウスカーソルを新しい座標に移動
-        CGWarpMouseCursorPosition(currentPos);
+        // A real move/drag event (not a warp) so the Dock, hot corners and drags see it
+        CGMouseButton button;
+        CGEventType type = mouseMoveEventType(currentMouseBtnState, &button);
+        CGEventRef moveEvent = CGEventCreateMouseEvent(NULL, type, currentPos, button);
+        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaX, lround(currentPos.x - previousPos.x));
+        CGEventSetIntegerValueField(moveEvent, kCGMouseEventDeltaY, lround(currentPos.y - previousPos.y));
+        CGEventPost(kCGHIDEventTap, moveEvent);
+        CFRelease(moveEvent);
     }
 }
 
@@ -456,6 +463,7 @@ CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef 
     }
 
     lastMouseBtnState = mouseBtnState;
+    currentMouseBtnState = mouseBtnState;
 }
 
 - (void)handleMouseWheel:(int8_t)wheel {
