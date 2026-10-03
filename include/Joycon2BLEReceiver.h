@@ -1,16 +1,21 @@
- #pragma once
+#pragma once
 
- #import <CoreBluetooth/CoreBluetooth.h>
- #import <Foundation/Foundation.h>
+#import <CoreBluetooth/CoreBluetooth.h>
+#import <Foundation/Foundation.h>
 
-#include <vector>
-#include <map>
+#include "Joycon2Packet.h"
+
 #include <string>
-#include <utility>
-#include <iomanip>
-#include <chrono>
-#include <sstream>
-#include <iostream>
+#include <vector>
+
+extern const uint16_t JOYCON2_MANUFACTURER_ID;
+extern NSString* const WRITE_CHARACTERISTIC_UUID;
+extern NSString* const SUBSCRIBE_CHARACTERISTIC_UUID;
+
+extern int dataReceiveCounter;
+
+std::string getTimestamp();
+void log(const std::string& level, const std::string& message);
 
 @interface Joycon2BLEReceiver : NSObject<CBCentralManagerDelegate, CBPeripheralDelegate>
 
@@ -27,39 +32,19 @@
 @property (assign, nonatomic) int displayInterval;
 @property (assign, nonatomic) BOOL skipInitCommands;
 
-// Constants
-extern const uint16_t JOYCON2_MANUFACTURER_ID;
-extern NSString* const WRITE_CHARACTERISTIC_UUID;
-extern NSString* const SUBSCRIBE_CHARACTERISTIC_UUID;
+@property (copy, nonatomic) void (^onDeviceFound)(NSString* name, NSString* address);
+@property (copy, nonatomic) void (^onConnected)(void);
+@property (copy, nonatomic) void (^onReportReceived)(const Joycon2Report& report);
+@property (copy, nonatomic) void (^onError)(NSString* error);
 
-// Global data counter
-extern int dataReceiveCounter;
-
-// Logging functions
-std::string getTimestamp();
-void log(const std::string& level, const std::string& message);
-
-// Initialization
 - (instancetype)init;
-
-// Public methods
 - (void)startScan;
 - (void)stopScan;
 - (void)connectToDevice:(NSString*)address;
 - (void)disconnect;
 
- // Callbacks (blocks)
- @property (copy, nonatomic) void (^onDeviceFound)(NSString* name, NSString* address);
- @property (copy, nonatomic) void (^onConnected)(void);
- @property (copy, nonatomic) void (^onDataReceived)(NSDictionary* data);
- @property (copy, nonatomic) void (^onError)(NSString* error);
++ (Joycon2BLEReceiver*)sharedInstance;
++ (NSString*)determineDeviceType:(CBPeripheral*)peripheral;
++ (void)printReport:(const Joycon2Report&)report data:(const std::vector<uint8_t>&)data;
 
-  // Utility methods
-   + (Joycon2BLEReceiver*)sharedInstance;
-   + (NSString*)determineDeviceType:(CBPeripheral*)peripheral;
-  + (std::map<std::string, float>)parseJoycon2Data:(const std::vector<uint8_t>&)data;
-  + (void)printParsedData:(const std::map<std::string, float>&)parsed data:(const std::vector<uint8_t>&)data;
-
-
-
- @end
+@end

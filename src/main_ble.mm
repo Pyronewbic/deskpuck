@@ -1,43 +1,21 @@
-#import "Joycon2BLEReceiver.h"
-#ifndef HID_ENABLE
-#import "Joycon2VirtualHID.h"
-#endif
+#import "JMController.h"
 
-int main(int argc, const char * argv[]) {
-    EmulationMode mode = MODE_BOTH; // Default to both
+#include <cstdio>
+#include <cstring>
 
-    // Parse command line arguments
+int main(int argc, const char* argv[]) {
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--mouse") == 0) {
-            mode = MODE_MOUSE;
-        } else if (strcmp(argv[i], "--gamepad") == 0) {
-            mode = MODE_GAMEPAD;
-        } else {
-            fprintf(stderr, "Usage: %s [--mouse | --gamepad]\n", argv[0]);
-            fprintf(stderr, "  --mouse: Emulate mouse only\n");
-            fprintf(stderr, "  --gamepad: Emulate gamepad only (not implemented yet)\n");
-            fprintf(stderr, "  No option: Emulate both (default)\n");
+        // --mouse is accepted for compatibility; mouse output is the only mode.
+        if (strcmp(argv[i], "--mouse") != 0) {
+            fprintf(stderr, "Usage: %s [--mouse]\n", argv[0]);
             return 1;
         }
     }
 
     @autoreleasepool {
-        Joycon2BLEReceiver *viewer = [[Joycon2BLEReceiver alloc] init];
-#ifndef HID_ENABLE
-        Joycon2VirtualHID *hid = [[Joycon2VirtualHID alloc] initWithMode:mode];
-#endif
-        if (viewer
-#ifndef HID_ENABLE
-            && hid
-#endif
-            ) {
-            [viewer startScan];
-            CFRunLoopRun();
-            [viewer release];
-#ifndef HID_ENABLE
-            [hid release];
-#endif
-        }
+        JMController* controller = [[JMController alloc] init];
+        [controller start];
+        CFRunLoopRun();
     }
     return 0;
 }

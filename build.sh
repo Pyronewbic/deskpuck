@@ -1,40 +1,29 @@
 #!/bin/bash
-
-# Joy-Con HID Emulator Build Script
-
-echo "Building Joy-Con2forMac Utility..."
+# Build the joymouse command-line tool into build/Joycon2VirtualHID.
+# Usage: ./build.sh [FULL] [debug|release]   (FULL is the only mode; kept for compatibility)
+set -euo pipefail
 
 cd "$(dirname "$0")"
-
-# Create build directory
 mkdir -p build
 
-# Build mode: FULL, BLE_ONLY
 BUILD_MODE=${1:-FULL}
-# Build type: debug, release
 BUILD_TYPE=${2:-debug}
 
-# Set debug flag
+if [ "$BUILD_MODE" != "FULL" ]; then
+    echo "Invalid BUILD_MODE: $BUILD_MODE. Use FULL."
+    exit 1
+fi
+
+DEBUG_FLAG=""
 if [ "$BUILD_TYPE" = "debug" ]; then
     DEBUG_FLAG="-DDEBUG"
-else
-    DEBUG_FLAG=""
 fi
 
-    if [ "$BUILD_MODE" = "FULL" ]; then
-    echo "Building in FULL mode (Joycon2VirtualHID with BLE and HID emulation) in $BUILD_TYPE mode..."
-    clang++ -x objective-c++ $DEBUG_FLAG -framework Foundation -framework IOKit -framework CoreBluetooth -framework ApplicationServices -Iinclude src/Joycon2VirtualHID.mm src/Joycon2BLEReceiver.mm src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp src/main_ble.mm -o build/Joycon2VirtualHID
-    elif [ "$BUILD_MODE" = "BLE_ONLY" ]; then
-    echo "Building in BLE_ONLY mode (Joycon2BLEReceiver for BLE communication only) in $BUILD_TYPE mode..."
-    clang++ -x objective-c++ $DEBUG_FLAG -DHID_ENABLE -framework Foundation -framework CoreBluetooth -Iinclude src/Joycon2BLEReceiver.mm src/main_ble.mm -o build/Joycon2BLEReceiver
-else
-    echo "Invalid BUILD_MODE: $BUILD_MODE. Use FULL or BLE_ONLY."
-    exit 1
-fi
-
-if [ $? -eq 0 ]; then
-    echo "Build successful! Executable: $BUILD_MODE mode ($BUILD_TYPE)"
-else
-    echo "Build failed!"
-    exit 1
-fi
+echo "Building Joycon2VirtualHID ($BUILD_TYPE)..."
+clang++ -x objective-c++ -std=c++17 -fobjc-arc $DEBUG_FLAG \
+    -framework Foundation -framework CoreBluetooth -framework ApplicationServices \
+    -Iinclude \
+    src/JMController.mm src/Joycon2BLEReceiver.mm src/Joycon2Engine.cpp \
+    src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp src/main_ble.mm \
+    -o build/Joycon2VirtualHID
+echo "Build successful! Executable: build/Joycon2VirtualHID ($BUILD_TYPE)"

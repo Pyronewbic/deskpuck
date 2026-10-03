@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build/tests
 
-CORE_SOURCES="src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp"
+CORE_SOURCES="src/Joycon2Engine.cpp src/Joycon2InputMapping.cpp src/Joycon2Packet.cpp"
 CXXFLAGS="-std=c++17 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fno-sanitize-recover=all"
 
 total=0

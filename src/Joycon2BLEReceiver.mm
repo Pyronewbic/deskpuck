@@ -332,23 +332,15 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
             try {
                 std::vector<uint8_t> dataVector((uint8_t*)data.bytes, (uint8_t*)data.bytes + data.length);
 
-                auto parsedData = [Joycon2BLEReceiver parseJoycon2Data:dataVector];
-
-                int packetId = (int)parsedData.at("PacketID");
-                if (packetId >= 65 && packetId <= 75) {
-                    std::cout << "🔍 PacketID around 70: " << packetId << std::endl;
+                Joycon2Report report;
+                if (!parseJoycon2Report(dataVector.data(), dataVector.size(), &report)) {
+                    return;
                 }
 
+                [Joycon2BLEReceiver printReport:report data:dataVector];
 
-
-                [Joycon2BLEReceiver printParsedData:parsedData data:dataVector];
-
-                if (self.onDataReceived) {
-                    NSMutableDictionary* dict = [NSMutableDictionary dictionary];
-                    for (const auto& pair : parsedData) {
-                        [dict setObject:@(pair.second) forKey:[NSString stringWithUTF8String:pair.first.c_str()]];
-                    }
-                    self.onDataReceived(dict);
+                if (self.onReportReceived) {
+                    self.onReportReceived(report);
                 }
             } catch (const std::exception& e) {
                 std::cout << "❌ Data parsing error: " << e.what() << std::endl;
@@ -448,49 +440,11 @@ static Joycon2BLEReceiver* sharedInstance = nil;
     return @"Unknown";
 }
 
-+ (std::map<std::string, float>)parseJoycon2Data:(const std::vector<uint8_t>&)data {
-    std::map<std::string, float> parsed;
-    Joycon2Report r;
-    if (!parseJoycon2Report(data.data(), data.size(), &r)) {
-        std::cout << "❌ Insufficient data size for parsing: " << data.size() << " bytes" << std::endl;
-        return parsed;
-    }
-
-    parsed["PacketID"] = (float) r.packetId;
-    parsed["Buttons"] = (float) r.buttons;
-    parsed["TriggerL"] = (float) r.triggerL;
-    parsed["TriggerR"] = (float) r.triggerR;
-    parsed["LeftStickX"] = (float) r.leftStickX;
-    parsed["LeftStickY"] = (float) r.leftStickY;
-    parsed["RightStickX"] = (float) r.rightStickX;
-    parsed["RightStickY"] = (float) r.rightStickY;
-    parsed["AccelX"] = (float) r.accelX;
-    parsed["AccelY"] = (float) r.accelY;
-    parsed["AccelZ"] = (float) r.accelZ;
-    parsed["GyroX"] = (float) r.gyroX;
-    parsed["GyroY"] = (float) r.gyroY;
-    parsed["GyroZ"] = (float) r.gyroZ;
-    parsed["MagX"] = (float) r.magX;
-    parsed["MagY"] = (float) r.magY;
-    parsed["MagZ"] = (float) r.magZ;
-    parsed["MouseX"] = (float) r.mouseX;
-    parsed["MouseY"] = (float) r.mouseY;
-    parsed["MouseUnk"] = (float) r.mouseUnknown;
-    parsed["MouseDistance"] = (float) r.mouseDistance;
-    parsed["BatteryVoltageRaw"] = (float) r.batteryVoltageRaw;
-    parsed["BatteryCurrentRaw"] = (float) r.batteryCurrentRaw;
-    parsed["TemperatureRaw"] = (float) r.temperatureRaw;
-    parsed["BatteryVoltage"] = r.batteryVoltage();
-    parsed["BatteryCurrent"] = r.batteryCurrent();
-    parsed["Temperature"] = r.temperature();
-    return parsed;
-}
-
 static int16_t lastMouseX = 0;
 static int16_t lastMouseY = 0;
 static int dataCounter = 0;
 
-+ (void)printParsedData:(const std::map<std::string, float>&)parsed data:(const std::vector<uint8_t>&)data {
++ (void)printReport:(const Joycon2Report&)report data:(const std::vector<uint8_t>&)data {
     dataCounter++;
     auto currentTime = std::chrono::system_clock::now();
     auto currentMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
@@ -512,9 +466,9 @@ static int dataCounter = 0;
         }
         log("DATA", "Packet_HEX: " + hexStream.str());
 
-        log("DATA", "PacketID: " + std::to_string((int)parsed.at("PacketID")));
+        log("DATA", "PacketID: " + std::to_string((int)report.packetId));
 
-        uint32_t buttons = (uint32_t)parsed.at("Buttons");
+        uint32_t buttons = report.buttons;
         std::stringstream buttonHex;
         buttonHex << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << buttons;
         log("DATA", "Buttons: 0x" + buttonHex.str());
@@ -527,17 +481,17 @@ static int dataCounter = 0;
         }
         log("DATA", "Pressed: " + pressed);
 
-        log("DATA", "Analog_Triggers: L=" + std::to_string((int)parsed.at("TriggerL")) + ", R=" + std::to_string((int)parsed.at("TriggerR")));
+        log("DATA", "Analog_Triggers: L=" + std::to_string((int)report.triggerL) + ", R=" + std::to_string((int)report.triggerR));
 
-        log("DATA", "LeftStick: X=" + std::to_string((int)parsed.at("LeftStickX")) + ", Y=" + std::to_string((int)parsed.at("LeftStickY")));
-        log("DATA", "RightStick: X=" + std::to_string((int)parsed.at("RightStickX")) + ", Y=" + std::to_string((int)parsed.at("RightStickY")));
+        log("DATA", "LeftStick: X=" + std::to_string((int)report.leftStickX) + ", Y=" + std::to_string((int)report.leftStickY));
+        log("DATA", "RightStick: X=" + std::to_string((int)report.rightStickX) + ", Y=" + std::to_string((int)report.rightStickY));
 
-        log("DATA", "Accel: X=" + std::to_string((int)parsed.at("AccelX")) + ", Y=" + std::to_string((int)parsed.at("AccelY")) + ", Z=" + std::to_string((int)parsed.at("AccelZ")));
-        log("DATA", "Gyro: X=" + std::to_string((int)parsed.at("GyroX")) + ", Y=" + std::to_string((int)parsed.at("GyroY")) + ", Z=" + std::to_string((int)parsed.at("GyroZ")));
-        log("DATA", "Mag: X=" + std::to_string((int)parsed.at("MagX")) + ", Y=" + std::to_string((int)parsed.at("MagY")) + ", Z=" + std::to_string((int)parsed.at("MagZ")));
+        log("DATA", "Accel: X=" + std::to_string((int)report.accelX) + ", Y=" + std::to_string((int)report.accelY) + ", Z=" + std::to_string((int)report.accelZ));
+        log("DATA", "Gyro: X=" + std::to_string((int)report.gyroX) + ", Y=" + std::to_string((int)report.gyroY) + ", Z=" + std::to_string((int)report.gyroZ));
+        log("DATA", "Mag: X=" + std::to_string((int)report.magX) + ", Y=" + std::to_string((int)report.magY) + ", Z=" + std::to_string((int)report.magZ));
 
-        int16_t currentMouseX = (int16_t)parsed.at("MouseX");
-        int16_t currentMouseY = (int16_t)parsed.at("MouseY");
+        int16_t currentMouseX = report.mouseX;
+        int16_t currentMouseY = report.mouseY;
         int16_t deltaX = currentMouseX - lastMouseX;
         int16_t deltaY = currentMouseY - lastMouseY;
         log("DATA", "Mouse: X=" + std::to_string(currentMouseX) + ", Y=" + std::to_string(currentMouseY) + ", DeltaX=" + std::to_string(deltaX) + ", DeltaY=" + std::to_string(deltaY));
@@ -546,11 +500,11 @@ static int dataCounter = 0;
         lastMouseY = currentMouseY;
 
         std::stringstream battery;
-        battery << std::fixed << std::setprecision(2) << parsed.at("BatteryVoltage") << "V, " << parsed.at("BatteryCurrent") << "mA";
+        battery << std::fixed << std::setprecision(2) << report.batteryVoltage() << "V, " << report.batteryCurrent() << "mA";
         log("DATA", "Battery: " + battery.str());
 
         std::stringstream temp;
-        temp << std::fixed << std::setprecision(1) << parsed.at("Temperature") << "°C";
+        temp << std::fixed << std::setprecision(1) << report.temperature() << "°C";
         log("DATA", "Temperature: " + temp.str());
 
         std::cout << std::flush;
@@ -575,9 +529,9 @@ static int dataCounter = 0;
         }
         std::cout << "Packet_HEX: " << hexStream.str() << std::endl;
 
-        std::cout << "PacketID: " << (int)parsed.at("PacketID") << std::endl;
+        std::cout << "PacketID: " << (int)report.packetId << std::endl;
 
-        uint32_t buttons = (uint32_t)parsed.at("Buttons");
+        uint32_t buttons = report.buttons;
         std::stringstream buttonHex;
         buttonHex << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << buttons;
         std::cout << "Buttons: " << buttonHex.str() << std::endl;
@@ -590,17 +544,17 @@ static int dataCounter = 0;
         }
         std::cout << "Pressed: " << pressed << std::endl;
 
-        std::cout << "Analog_Triggers: L=" << (int)parsed.at("TriggerL") << ", R=" << (int)parsed.at("TriggerR") << std::endl;
+        std::cout << "Analog_Triggers: L=" << (int)report.triggerL << ", R=" << (int)report.triggerR << std::endl;
 
-        std::cout << "LeftStick: X=" << (int)parsed.at("LeftStickX") << ", Y=" << (int)parsed.at("LeftStickY") << std::endl;
-        std::cout << "RightStick: X=" << (int)parsed.at("RightStickX") << ", Y=" << (int)parsed.at("RightStickY") << std::endl;
+        std::cout << "LeftStick: X=" << (int)report.leftStickX << ", Y=" << (int)report.leftStickY << std::endl;
+        std::cout << "RightStick: X=" << (int)report.rightStickX << ", Y=" << (int)report.rightStickY << std::endl;
 
-        std::cout << "Accel: X=" << (int)parsed.at("AccelX") << ", Y=" << (int)parsed.at("AccelY") << ", Z=" << (int)parsed.at("AccelZ") << std::endl;
-        std::cout << "Gyro: X=" << (int)parsed.at("GyroX") << ", Y=" << (int)parsed.at("GyroY") << ", Z=" << (int)parsed.at("GyroZ") << std::endl;
-        std::cout << "Mag: X=" << (int)parsed.at("MagX") << ", Y=" << (int)parsed.at("MagY") << ", Z=" << (int)parsed.at("MagZ") << std::endl;
+        std::cout << "Accel: X=" << (int)report.accelX << ", Y=" << (int)report.accelY << ", Z=" << (int)report.accelZ << std::endl;
+        std::cout << "Gyro: X=" << (int)report.gyroX << ", Y=" << (int)report.gyroY << ", Z=" << (int)report.gyroZ << std::endl;
+        std::cout << "Mag: X=" << (int)report.magX << ", Y=" << (int)report.magY << ", Z=" << (int)report.magZ << std::endl;
 
-        int16_t currentMouseX = (int16_t)parsed.at("MouseX");
-        int16_t currentMouseY = (int16_t)parsed.at("MouseY");
+        int16_t currentMouseX = report.mouseX;
+        int16_t currentMouseY = report.mouseY;
         int16_t deltaX = currentMouseX - lastMouseX;
         int16_t deltaY = currentMouseY - lastMouseY;
         std::cout << "Mouse: X=" << currentMouseX << ", Y=" << currentMouseY << ", DeltaX=" << deltaX << ", DeltaY=" << deltaY << std::endl;
@@ -609,11 +563,11 @@ static int dataCounter = 0;
         lastMouseY = currentMouseY;
 
         std::stringstream battery;
-        battery << std::fixed << std::setprecision(2) << parsed.at("BatteryVoltage") << "V, " << parsed.at("BatteryCurrent") << "mA";
+        battery << std::fixed << std::setprecision(2) << report.batteryVoltage() << "V, " << report.batteryCurrent() << "mA";
         std::cout << "Battery: " << battery.str() << std::endl;
 
         std::stringstream temp;
-        temp << std::fixed << std::setprecision(1) << parsed.at("Temperature") << "°C";
+        temp << std::fixed << std::setprecision(1) << report.temperature() << "°C";
         std::cout << "Temperature: " << temp.str() << std::endl;
 
         std::cout << std::flush;
