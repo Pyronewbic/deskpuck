@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-constexpr size_t kJoycon2ReportMinSize = 0x3C;
+// Smallest input report that contains every field below (triggers end at 0x3D).
+constexpr size_t kJoycon2ReportMinSize = 0x3E;
 
 struct Joycon2Report {
     uint32_t packetId;

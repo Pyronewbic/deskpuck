@@ -315,8 +315,8 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
     if ([characteristic.UUID.UUIDString isEqualToString:SUBSCRIBE_CHARACTERISTIC_UUID]) {
         if (data.length > 0) {
-            if (data.length < 0x3C) {
-                std::cout << "⚠️  Received data packet too small (" << data.length << " bytes, expected >= 60)" << std::endl;
+            if (data.length < kJoycon2ReportMinSize) {
+                std::cout << "⚠️  Received data packet too small (" << data.length << " bytes, expected >= " << kJoycon2ReportMinSize << ")" << std::endl;
                 return;
             }
 
@@ -331,11 +331,6 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
             try {
                 std::vector<uint8_t> dataVector((uint8_t*)data.bytes, (uint8_t*)data.bytes + data.length);
-
-                if (dataVector.size() < 0x3C) {
-                    std::cout << "❌ Data vector size invalid: " << dataVector.size() << std::endl;
-                    return;
-                }
 
                 auto parsedData = [Joycon2BLEReceiver parseJoycon2Data:dataVector];
 

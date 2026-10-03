@@ -115,7 +115,8 @@ static void testSyntheticFields() {
 }
 
 static void testShortReportsRejected() {
-    std::vector<uint8_t> sizes = {0, 1, 59};
+    // 60 and 61 bytes pass a ">= 60" check but the triggers live at 0x3C and 0x3D.
+    std::vector<uint8_t> sizes = {0, 1, 59, 60, 61};
     for (uint8_t size : sizes) {
         std::vector<uint8_t> bytes(size, 0xAB);
         Joycon2Report r;
@@ -123,6 +124,13 @@ static void testShortReportsRejected() {
         CHECK(!parseJoycon2Report(bytes.data(), bytes.size(), &r));
         CHECK(r.packetId == 0x5A5A5A5Au);
     }
+
+    // Positive control: the smallest report holding both trigger bytes is accepted.
+    std::vector<uint8_t> smallest(62, 0);
+    smallest[0x3D] = 0x7F;
+    Joycon2Report r;
+    CHECK(parseJoycon2Report(smallest.data(), smallest.size(), &r));
+    CHECK(r.triggerR == 0x7F);
 }
 
 static void testButtonNames() {
