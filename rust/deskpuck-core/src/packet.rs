@@ -101,6 +101,37 @@ pub fn parse_report(data: &[u8]) -> Option<Report> {
     })
 }
 
+/// Inverse of `parse_report`: a `REPORT_MIN_SIZE`-byte report. Stick values
+/// keep their low 12 bits and the packet id its low 24, as on the wire.
+pub fn encode_report(r: &Report) -> Vec<u8> {
+    let mut b = vec![0u8; REPORT_MIN_SIZE];
+    let mut put =
+        |offset: usize, bytes: &[u8]| b[offset..offset + bytes.len()].copy_from_slice(bytes);
+    let stick = |x: u16, y: u16| (u32::from(x) & 0xFFF) | ((u32::from(y) & 0xFFF) << 12);
+    put(0x00, &r.packet_id.to_le_bytes()[..3]);
+    put(0x03, &r.buttons.to_le_bytes());
+    put(0x0A, &stick(r.left_stick_x, r.left_stick_y).to_le_bytes()[..3]);
+    put(0x0D, &stick(r.right_stick_x, r.right_stick_y).to_le_bytes()[..3]);
+    put(0x10, &r.mouse_x.to_le_bytes());
+    put(0x12, &r.mouse_y.to_le_bytes());
+    put(0x14, &r.mouse_unknown.to_le_bytes());
+    put(0x16, &r.mouse_distance.to_le_bytes());
+    put(0x18, &r.mag_x.to_le_bytes());
+    put(0x1A, &r.mag_y.to_le_bytes());
+    put(0x1C, &r.mag_z.to_le_bytes());
+    put(0x1F, &r.battery_voltage_raw.to_le_bytes());
+    put(0x28, &r.battery_current_raw.to_le_bytes());
+    put(0x2E, &r.temperature_raw.to_le_bytes());
+    put(0x30, &r.accel_x.to_le_bytes());
+    put(0x32, &r.accel_y.to_le_bytes());
+    put(0x34, &r.accel_z.to_le_bytes());
+    put(0x36, &r.gyro_x.to_le_bytes());
+    put(0x38, &r.gyro_y.to_le_bytes());
+    put(0x3A, &r.gyro_z.to_le_bytes());
+    put(0x3C, &[r.trigger_l, r.trigger_r]);
+    b
+}
+
 const BUTTONS: [(u32, &str); 23] = [
     (0x0000_0100, "Y"),
     (0x0000_0200, "X"),

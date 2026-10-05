@@ -1,4 +1,4 @@
-use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
+use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, encode_report, parse_report};
 use proptest::prelude::*;
 
 // Encodes a report at the documented offsets independently of the parser's readers.
@@ -90,6 +90,13 @@ proptest! {
         filler in any::<u8>(),
     ) {
         let bytes = encode(&report, REPORT_MIN_SIZE + extra, filler);
+        prop_assert_eq!(parse_report(&bytes), Some(report));
+    }
+
+    #[test]
+    fn library_encoder_matches_documented_layout(report in any_report()) {
+        let bytes = encode_report(&report);
+        prop_assert_eq!(&bytes, &encode(&report, REPORT_MIN_SIZE, 0));
         prop_assert_eq!(parse_report(&bytes), Some(report));
     }
 
