@@ -100,11 +100,32 @@ fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
     Ok(Box::new(deskpuck_inject::macos::MacSink::new()?))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
-    Err(InjectError::Failed(
-        "Live injection is not available on this OS yet; use --dry-run.".into(),
-    ))
+    Ok(Box::new(deskpuck_inject::linux::LinuxSink::new()?))
+}
+
+#[cfg(windows)]
+fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
+    Ok(Box::new(deskpuck_inject::windows::WindowsSink::new()?))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
+    Err(InjectError::Failed("Live injection is not available on this OS; use --dry-run.".into()))
+}
+
+/// Mapped keys this OS cannot type; the sink skips them, so say so up front.
+fn untranslatable_keys(settings: &EngineSettings) -> Vec<u16> {
+    if cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    settings
+        .key_mappings
+        .iter()
+        .map(|m| m.key_code)
+        .filter(|&code| deskpuck_inject::keymap::lookup(code).is_none())
+        .collect()
 }
 
 fn report(summary: &Summary) {
@@ -140,6 +161,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+
+    for code in untranslatable_keys(&settings) {
+        note!("deskpuck-replay: key code {code} has no equivalent on this OS and will be skipped");
+    }
 
     let result = if args.dry_run {
         let at = Cell::new(0.0);

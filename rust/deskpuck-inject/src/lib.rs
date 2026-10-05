@@ -5,8 +5,13 @@ use deskpuck_core::engine::EngineOutput;
 use deskpuck_core::mapping::{KeyCode, MouseButton, MoveKind, mouse_move_kind};
 use std::fmt;
 
+pub mod keymap;
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(windows)]
+pub mod windows;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InputEvent {
@@ -51,6 +56,37 @@ impl std::error::Error for InjectError {}
 
 pub trait Sink {
     fn post(&mut self, event: &InputEvent) -> Result<(), InjectError>;
+}
+
+/// Carries the fraction of relative motion between events, for backends that
+/// can only post whole units, so slow movement adds up instead of vanishing.
+#[derive(Debug, Default)]
+pub struct Accumulator {
+    remainder: f64,
+}
+
+impl Accumulator {
+    /// Whole units to post now. Non-finite input is dropped and never poisons
+    /// later events; values past i32 saturate.
+    pub fn take(&mut self, amount: f64) -> i32 {
+        if !amount.is_finite() {
+            return 0;
+        }
+        let total = self.remainder + amount;
+        let whole = total.trunc();
+        self.remainder = total - whole;
+        whole as i32
+    }
+}
+
+/// Hi-res wheel units per notch: Windows WHEEL_DELTA and Linux REL_WHEEL_HI_RES.
+pub const WHEEL_UNITS_PER_NOTCH: i32 = 120;
+/// Scroll pixels that make one wheel notch where a backend scrolls in notches.
+pub const PIXELS_PER_NOTCH: i32 = 40;
+
+/// Hi-res wheel units for a scroll of `pixels`.
+pub fn wheel_units(pixels: i32) -> i32 {
+    pixels.saturating_mul(WHEEL_UNITS_PER_NOTCH / PIXELS_PER_NOTCH)
 }
 
 /// Turns each engine output into events in posting order, remembering which
@@ -185,6 +221,38 @@ mod tests {
                 InputEvent::Key { key_code: 126, down: true, repeat: true },
             ]
         );
+    }
+
+    #[test]
+    fn accumulator_keeps_fractions() {
+        let mut acc = Accumulator::default();
+        assert_eq!([0.4, 0.4, 0.4].map(|v| acc.take(v)), [0, 0, 1]);
+        let mut acc = Accumulator::default();
+        assert_eq!([-0.6, -0.6].map(|v| acc.take(v)), [0, -1]);
+        // Reversing direction cancels the carried fraction instead of adding to it.
+        let mut acc = Accumulator::default();
+        assert_eq!([0.6, -0.6, 0.6].map(|v| acc.take(v)), [0, 0, 0]);
+        // Total over many small steps matches the exact sum.
+        let mut acc = Accumulator::default();
+        assert_eq!((0..1000).map(|_| acc.take(0.2)).sum::<i32>(), 200);
+    }
+
+    #[test]
+    fn accumulator_survives_bad_input() {
+        let mut acc = Accumulator::default();
+        acc.take(0.5);
+        assert_eq!(acc.take(f64::NAN), 0);
+        assert_eq!(acc.take(f64::INFINITY), 0);
+        // Positive control: the 0.5 carried before the bad input still counts.
+        assert_eq!(acc.take(0.5), 1);
+        assert_eq!(Accumulator::default().take(1e12), i32::MAX);
+    }
+
+    #[test]
+    fn wheel_unit_scale() {
+        assert_eq!(wheel_units(PIXELS_PER_NOTCH), WHEEL_UNITS_PER_NOTCH);
+        assert_eq!(wheel_units(-5), -15);
+        assert_eq!(wheel_units(i32::MAX), i32::MAX);
     }
 
     struct FailAfter(usize);
