@@ -19,7 +19,8 @@ dmg="dist/Deskpuck-$version.dmg"
 zip="dist/Deskpuck-$version.zip"
 
 if [ ! -x .venv/bin/dmgbuild ] || ! .venv/bin/pip show dmgbuild 2>/dev/null | grep -qx "Version: $DMGBUILD_VERSION"; then
-    python3 -m venv .venv
+    # --clear: a venv records absolute paths, so one from a moved checkout is broken.
+    python3 -m venv --clear .venv
     .venv/bin/pip install --quiet "dmgbuild==$DMGBUILD_VERSION"
 fi
 
