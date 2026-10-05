@@ -1,6 +1,6 @@
 //! Connects to a Joy-Con 2 over Bluetooth LE and drives the pointer, like the
-//! Mac app's deskpuck-cli. All the work happens in `controller`; this file
-//! only parses options and prints.
+//! Mac app without a menu bar icon. All the work happens in `controller`; this
+//! file only parses options and prints.
 
 use deskpuck_ble::Monitor;
 use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, MessageHook, ReportHook};
@@ -20,7 +20,7 @@ macro_rules! note {
 }
 
 const USAGE: &str = "\
-Usage: deskpuck-blecli [--config PATH] [--verbose] [--monitor]
+Usage: deskpuck-cli [--config PATH] [--verbose] [--monitor]
 
 Connects to a Joy-Con 2 over Bluetooth and uses it as a mouse and keyboard.
 Hold SYNC on the Joy-Con to connect. Ctrl+C releases any held input and quits.
@@ -116,7 +116,7 @@ fn main() -> ExitCode {
         Ok(args) => args,
         Err(problem) => {
             if !problem.is_empty() {
-                note!("deskpuck-blecli: {problem}\n");
+                note!("deskpuck-cli: {problem}\n");
             }
             note!("{USAGE}");
             return ExitCode::from(if problem.is_empty() { 0 } else { 2 });
@@ -125,7 +125,7 @@ fn main() -> ExitCode {
     let settings = match load_settings(args.config.clone()) {
         Ok(settings) => settings,
         Err(problem) => {
-            note!("deskpuck-blecli: {problem}");
+            note!("deskpuck-cli: {problem}");
             return ExitCode::from(2);
         }
     };
@@ -133,7 +133,7 @@ fn main() -> ExitCode {
     let sink = match deskpuck_inject::platform_sink() {
         Ok(sink) => sink,
         Err(e) => {
-            note!("deskpuck-blecli: {e}");
+            note!("deskpuck-cli: {e}");
             return ExitCode::from(if matches!(e, InjectError::NotPermitted(_)) { 3 } else { 1 });
         }
     };
@@ -164,19 +164,19 @@ fn main() -> ExitCode {
             }) as ReportHook
         }),
         log: args.verbose.then(|| Box::new(|message: &str| note!("ble: {message}")) as MessageHook),
-        error: Box::new(|message| note!("deskpuck-blecli: {message}")),
+        error: Box::new(|message| note!("deskpuck-cli: {message}")),
     };
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(e) => {
-            note!("deskpuck-blecli: could not start: {e}");
+            note!("deskpuck-cli: could not start: {e}");
             return ExitCode::from(1);
         }
     };
     let quit = match runtime.block_on(async { quit_signals() }) {
         Ok(quit) => quit,
         Err(e) => {
-            note!("deskpuck-blecli: could not start: {e}");
+            note!("deskpuck-cli: could not start: {e}");
             return ExitCode::from(1);
         }
     };
@@ -187,7 +187,7 @@ fn main() -> ExitCode {
     let controller = match Controller::start(settings, sink, hooks) {
         Ok(controller) => controller,
         Err(e) => {
-            note!("deskpuck-blecli: could not start: {e}");
+            note!("deskpuck-cli: could not start: {e}");
             return ExitCode::from(1);
         }
     };

@@ -6,7 +6,6 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Deskpuck", targets: ["Deskpuck"]),
-        .executable(name: "deskpuck-cli", targets: ["deskpuck-cli"]),
     ],
     targets: [
         .target(
@@ -17,7 +16,6 @@ let package = Package(
                 .linkedFramework("Foundation"),
             ]
         ),
-        .executableTarget(name: "deskpuck-cli", dependencies: ["DeskpuckCore"]),
         // The Rust core's static library, built by scripts/build-rust.sh.
         .systemLibrary(name: "DeskpuckFFI", path: "Sources/DeskpuckFFI"),
         .executableTarget(

@@ -10,14 +10,14 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 **`rust/`**: the core, cross-platform.
 - `deskpuck-core`: parses a report into fields (buttons, sticks, optical sensor, IMU), turns reports into output (pointer deltas, mouse buttons, wheel, key events with repeat), keeps the pointer on screen, and reads and writes `config.json`.
-- `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. Shared by the app and `deskpuck-blecli`.
+- `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. Shared by the app and the `deskpuck-cli` command-line tool.
 - `deskpuck-inject`: turns engine output into events and posts them through a backend per OS: CGEvent, uinput, or SendInput.
 - `deskpuck-ffi`: the C interface the app calls (`include/deskpuck.h`), built as a static library by `scripts/build-rust.sh`. Settings cross it as JSON.
 - `deskpuck-replay`: feeds a built-in demo or a capture file through engine and backend, so the input layer can be tested without Bluetooth.
 
 **`Sources/Deskpuck/`**: the menu bar app (Swift, AppKit and SwiftUI): status menu, Settings window, menu bar glyph. `Core.swift` wraps the C interface; `Sources/DeskpuckFFI/` is its module map.
 
-**`Sources/DeskpuckCore/`**, **`Sources/deskpuck-cli/`**, **`tests/`**: the previous C++ core, its command-line tool and its tests. The app no longer uses them, and they will be removed. `tests/fixtures/joycon2_r_capture.txt` is a capture from real hardware that the Rust tests also read.
+**`Sources/DeskpuckCore/`**, **`tests/`**: the previous C++ core and its tests. The app no longer uses them, and they will be removed along with `Sources/deskpuck-cli/`, the old C++ command-line tool, which is no longer built. `tests/fixtures/joycon2_r_capture.txt` is a capture from real hardware that the Rust tests also read.
 
 **`scripts/`**: build, sign and package the app.
 

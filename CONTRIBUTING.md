@@ -21,17 +21,17 @@ scripts/make-dmg.sh          # dist/Deskpuck-<version>.dmg and .zip
 
 `make-app.sh` signs with a self-signed certificate named "Deskpuck Dev" (or the one named in `DESKPUCK_SIGN_IDENTITY`), so macOS keeps the Accessibility permission across rebuilds. If the certificate is missing, it prints the one-time steps to create it in Keychain Access. `--adhoc` skips the certificate, but then the permission resets on every build.
 
-To debug input, run the same core without the app: `deskpuck-blecli --monitor` shows a live readout of every Joy-Con report (see [Rust workspace](#rust-workspace)). Only one program can connect to the Joy-Con at a time, so quit the app first.
+To debug input, run the same core without the app: `deskpuck-cli --monitor` shows a live readout of every Joy-Con report (see [Rust workspace](#rust-workspace)). Only one program can connect to the Joy-Con at a time, so quit the app first.
 
 ## Rust workspace
 
-`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-blecli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links) and `deskpuck-replay` (a tool that drives the backends without Bluetooth).
+`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-cli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links) and `deskpuck-replay` (a tool that drives the backends without Bluetooth).
 
 ```sh
 cd rust
 cargo test
 cargo clippy --all-targets
-cargo run --release --bin deskpuck-blecli -- --monitor   # Joy-Con over Bluetooth
+cargo run --release --bin deskpuck-cli -- --monitor   # Joy-Con over Bluetooth
 cargo run --release -p deskpuck-replay -- --dry-run      # print the events
 cargo run --release -p deskpuck-replay                   # post them for real
 ```
@@ -47,7 +47,7 @@ EOF
 sudo usermod -aG input "$USER"   # then log out and back in
 ```
 
-`deskpuck-blecli` reads the app's `config.json` (`--config` picks another file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
+`deskpuck-cli` reads the app's `config.json` (`--config` picks another file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
 
 ## Changes
 

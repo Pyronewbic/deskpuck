@@ -3,9 +3,9 @@
 
 use std::process::{Command, Output};
 
-const BIN: &str = env!("CARGO_BIN_EXE_deskpuck-blecli");
+const BIN: &str = env!("CARGO_BIN_EXE_deskpuck-cli");
 
-fn blecli(args: &[&str]) -> Output {
+fn cli(args: &[&str]) -> Output {
     Command::new(BIN).args(args).output().expect("binary runs")
 }
 
@@ -15,23 +15,23 @@ fn stderr(out: &Output) -> String {
 
 #[test]
 fn help_exits_0() {
-    let out = blecli(&["--help"]);
+    let out = cli(&["--help"]);
     assert_eq!(out.status.code(), Some(0));
-    assert!(stderr(&out).contains("Usage: deskpuck-blecli"));
+    assert!(stderr(&out).contains("Usage: deskpuck-cli"));
 }
 
 #[test]
 fn usage_errors_exit_2() {
     for args in [&["--bogus"][..], &["--config"], &["--mouse"]] {
-        let out = blecli(args);
+        let out = cli(args);
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
-        assert!(stderr(&out).contains("Usage: deskpuck-blecli"), "{args:?}");
+        assert!(stderr(&out).contains("Usage: deskpuck-cli"), "{args:?}");
     }
 }
 
 #[test]
 fn missing_config_exits_2_before_bluetooth() {
-    let out = blecli(&["--config", "/nonexistent/deskpuck/config.json"]);
+    let out = cli(&["--config", "/nonexistent/deskpuck/config.json"]);
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
     assert!(stderr(&out).contains("no such file"));
     // Positive control for "before Bluetooth": nothing about scanning was printed.
