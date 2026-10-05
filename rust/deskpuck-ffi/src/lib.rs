@@ -55,8 +55,9 @@ unsafe fn from_c<'a>(s: *const c_char) -> Result<&'a str, String> {
     unsafe { CStr::from_ptr(s) }.to_str().map_err(|_| "argument is not UTF-8".into())
 }
 
-fn guard<T>(fallback: T, body: impl FnOnce() -> T) -> T {
-    catch_unwind(AssertUnwindSafe(body)).unwrap_or(fallback)
+/// The fallback is built only after a panic: an eager one that allocates would leak.
+fn guard<T>(fallback: impl FnOnce() -> T, body: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(body)).unwrap_or_else(|_| fallback())
 }
 
 /// Parses config JSON strictly: any warning is a problem.
@@ -82,7 +83,7 @@ pub unsafe extern "C" fn dp_string_free(string: *mut c_char) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn dp_config_default_path() -> *mut c_char {
-    guard(ptr::null_mut(), || match Config::default_path() {
+    guard(ptr::null_mut, || match Config::default_path() {
         Some(path) => into_c(path.to_string_lossy().into_owned()),
         None => ptr::null_mut(),
     })
@@ -90,14 +91,14 @@ pub extern "C" fn dp_config_default_path() -> *mut c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn dp_config_defaults() -> *mut c_char {
-    guard(ptr::null_mut(), || into_c(Config::default().to_value().to_string()))
+    guard(ptr::null_mut, || into_c(Config::default().to_value().to_string()))
 }
 
 /// # Safety
 /// `path` must be NULL or a valid NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_config_load(path: *const c_char) -> *mut c_char {
-    guard(ptr::null_mut(), || {
+    guard(ptr::null_mut, || {
         // SAFETY: forwarded from the caller's contract.
         let (config, warnings) = match unsafe { from_c(path) } {
             Ok(path) => Config::load(Path::new(path)),
@@ -111,7 +112,7 @@ pub unsafe extern "C" fn dp_config_load(path: *const c_char) -> *mut c_char {
 /// `config_json` must be NULL or a valid NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_config_problems(config_json: *const c_char) -> *mut c_char {
-    guard(ptr::null_mut(), || {
+    guard(ptr::null_mut, || {
         // SAFETY: forwarded from the caller's contract.
         let problems = match unsafe { from_c(config_json) } {
             Ok(json) => parse_config(json).err().unwrap_or_default(),
@@ -128,20 +129,25 @@ pub unsafe extern "C" fn dp_config_save(
     config_json: *const c_char,
     path: *const c_char,
 ) -> *mut c_char {
-    guard(into_c("Could not save the config.".into()), || {
-        // SAFETY: forwarded from the caller's contract.
-        let (json, path) = match unsafe { (from_c(config_json), from_c(path)) } {
-            (Ok(json), Ok(path)) => (json, path),
-            (Err(e), _) | (_, Err(e)) => return into_c(format!("Could not save the config: {e}.")),
-        };
-        match parse_config(json) {
-            Err(problems) => into_c(problems.join(" ")),
-            Ok(config) => match config.save(Path::new(path)) {
-                Ok(()) => ptr::null_mut(),
-                Err(e) => into_c(e.to_string()),
-            },
-        }
-    })
+    guard(
+        || into_c("Could not save the config.".into()),
+        || {
+            // SAFETY: forwarded from the caller's contract.
+            let (json, path) = match unsafe { (from_c(config_json), from_c(path)) } {
+                (Ok(json), Ok(path)) => (json, path),
+                (Err(e), _) | (_, Err(e)) => {
+                    return into_c(format!("Could not save the config: {e}."));
+                }
+            };
+            match parse_config(json) {
+                Err(problems) => into_c(problems.join(" ")),
+                Ok(config) => match config.save(Path::new(path)) {
+                    Ok(()) => ptr::null_mut(),
+                    Err(e) => into_c(e.to_string()),
+                },
+            }
+        },
+    )
 }
 
 pub struct DpController {
@@ -158,7 +164,7 @@ pub unsafe extern "C" fn dp_controller_start(
     on_status: Option<StatusCallback>,
     context: *mut c_void,
 ) -> *mut DpController {
-    guard(ptr::null_mut(), || {
+    guard(ptr::null_mut, || {
         // SAFETY: forwarded from the caller's contract.
         let Ok(config) = unsafe { from_c(config_json) }.map_err(|e| vec![e]).and_then(parse_config)
         else {
@@ -185,12 +191,15 @@ pub unsafe extern "C" fn dp_controller_start(
 /// `controller` must be NULL or a live pointer from `dp_controller_start`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_controller_set_paused(controller: *mut DpController, paused: bool) {
-    guard((), || {
-        // SAFETY: live per the caller's contract.
-        if let Some(c) = unsafe { controller.as_ref() } {
-            c.controller.set_paused(paused);
-        }
-    })
+    guard(
+        || (),
+        || {
+            // SAFETY: live per the caller's contract.
+            if let Some(c) = unsafe { controller.as_ref() } {
+                c.controller.set_paused(paused);
+            }
+        },
+    )
 }
 
 /// # Safety
@@ -198,7 +207,7 @@ pub unsafe extern "C" fn dp_controller_set_paused(controller: *mut DpController,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_controller_is_paused(controller: *const DpController) -> bool {
     // SAFETY: live per the caller's contract.
-    guard(false, || unsafe { controller.as_ref() }.is_some_and(|c| c.controller.is_paused()))
+    guard(|| false, || unsafe { controller.as_ref() }.is_some_and(|c| c.controller.is_paused()))
 }
 
 /// # Safety
@@ -209,31 +218,56 @@ pub unsafe extern "C" fn dp_controller_apply_config(
     controller: *mut DpController,
     config_json: *const c_char,
 ) -> *mut c_char {
-    guard(into_c("Could not apply the settings.".into()), || {
-        // SAFETY: live per the caller's contract.
-        let Some(c) = (unsafe { controller.as_ref() }) else {
-            return into_c("No controller.".into());
-        };
-        // SAFETY: forwarded from the caller's contract.
-        match unsafe { from_c(config_json) }.map_err(|e| vec![e]).and_then(parse_config) {
-            Ok(config) => {
-                c.controller.apply_settings(config.engine_settings());
-                ptr::null_mut()
+    guard(
+        || into_c("Could not apply the settings.".into()),
+        || {
+            // SAFETY: live per the caller's contract.
+            let Some(c) = (unsafe { controller.as_ref() }) else {
+                return into_c("No controller.".into());
+            };
+            // SAFETY: forwarded from the caller's contract.
+            match unsafe { from_c(config_json) }.map_err(|e| vec![e]).and_then(parse_config) {
+                Ok(config) => {
+                    c.controller.apply_settings(config.engine_settings());
+                    ptr::null_mut()
+                }
+                Err(problems) => into_c(problems.join(" ")),
             }
-            Err(problems) => into_c(problems.join(" ")),
-        }
-    })
+        },
+    )
 }
 
 /// # Safety
 /// `controller` must be NULL or a pointer from `dp_controller_start`, freed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_controller_free(controller: *mut DpController) {
-    guard((), || {
-        if !controller.is_null() {
-            // SAFETY: allocated by Box::into_raw in dp_controller_start. Dropping
-            // joins the background thread, so no callback runs after this.
-            drop(unsafe { Box::from_raw(controller) });
-        }
-    })
+    guard(
+        || (),
+        || {
+            if !controller.is_null() {
+                // SAFETY: allocated by Box::into_raw in dp_controller_start. Dropping
+                // joins the background thread, so no callback runs after this.
+                drop(unsafe { Box::from_raw(controller) });
+            }
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::guard;
+    use std::cell::Cell;
+
+    #[test]
+    fn guard_builds_the_fallback_only_after_a_panic() {
+        let built = Cell::new(0);
+        let fallback = || {
+            built.set(built.get() + 1);
+            -1
+        };
+        assert_eq!(guard(fallback, || 7), 7);
+        assert_eq!(built.get(), 0);
+        assert_eq!(guard(fallback, || panic!("boom")), -1);
+        assert_eq!(built.get(), 1);
+    }
 }
