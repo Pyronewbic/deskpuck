@@ -10,6 +10,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+dirs = "7.0.0"
+serde_json = "1.0.151"
+tempfile = "3.27.0"
 
 [dev-dependencies]
 proptest = "1"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.190"
