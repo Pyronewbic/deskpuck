@@ -316,3 +316,27 @@ fn quick_reconnect_cancels_the_pending_rescan() {
     r.handle(Input::Disconnected(JOYCON), 10.0);
     assert_eq!(scans(&r.tick(10.0 + RESCAN_AFTER_DISCONNECT)), 1);
 }
+
+#[test]
+fn control_characters_are_removed_from_device_names() {
+    for (advertised, shown) in [
+        ("\x1b]0;evil\x07Joy-Con\r\n", Some("]0;evilJoy-Con")),
+        ("\x1b\x07\0", None),
+        ("Joy-Con 2 (R)", Some("Joy-Con 2 (R)")),
+    ] {
+        let mut r = ready(false);
+        let out = r.handle(
+            Input::Discovered {
+                id: JOYCON,
+                name: Some(advertised.into()),
+                manufacturer_ids: vec![MANUFACTURER_ID],
+            },
+            0.5,
+        );
+        let want = Output::Status { status: Status::Connecting, name: shown.map(Into::into) };
+        assert!(has(&out, &want), "{advertised:?}: {out:?}");
+        r.handle(Input::Connected(JOYCON), 1.0);
+        r.handle(Input::CharacteristicsFound { id: JOYCON, write: true, notify: true }, 2.0);
+        assert_eq!(r.linked().map(|(_, n)| n.map(str::to_owned)), Some(shown.map(Into::into)));
+    }
+}

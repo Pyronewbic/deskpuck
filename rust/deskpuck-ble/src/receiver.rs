@@ -161,6 +161,10 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
                 if self.suspended || busy || !manufacturer_ids.contains(&MANUFACTURER_ID) {
                     return out;
                 }
+                // The advertised name is attacker-chosen and ends up in terminals and menus.
+                let name = name
+                    .map(|n| n.chars().filter(|c| !c.is_control()).collect::<String>())
+                    .filter(|n| !n.is_empty());
                 self.connecting.insert(id.clone(), (now + CONNECT_TIMEOUT, name.clone()));
                 // A rescan still pending from an earlier drop is moot now.
                 self.rescan_at = None;
