@@ -95,26 +95,6 @@ impl Sink for PrintSink<'_> {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
-    Ok(Box::new(deskpuck_inject::macos::MacSink::new()?))
-}
-
-#[cfg(target_os = "linux")]
-fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
-    Ok(Box::new(deskpuck_inject::linux::LinuxSink::new()?))
-}
-
-#[cfg(windows)]
-fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
-    Ok(Box::new(deskpuck_inject::windows::WindowsSink::new()?))
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn live_sink() -> Result<Box<dyn Sink>, InjectError> {
-    Err(InjectError::Failed("Live injection is not available on this OS; use --dry-run.".into()))
-}
-
 /// Mapped keys this OS cannot type; the sink skips them, so say so up front.
 fn untranslatable_keys(settings: &EngineSettings) -> Vec<u16> {
     if cfg!(target_os = "macos") {
@@ -170,7 +150,7 @@ fn main() -> ExitCode {
         let at = Cell::new(0.0);
         run(&frames, settings, &mut PrintSink { at: &at }, &mut |t| at.set(t))
     } else {
-        let mut sink = match live_sink() {
+        let mut sink = match deskpuck_inject::platform_sink() {
             Ok(sink) => sink,
             Err(e) => {
                 note!("deskpuck-replay: {e}");

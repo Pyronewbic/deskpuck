@@ -58,6 +58,19 @@ pub trait Sink {
     fn post(&mut self, event: &InputEvent) -> Result<(), InjectError>;
 }
 
+/// The input backend for this OS. Fails with `NotPermitted` when the OS needs a
+/// permission first (Accessibility on macOS, /dev/uinput access on Linux).
+pub fn platform_sink() -> Result<Box<dyn Sink>, InjectError> {
+    #[cfg(target_os = "macos")]
+    return Ok(Box::new(macos::MacSink::new()?));
+    #[cfg(target_os = "linux")]
+    return Ok(Box::new(linux::LinuxSink::new()?));
+    #[cfg(windows)]
+    return Ok(Box::new(windows::WindowsSink::new()?));
+    #[allow(unreachable_code)]
+    Err(InjectError::Failed("Input injection is not available on this OS.".into()))
+}
+
 /// Carries the fraction of relative motion between events, for backends that
 /// can only post whole units, so slow movement adds up instead of vanishing.
 #[derive(Debug, Default)]
