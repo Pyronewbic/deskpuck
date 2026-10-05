@@ -4,11 +4,7 @@ Use a Nintendo Switch 2 Joy-Con (R) as a Mac mouse and keyboard: slide it on a d
 
 It runs as a normal app with Bluetooth and Accessibility permission. No kernel extension, and no need to turn off System Integrity Protection.
 
-Based on [seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac) (MIT). Bluetooth protocol details from [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research).
-
-Deskpuck is not affiliated with or endorsed by Nintendo. Nintendo Switch and Joy-Con are trademarks of Nintendo.
-
-Tested on macOS 26 on Apple Silicon.
+Tested on macOS 26 on Apple Silicon. The build targets macOS 13 and later, untested there.
 
 ## Install
 
@@ -34,28 +30,31 @@ xattr -dr com.apple.quarantine /Applications/Deskpuck.app
 | Stick click          | Return                          |
 | X / B / Y / A        | Up / Down / Left / Right arrows |
 
-Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. Use **Pause Mouse Control** to set the Joy-Con down without moving the pointer.
+Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
 
-Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
+**Pause Mouse Control** stops the Joy-Con from moving the pointer or pressing keys, and stops Deskpuck from looking for a Joy-Con. A connected Joy-Con stays connected, so resuming is instant. Quit Deskpuck to release it completely.
+
+## Troubleshooting
+
+- **The pointer does not move:** check that Deskpuck is on in **System Settings > Privacy & Security > Accessibility**. If it is on but still nothing happens, reset the permission and allow it again:
+  ```sh
+  tccutil reset Accessibility com.pyronewbic.deskpuck
+  ```
+- **The Joy-Con does not connect:** hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time.
+
+## Linux and Windows
+
+A cross-platform port is in progress in [`rust/`](rust). Its input layer is tested on Linux (X11), but it has no Bluetooth support yet, so it cannot be used with a Joy-Con on those systems. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
 
 ## Build from source
 
-The tests and `swift build` need only the Xcode command line tools (Swift 5.9 or later). `make-app.sh` needs Xcode 26 to compile the app icon.
+See [CONTRIBUTING.md](CONTRIBUTING.md). How the code is laid out: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-```sh
-tests/run.sh                 # unit tests (AddressSanitizer and UBSan on)
-swift build -c release       # app and command-line tool
-scripts/make-app.sh          # dist/Deskpuck.app
-scripts/make-dmg.sh          # dist/Deskpuck-<version>.dmg and .zip
-```
+## Credits
 
-`make-app.sh` signs with a self-signed certificate named "Deskpuck Dev" (or the one named in `DESKPUCK_SIGN_IDENTITY`) so macOS keeps the Accessibility permission across rebuilds; it prints the one-time steps to create it. `--adhoc` skips it, but then the permission resets on every build.
+Based on [seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac) (MIT). Bluetooth protocol details from [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research).
 
-The command-line tool does the same without a menu bar icon:
-
-```sh
-.build/release/deskpuck-cli [--config PATH] [--verbose] [--monitor]
-```
+Deskpuck is not affiliated with or endorsed by Nintendo. Nintendo Switch and Joy-Con are trademarks of Nintendo.
 
 ## License
 
