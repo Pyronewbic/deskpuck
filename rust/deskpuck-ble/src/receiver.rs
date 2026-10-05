@@ -162,6 +162,8 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
                     return out;
                 }
                 self.connecting.insert(id.clone(), (now + CONNECT_TIMEOUT, name.clone()));
+                // A rescan still pending from an earlier drop is moot now.
+                self.rescan_at = None;
                 Self::status(&mut out, Status::Connecting, name);
                 out.push(Output::Connect(id));
             }

@@ -301,3 +301,18 @@ fn bluetooth_off_and_back_on() {
     assert_eq!(scans(&r.tick(100.0)), 0);
     assert_eq!(scans(&r.handle(Input::AdapterPoweredOn, 101.0)), 1);
 }
+
+#[test]
+fn quick_reconnect_cancels_the_pending_rescan() {
+    let mut r = linked();
+    r.handle(Input::Disconnected(JOYCON), 10.0);
+    // The Joy-Con comes back before the 3 s rescan is due.
+    r.handle(discovered(JOYCON), 11.0);
+    r.handle(Input::Connected(JOYCON), 11.5);
+    assert_eq!(scans(&r.tick(10.0 + RESCAN_AFTER_DISCONNECT)), 0);
+
+    // Positive control: without the reconnect, the same tick rescans.
+    let mut r = linked();
+    r.handle(Input::Disconnected(JOYCON), 10.0);
+    assert_eq!(scans(&r.tick(10.0 + RESCAN_AFTER_DISCONNECT)), 1);
+}
