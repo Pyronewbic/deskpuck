@@ -52,7 +52,9 @@ if ! $publish; then
 fi
 
 [ -n "${GH_TOKEN:-}" ] || fail "--publish needs GH_TOKEN for the account that owns the release"
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) || cannot "could not read the GitHub repo"
+# From origin, never gh's default: with an upstream remote, gh picks the fork's parent.
+repo=$(git remote get-url origin | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')
+[[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || cannot "origin is not a GitHub repo: $repo"
 [ "$(gh api "repos/$repo" --jq .permissions.push)" = true ] || fail "GH_TOKEN cannot push to $repo"
 
 git tag -s "$tag" -m "Deskpuck $version" || fail "could not create the signed tag $tag"
@@ -60,6 +62,6 @@ git tag -s "$tag" -m "Deskpuck $version" || fail "could not create the signed ta
 git -c credential.helper= \
     -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' \
     push origin "refs/tags/$tag" || fail "could not push $tag"
-gh release create "$tag" --draft --verify-tag --title "Deskpuck $version" --notes "$notes" \
+gh release create "$tag" --repo "$repo" --draft --verify-tag --title "Deskpuck $version" --notes "$notes" \
     "dist/${assets[0]}" "dist/${assets[1]}" dist/SHA256SUMS || fail "could not create the draft release"
 echo "Draft release $tag created. Review it on GitHub, then publish it there."
