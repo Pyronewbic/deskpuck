@@ -423,7 +423,7 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
         // Enable the features selected above
         [NSData dataWithBytes:(uint8_t[]){0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00} length:12]
     ];
-    for (int i = 0; i < commands.count; i++) {
+    for (NSUInteger i = 0; i < commands.count; i++) {
         detail() << "📤 Sending command " << (i + 1) << "/" << commands.count << " (length: " << [commands[i] length] << ")" << std::endl;
 
         const uint8_t* bytes = (const uint8_t*)[commands[i] bytes];
@@ -478,7 +478,6 @@ static int dataCounter = 0;
 + (void)printReport:(const Joycon2Report&)report data:(const std::vector<uint8_t>&)data {
     dataCounter++;
     auto currentTime = std::chrono::system_clock::now();
-    auto currentMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
 
     Joycon2BLEReceiver* client = [Joycon2BLEReceiver sharedInstance];
     if (client.displayInterval > 1 && (dataCounter % client.displayInterval) != 0) {
@@ -586,7 +585,6 @@ static int dataCounter = 0;
 
 - (void)dataTimeoutFired:(NSTimer*)timer {
     auto currentTime = std::chrono::system_clock::now();
-    auto currentMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
 
     std::cout << "⏰ Data timeout fired! No data received for 30 seconds." << std::endl;
     std::cout << "🔍 Checking connection status..." << std::endl;
