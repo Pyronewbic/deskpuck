@@ -23,6 +23,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         exit 3
     fi
     [ "$count" -eq 0 ] && continue
+    # gitleaks scans only commits with a text change (not merges, renames or binaries).
+    # shellcheck disable=SC2086
+    if ! patched=$(git log --no-merges -p -U0 --format='tformat:@C' $range |
+        LC_ALL=C awk '$0 == "@C" { seen = 0; next } /^@@/ && !seen { n++; seen = 1 } END { print n + 0 }'); then
+        echo "CANNOT CHECK: could not read the changes for $local_ref" >&2
+        exit 3
+    fi
 
     # gitleaks exits 0 when git itself fails, so its ERR lines count as failure too.
     # Leaks exit 2 so that 1 can only mean gitleaks failed.
@@ -32,11 +39,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     if [ $status -eq 2 ]; then
         echo "Secrets found in commits for $remote_ref; push refused." >&2
         exit 1
-    elif [ $status -ne 0 ] || echo "$output" | grep -q ' ERR '; then
+    elif [ $status -ne 0 ] || grep -q ' ERR ' <<<"$output"; then
         echo "CANNOT CHECK: gitleaks failed on $local_ref (exit $status)" >&2
         exit 3
-    elif ! echo "$output" | grep -q "$count commits scanned"; then
-        echo "CANNOT CHECK: gitleaks did not scan all $count commits for $local_ref" >&2
+    elif ! grep -q " $patched commits scanned" <<<"$output"; then
+        echo "CANNOT CHECK: gitleaks did not scan all $patched changed commits for $local_ref" >&2
         exit 3
     fi
 done
