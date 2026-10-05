@@ -29,8 +29,8 @@ typedef NS_ENUM(NSInteger, DPConnectionState) {
 // Called on the main queue after connectionState or deviceName changes.
 @property (nonatomic, copy, nullable) void (^stateDidChange)(void);
 
-// While paused, held input is released and reports are ignored. Resuming
-// does not move the cursor.
+// While paused, held input is released, reports are ignored, and no Joy-Con is
+// searched for; a connected one stays connected. Resuming does not move the cursor.
 @property (nonatomic, getter=isPaused) BOOL paused;
 // Takes effect immediately. Refuses a config with validation problems.
 - (BOOL)applyConfig:(DPConfig*)config error:(NSError**)error;

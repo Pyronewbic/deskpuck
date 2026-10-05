@@ -94,8 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch controller.connectionState {
         case .bluetoothOff: return "Bluetooth is off"
         case .bluetoothUnauthorized: return "Bluetooth access needed"
-        case .searching: return "Searching: hold SYNC on the Joy-Con"
-        case .connecting: return "Connecting to \(name)..."
+        case .searching:
+            return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Searching: hold SYNC on the Joy-Con"
+        case .connecting: return controller.isPaused ? "Connecting to \(name)... (paused)" : "Connecting to \(name)..."
         case .connected: return controller.isPaused ? "Connected to \(name) (paused)" : "Connected to \(name)"
         @unknown default: return "Unknown state"
         }

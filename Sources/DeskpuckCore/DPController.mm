@@ -84,6 +84,7 @@
         return;
     }
     _paused = paused;
+    _receiver.scanSuspended = paused;
     if (paused) {
         [self postOutput:_engine.disconnected()];
     } else {

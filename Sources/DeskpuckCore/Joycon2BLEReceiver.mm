@@ -38,9 +38,13 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 @implementation Joycon2BLEReceiver
 
 - (instancetype)init {
+    return [self initWithCentralManager:nil];
+}
+
+- (instancetype)initWithCentralManager:(CBCentralManager*)centralManager {
     self = [super init];
     if (self) {
-        self.centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+        self.centralManager = centralManager ?: [[CBCentralManager alloc] initWithDelegate:self queue:nil];
         self.connectingPeripherals = [[NSMutableSet alloc] init];
         self.connectedPeripherals = [[NSMutableSet alloc] init];
         self.deviceType = @"Unknown";
@@ -58,6 +62,10 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 
 - (void)startScan {
     self.shouldScan = YES;
+    if (self.scanSuspended) {
+        log("INFO", "Scanning is suspended while paused.");
+        return;
+    }
     if (self.centralManager.state == CBManagerStatePoweredOn) {
         [self.centralManager scanForPeripheralsWithServices:nil options:nil];
         log("SECTION", "------ Scanning BLE devices ------");
@@ -69,6 +77,15 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 - (void)stopScan {
     [self.centralManager stopScan];
     detail() << "Scan stopped." << std::endl;
+}
+
+- (void)setScanSuspended:(BOOL)suspended {
+    _scanSuspended = suspended;
+    if (suspended) {
+        [self stopScan];
+    } else if (self.shouldScan && self.connectingPeripherals.count == 0 && self.connectedPeripherals.count == 0) {
+        [self startScan];
+    }
 }
 
 - (void)connectToDevice:(NSString*)address {
@@ -118,6 +135,10 @@ std::chrono::time_point<std::chrono::system_clock> connectionStartTime;
 }
 
 - (void)centralManager:(CBCentralManager*)central didDiscoverPeripheral:(CBPeripheral*)peripheral advertisementData:(NSDictionary*)advertisementData RSSI:(NSNumber*)RSSI {
+    // A discovery queued before the scan stopped must not start a connection.
+    if (self.scanSuspended) {
+        return;
+    }
     const char* deviceName = peripheral.name ? [peripheral.name UTF8String] : "Unknown";
     const char* deviceUUID = peripheral.identifier ? [peripheral.identifier.UUIDString UTF8String] : "Unknown";
 

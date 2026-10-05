@@ -33,6 +33,9 @@ void Joycon2SetLogging(bool verbose, bool monitor);
 @property (strong, nonatomic) NSTimer* commandTimer;
 @property (assign, nonatomic) int displayInterval;
 @property (assign, nonatomic) BOOL skipInitCommands;
+// While YES the receiver never scans or connects to newly found Joy-Cons; an
+// existing connection is kept. Clearing it resumes a wanted scan if idle.
+@property (assign, nonatomic) BOOL scanSuspended;
 
 @property (copy, nonatomic) void (^onDeviceFound)(NSString* name, NSString* address);
 @property (copy, nonatomic) void (^onBluetoothStateChanged)(CBManagerState state);
@@ -44,6 +47,8 @@ void Joycon2SetLogging(bool verbose, bool monitor);
 @property (copy, nonatomic) void (^onError)(NSString* error);
 
 - (instancetype)init;
+// Tests pass a stand-in so no Bluetooth hardware or permission is needed.
+- (instancetype)initWithCentralManager:(CBCentralManager*)centralManager;
 - (void)startScan;
 - (void)stopScan;
 - (void)connectToDevice:(NSString*)address;
