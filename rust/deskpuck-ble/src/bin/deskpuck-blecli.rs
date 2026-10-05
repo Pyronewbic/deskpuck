@@ -30,8 +30,9 @@ Quit the Deskpuck app first: only one program can connect at a time.
   --verbose      print Bluetooth connection detail
   --monitor      show a live readout of every Joy-Con report
 
-Exit status: 0 quit with Ctrl+C, 1 Bluetooth failed, 2 bad usage or config
-path, 3 the OS refused Bluetooth or input injection (permission needed).";
+Exit status: 0 quit (Ctrl+C, the terminal closed, or SIGTERM), 1 Bluetooth
+failed, 2 bad usage or config path, 3 the OS refused Bluetooth or input
+injection (permission needed).";
 
 struct Args {
     config: Option<PathBuf>,
@@ -88,6 +89,28 @@ fn status_line(status: LinkStatus, name: Option<&str>) -> String {
     }
 }
 
+/// Resolves on Ctrl+C, a closed terminal (SIGHUP) or SIGTERM, so each of them
+/// releases held input instead of killing the process with a key still down.
+fn quit_signals() -> std::io::Result<impl Future<Output = ()>> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut hangup = signal(SignalKind::hangup())?;
+        let mut terminate = signal(SignalKind::terminate())?;
+        Ok(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = hangup.recv() => {}
+                _ = terminate.recv() => {}
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    Ok(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(args) => args,
@@ -115,9 +138,9 @@ fn main() -> ExitCode {
         }
     };
 
-    // A fatal status ends the run with its exit code; Ctrl+C ends it with 0.
+    // A fatal status ends the run with its exit code; a quit signal ends it with 0.
     let (exit_tx, exit_rx) = mpsc::channel::<u8>();
-    let ctrl_c_tx = exit_tx.clone();
+    let quit_tx = exit_tx.clone();
     let monitor_mode = args.monitor;
     let mut monitor = Monitor::default();
     let hooks = Hooks {
@@ -150,10 +173,16 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    runtime.spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            let _ = ctrl_c_tx.send(0);
+    let quit = match runtime.block_on(async { quit_signals() }) {
+        Ok(quit) => quit,
+        Err(e) => {
+            note!("deskpuck-blecli: could not start: {e}");
+            return ExitCode::from(1);
         }
+    };
+    runtime.spawn(async move {
+        quit.await;
+        let _ = quit_tx.send(0);
     });
     let controller = match Controller::start(settings, sink, hooks) {
         Ok(controller) => controller,
@@ -168,4 +197,26 @@ fn main() -> ExitCode {
     // Dropping the controller releases held input and disconnects.
     drop(controller);
     ExitCode::from(code)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::process::Command;
+    use std::time::Duration;
+
+    #[test]
+    fn hangup_and_terminate_request_a_quit() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for sig in ["-HUP", "-TERM"] {
+            runtime.block_on(async {
+                let mut quit = Box::pin(super::quit_signals().expect("signal handlers"));
+                // Control: nothing resolves before the signal arrives.
+                let early = tokio::time::timeout(Duration::from_millis(100), &mut quit).await;
+                assert!(early.is_err(), "{sig} quit resolved with no signal");
+                let pid = std::process::id().to_string();
+                assert!(Command::new("kill").args([sig, &pid]).status().unwrap().success());
+                tokio::time::timeout(Duration::from_secs(5), quit).await.expect(sig);
+            });
+        }
+    }
 }
