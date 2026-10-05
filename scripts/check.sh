@@ -18,8 +18,10 @@ done
 (cd rust && cargo clippy --quiet --locked --all-targets) || fail "cargo clippy"
 (cd rust && cargo test --quiet --locked) || fail "cargo test"
 
-# Fetch separately so an unreachable database is "could not check", not a finding.
+# Fetch separately so an unreachable network is "could not check", not a finding.
+# cargo-deny reads every platform's crates, not only the ones this host built.
 (cd rust && cargo deny --log-level error fetch db) || cannot "advisory database could not be fetched"
+(cd rust && cargo fetch --locked --quiet) || cannot "crates could not be fetched"
 (cd rust && cargo deny --log-level error --offline check) || fail "cargo deny (advisories, licenses, sources)"
 
 if [ "$(uname)" = Darwin ]; then
