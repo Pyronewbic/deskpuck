@@ -1,6 +1,7 @@
 use deskpuck_ble::receiver::Status;
 use deskpuck_ble::{Monitor, Session};
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::mapping::{ButtonKeyMapping, MouseButton};
 use deskpuck_core::packet::{Report, parse_report};
 use deskpuck_inject::{InputEvent, RecordingSink};
 
@@ -17,48 +18,41 @@ fn key(down: bool) -> InputEvent {
 
 #[test]
 fn reports_only_count_while_connected() {
-    let mut sink = RecordingSink::default();
-    let mut session = Session::new(EngineSettings::default(), &mut sink);
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
     session.report(&report(RS, 0), 0.0).expect("post");
     session.status(Status::Connecting).expect("status");
     session.report(&report(RS, 0), 0.1).expect("post");
     // Positive control: the same report once connected presses the key.
     session.status(Status::Connected).expect("status");
     session.report(&report(RS, 0), 0.2).expect("post");
-    drop(session);
-    assert_eq!(sink.events, [key(true)]);
+    assert_eq!(session.sink().events, [key(true)]);
 }
 
 #[test]
 fn disconnect_releases_held_input() {
-    let mut sink = RecordingSink::default();
-    let mut session = Session::new(EngineSettings::default(), &mut sink);
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
     session.status(Status::Connected).expect("status");
     session.report(&report(RS, 0), 0.0).expect("post");
     session.status(Status::Searching).expect("status");
     // A second non-connected status has nothing left to release.
     session.status(Status::BluetoothOff).expect("status");
-    drop(session);
-    assert_eq!(sink.events, [key(true), key(false)]);
+    assert_eq!(session.sink().events, [key(true), key(false)]);
 }
 
 #[test]
 fn shutdown_releases_held_input() {
-    let mut sink = RecordingSink::default();
-    let mut session = Session::new(EngineSettings::default(), &mut sink);
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
     session.status(Status::Connected).expect("status");
     session.report(&report(RS, 0), 0.0).expect("post");
     session.shutdown().expect("release");
     // Reports after shutdown are ignored.
     session.report(&report(RS, 0), 0.1).expect("post");
-    drop(session);
-    assert_eq!(sink.events, [key(true), key(false)]);
+    assert_eq!(session.sink().events, [key(true), key(false)]);
 }
 
 #[test]
 fn reconnect_does_not_jump_the_pointer() {
-    let mut sink = RecordingSink::default();
-    let mut session = Session::new(EngineSettings::default(), &mut sink);
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
     session.status(Status::Connected).expect("status");
     session.report(&report(0, 100), 0.0).expect("post");
     session.status(Status::Searching).expect("status");
@@ -67,9 +61,8 @@ fn reconnect_does_not_jump_the_pointer() {
     session.report(&report(0, 5000), 1.0).expect("post");
     // Positive control: the next report moves from that baseline.
     session.report(&report(0, 5050), 1.1).expect("post");
-    drop(session);
     let moves: Vec<_> =
-        sink.events.iter().filter(|e| matches!(e, InputEvent::Move { .. })).collect();
+        session.sink().events.iter().filter(|e| matches!(e, InputEvent::Move { .. })).collect();
     assert_eq!(moves.len(), 1, "{moves:?}");
     assert!(matches!(moves[0], InputEvent::Move { dx, .. } if *dx == 10.0));
 }
@@ -114,4 +107,64 @@ fn monitor_screen_matches_the_cpp_fields() {
     monitor.screen(None, 0, &Report { mouse_x: 32760, ..report }, &data);
     assert!(monitor.screen(None, 0, &moved, &data).contains("DeltaX=10,"));
     assert!(monitor.screen(None, 0, &moved, &data).contains("Unknown Device Data:"));
+}
+
+const R: u32 = 0x0000_4000;
+
+#[test]
+fn pause_releases_input_and_ignores_reports() {
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
+    session.status(Status::Connected).expect("status");
+    session.report(&report(RS, 0), 0.0).expect("post");
+    session.set_paused(true).expect("pause");
+    assert!(session.is_paused());
+    session.report(&report(RS, 500), 0.1).expect("post");
+    // Pausing twice releases nothing more.
+    session.set_paused(true).expect("pause");
+    assert_eq!(session.sink().events, [key(true), key(false)]);
+}
+
+#[test]
+fn resume_does_not_jump_the_pointer() {
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
+    session.status(Status::Connected).expect("status");
+    session.report(&report(0, 100), 0.0).expect("post");
+    session.set_paused(true).expect("pause");
+    session.report(&report(0, 3000), 0.5).expect("post");
+    session.set_paused(false).expect("resume");
+    // The counter moved while paused; the first report after resuming is a baseline.
+    session.report(&report(0, 4000), 1.0).expect("post");
+    session.report(&report(0, 4050), 1.1).expect("post");
+    let moves: Vec<_> =
+        session.sink().events.iter().filter(|e| matches!(e, InputEvent::Move { .. })).collect();
+    assert_eq!(moves.len(), 1, "{moves:?}");
+    assert!(matches!(moves[0], InputEvent::Move { dx, .. } if *dx == 10.0));
+}
+
+#[test]
+fn new_settings_release_old_keys_but_keep_a_held_click() {
+    let mut session = Session::new(EngineSettings::default(), RecordingSink::default());
+    session.status(Status::Connected).expect("status");
+    session.report(&report(RS | R, 0), 0.0).expect("post");
+    let settings = EngineSettings {
+        key_mappings: vec![ButtonKeyMapping { button_mask: RS, key_code: 49 }],
+        ..EngineSettings::default()
+    };
+    session.apply_settings(settings).expect("apply");
+    assert_eq!(
+        session.sink().events,
+        [InputEvent::Button { button: MouseButton::Left, down: true }, key(true), key(false)]
+    );
+    // Still held: the next report presses the newly mapped key and the click stays down.
+    session.report(&report(RS | R, 0), 0.1).expect("post");
+    assert_eq!(
+        session.sink().events.last(),
+        Some(&InputEvent::Key { key_code: 49, down: true, repeat: false })
+    );
+    assert!(
+        !session
+            .sink()
+            .events
+            .contains(&InputEvent::Button { button: MouseButton::Left, down: false })
+    );
 }

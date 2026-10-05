@@ -1,31 +1,38 @@
 //! Bluetooth LE for the Joy-Con 2: the connection state machine, the session
 //! that turns its reports into input, and the monitor readout.
 
+pub mod controller;
 pub mod receiver;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};
 use deskpuck_core::packet::{Report, button_names};
-use deskpuck_inject::{InjectError, Poster, Sink};
+use deskpuck_inject::{InjectError, InputEvent, Poster, Sink};
 use receiver::Status;
 use std::fmt::Write;
 
 /// Mirrors the Mac app's DPController: connection changes and reports in,
-/// posted input out. Every disconnect and the shutdown release held input.
-pub struct Session<'a> {
+/// posted input out. Every disconnect, pause and the shutdown release held input.
+pub struct Session<S: Sink> {
     engine: InputEngine,
     poster: Poster,
-    sink: &'a mut dyn Sink,
+    sink: S,
     connected: bool,
+    paused: bool,
 }
 
-impl<'a> Session<'a> {
-    pub fn new(settings: EngineSettings, sink: &'a mut dyn Sink) -> Self {
+impl<S: Sink> Session<S> {
+    pub fn new(settings: EngineSettings, sink: S) -> Self {
         Self {
             engine: InputEngine::new(settings),
             poster: Poster::default(),
             sink,
             connected: false,
+            paused: false,
         }
+    }
+
+    pub fn sink(&self) -> &S {
+        &self.sink
     }
 
     pub fn status(&mut self, status: Status) -> Result<(), InjectError> {
@@ -45,11 +52,44 @@ impl<'a> Session<'a> {
     }
 
     pub fn report(&mut self, report: &Report, now: f64) -> Result<(), InjectError> {
-        if !self.connected {
+        if !self.connected || self.paused {
             return Ok(());
         }
         let out = self.engine.process(report, now);
-        self.poster.post(&out, self.sink).map(|_| ())
+        self.poster.post(&out, &mut self.sink).map(|_| ())
+    }
+
+    /// Pausing releases held input and ignores reports; resuming re-baselines
+    /// so motion while paused does not jump the pointer.
+    pub fn set_paused(&mut self, paused: bool) -> Result<(), InjectError> {
+        if paused == self.paused {
+            return Ok(());
+        }
+        self.paused = paused;
+        if paused {
+            self.release()
+        } else {
+            self.engine.connection_started();
+            Ok(())
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Takes effect immediately, releasing keys held under the old mapping.
+    /// Only keys are posted: a held mouse button stays held, as in the Mac app.
+    pub fn apply_settings(&mut self, settings: EngineSettings) -> Result<(), InjectError> {
+        for key in self.engine.apply_settings(settings) {
+            let event = InputEvent::Key {
+                key_code: key.key_code,
+                down: key.is_down,
+                repeat: key.is_repeat,
+            };
+            self.sink.post(&event)?;
+        }
+        Ok(())
     }
 
     /// Releases every held key and button, e.g. on Ctrl+C.
@@ -59,7 +99,7 @@ impl<'a> Session<'a> {
     }
 
     fn release(&mut self) -> Result<(), InjectError> {
-        self.poster.post(&self.engine.disconnected(), self.sink).map(|_| ())
+        self.poster.post(&self.engine.disconnected(), &mut self.sink).map(|_| ())
     }
 }
 

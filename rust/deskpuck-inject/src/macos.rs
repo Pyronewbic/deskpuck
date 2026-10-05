@@ -30,7 +30,13 @@ impl MacSink {
                     .into(),
             ));
         }
-        Ok(Self { _private: () })
+        Ok(Self::unchecked())
+    }
+
+    /// For an app that asks for Accessibility itself: events posted before
+    /// the user grants it are dropped by macOS, and start working once granted.
+    pub fn unchecked() -> Self {
+        Self { _private: () }
     }
 }
 

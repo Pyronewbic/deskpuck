@@ -58,9 +58,15 @@ pub trait Sink {
     fn post(&mut self, event: &InputEvent) -> Result<(), InjectError>;
 }
 
+impl<T: Sink + ?Sized> Sink for Box<T> {
+    fn post(&mut self, event: &InputEvent) -> Result<(), InjectError> {
+        (**self).post(event)
+    }
+}
+
 /// The input backend for this OS. Fails with `NotPermitted` when the OS needs a
 /// permission first (Accessibility on macOS, /dev/uinput access on Linux).
-pub fn platform_sink() -> Result<Box<dyn Sink>, InjectError> {
+pub fn platform_sink() -> Result<Box<dyn Sink + Send>, InjectError> {
     #[cfg(target_os = "macos")]
     return Ok(Box::new(macos::MacSink::new()?));
     #[cfg(target_os = "linux")]

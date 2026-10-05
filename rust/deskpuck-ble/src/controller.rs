@@ -1,0 +1,480 @@
+//! Runs the receiver against real Bluetooth on a background thread, for both
+//! the command-line tool and the Mac app. `Hub` holds every decision and is
+//! tested without hardware; `Controller` only moves data between the Hub and
+//! btleplug.
+
+use crate::Session;
+use crate::receiver::{
+    Input, NOTIFY_CHARACTERISTIC, Output, Receiver, Status, WRITE_CHARACTERISTIC,
+};
+use btleplug::api::{
+    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
+    WriteType,
+};
+use btleplug::platform::{Adapter, Manager, PeripheralId};
+use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::packet::Report;
+use deskpuck_inject::Sink;
+use futures::StreamExt;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::task::JoinHandle;
+use uuid::Uuid;
+
+/// What the user should see. Unauthorized and Unavailable come from the
+/// Bluetooth stack itself rather than the receiver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkStatus {
+    BluetoothOff,
+    BluetoothUnauthorized,
+    Unavailable,
+    Searching,
+    Connecting,
+    Connected,
+}
+
+impl From<Status> for LinkStatus {
+    fn from(status: Status) -> Self {
+        match status {
+            Status::BluetoothOff => LinkStatus::BluetoothOff,
+            Status::Searching => LinkStatus::Searching,
+            Status::Connecting => LinkStatus::Connecting,
+            Status::Connected => LinkStatus::Connected,
+        }
+    }
+}
+
+pub type StatusHook = Box<dyn FnMut(LinkStatus, Option<&str>) + Send>;
+/// Report, raw bytes, device name, and milliseconds since connecting.
+pub type ReportHook = Box<dyn FnMut(&Report, &[u8], Option<&str>, u128) + Send>;
+pub type MessageHook = Box<dyn Fn(&str) + Send>;
+
+/// Callbacks run on the controller's thread, never on the caller's.
+pub struct Hooks {
+    pub status: StatusHook,
+    /// Every parsed report, paused or not.
+    pub report: Option<ReportHook>,
+    /// Connection detail, for --verbose.
+    pub log: Option<MessageHook>,
+    /// Failures worth showing even without --verbose.
+    pub error: MessageHook,
+}
+
+/// The receiver plus the session: inputs in, Bluetooth commands out.
+pub struct Hub<Id, S: Sink> {
+    receiver: Receiver<Id>,
+    session: Session<S>,
+    hooks: Hooks,
+    connected_at: f64,
+}
+
+impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
+    pub fn new(settings: EngineSettings, sink: S, hooks: Hooks) -> Self {
+        Self {
+            receiver: Receiver::default(),
+            session: Session::new(settings, sink),
+            hooks,
+            connected_at: 0.0,
+        }
+    }
+
+    pub fn session(&self) -> &Session<S> {
+        &self.session
+    }
+
+    pub fn start(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.start();
+        self.route(out, now)
+    }
+
+    pub fn input(&mut self, input: Input<Id>, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.handle(input, now);
+        self.route(out, now)
+    }
+
+    pub fn tick(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.tick(now);
+        self.route(out, now)
+    }
+
+    /// Pausing releases held input and stops scanning; a connected Joy-Con
+    /// stays connected so resuming is instant.
+    pub fn set_paused(&mut self, paused: bool, now: f64) -> Vec<Output<Id>> {
+        if let Err(e) = self.session.set_paused(paused) {
+            (self.hooks.error)(&e.to_string());
+        }
+        let out = self.receiver.set_suspended(paused);
+        self.route(out, now)
+    }
+
+    pub fn apply_settings(&mut self, settings: EngineSettings) {
+        if let Err(e) = self.session.apply_settings(settings) {
+            (self.hooks.error)(&e.to_string());
+        }
+    }
+
+    /// A status from the Bluetooth stack rather than the receiver.
+    pub fn report_status(&mut self, status: LinkStatus) {
+        (self.hooks.status)(status, None);
+    }
+
+    pub fn error(&self, message: &str) {
+        (self.hooks.error)(message);
+    }
+
+    pub fn log(&self, message: impl FnOnce() -> String) {
+        if let Some(log) = &self.hooks.log {
+            log(&message());
+        }
+    }
+
+    /// Releases held input; the caller then stops scanning and disconnects `linked()`.
+    pub fn shutdown(&mut self) {
+        if let Err(e) = self.session.shutdown() {
+            (self.hooks.error)(&e.to_string());
+        }
+    }
+
+    pub fn linked(&self) -> Option<&Id> {
+        self.receiver.linked().map(|(id, _)| id)
+    }
+
+    /// Statuses and reports are handled here; Bluetooth commands are returned.
+    fn route(&mut self, outputs: Vec<Output<Id>>, now: f64) -> Vec<Output<Id>> {
+        let mut commands = Vec::new();
+        for output in outputs {
+            match output {
+                Output::Status { status, name } => {
+                    if status == Status::Connected {
+                        self.connected_at = now;
+                    }
+                    if let Err(e) = self.session.status(status) {
+                        (self.hooks.error)(&e.to_string());
+                    }
+                    (self.hooks.status)(status.into(), name.as_deref());
+                }
+                Output::Report { report, data } => {
+                    if let Some(hook) = self.hooks.report.as_mut() {
+                        let name = self.receiver.linked().and_then(|(_, n)| n);
+                        let elapsed = ((now - self.connected_at).max(0.0) * 1000.0) as u128;
+                        hook(&report, &data, name, elapsed);
+                    }
+                    if let Err(e) = self.session.report(&report, now) {
+                        (self.hooks.error)(&e.to_string());
+                    }
+                }
+                command => commands.push(command),
+            }
+        }
+        commands
+    }
+}
+
+enum Command {
+    SetPaused(bool),
+    Apply(EngineSettings),
+    Shutdown,
+}
+
+/// A running connection. Dropping it releases held input, disconnects the
+/// Joy-Con and waits for the thread, so no hook runs after drop returns.
+pub struct Controller {
+    tx: UnboundedSender<Command>,
+    paused: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Controller {
+    pub fn start<S: Sink + Send + 'static>(
+        settings: EngineSettings,
+        sink: S,
+        hooks: Hooks,
+    ) -> std::io::Result<Self> {
+        let (tx, rx) = unbounded_channel();
+        let runtime =
+            tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
+        let thread = std::thread::Builder::new().name("deskpuck-ble".into()).spawn(move || {
+            runtime.block_on(run(Hub::new(settings, sink, hooks), rx));
+        })?;
+        Ok(Self { tx, paused: Arc::default(), thread: Some(thread) })
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::SeqCst);
+        let _ = self.tx.send(Command::SetPaused(paused));
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    pub fn apply_settings(&self, settings: EngineSettings) {
+        let _ = self.tx.send(Command::Apply(settings));
+    }
+}
+
+impl Drop for Controller {
+    fn drop(&mut self) {
+        let _ = self.tx.send(Command::Shutdown);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Without Bluetooth, still honor pause and settings until shutdown.
+async fn idle<S: Sink>(
+    mut hub: Hub<PeripheralId, S>,
+    mut rx: UnboundedReceiver<Command>,
+    start: Instant,
+) {
+    while let Some(command) = rx.recv().await {
+        match command {
+            Command::SetPaused(paused) => {
+                hub.set_paused(paused, start.elapsed().as_secs_f64());
+            }
+            Command::Apply(settings) => hub.apply_settings(settings),
+            Command::Shutdown => break,
+        }
+    }
+    hub.shutdown();
+}
+
+async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<Command>) {
+    let start = Instant::now();
+    let now = || start.elapsed().as_secs_f64();
+
+    let manager = match Manager::new().await {
+        Ok(manager) => manager,
+        Err(btleplug::Error::PermissionDenied) => {
+            hub.report_status(LinkStatus::BluetoothUnauthorized);
+            return idle(hub, rx, start).await;
+        }
+        Err(e) => {
+            hub.error(&format!("Bluetooth is unavailable: {e}"));
+            hub.report_status(LinkStatus::Unavailable);
+            return idle(hub, rx, start).await;
+        }
+    };
+    let Some(adapter) = manager.adapters().await.ok().and_then(|a| a.into_iter().next()) else {
+        hub.error("No Bluetooth adapter found.");
+        hub.report_status(LinkStatus::Unavailable);
+        return idle(hub, rx, start).await;
+    };
+    let mut events = match adapter.events().await {
+        Ok(events) => events,
+        Err(e) => {
+            hub.error(&format!("Could not listen for Bluetooth events: {e}"));
+            hub.report_status(LinkStatus::Unavailable);
+            return idle(hub, rx, start).await;
+        }
+    };
+
+    let (input_tx, mut input_rx) = unbounded_channel();
+    let mut driver = Driver {
+        adapter: adapter.clone(),
+        tx: input_tx,
+        characteristics: Arc::default(),
+        streams: HashMap::new(),
+    };
+
+    let mut commands = hub.start(now());
+    match adapter.adapter_state().await {
+        Ok(CentralState::PoweredOn) => commands.extend(hub.input(Input::AdapterPoweredOn, now())),
+        Ok(CentralState::PoweredOff) => commands.extend(hub.input(Input::AdapterPoweredOff, now())),
+        _ => {}
+    }
+
+    let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    loop {
+        for command in &commands {
+            driver.execute(command, &hub).await;
+        }
+        commands = tokio::select! {
+            command = rx.recv() => match command {
+                Some(Command::SetPaused(paused)) => hub.set_paused(paused, now()),
+                Some(Command::Apply(settings)) => {
+                    hub.apply_settings(settings);
+                    Vec::new()
+                }
+                Some(Command::Shutdown) | None => break,
+            },
+            Some(event) = events.next() => match driver.on_event(event) {
+                Some(input) => hub.input(input, now()),
+                None => Vec::new(),
+            },
+            Some(input) = input_rx.recv() => hub.input(input, now()),
+            _ = ticker.tick() => hub.tick(now()),
+        };
+    }
+
+    // Release held input first, then let the Joy-Con go before the thread ends.
+    hub.shutdown();
+    let _ = adapter.stop_scan().await;
+    if let Some(id) = hub.linked().cloned()
+        && let Ok(p) = adapter.peripheral(&id).await
+    {
+        let _ = tokio::time::timeout(Duration::from_secs(2), p.disconnect()).await;
+    }
+}
+
+/// The two characteristics of a linked Joy-Con, found during service discovery.
+type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
+
+struct Driver {
+    adapter: Adapter,
+    tx: UnboundedSender<Input<PeripheralId>>,
+    characteristics: Characteristics,
+    streams: HashMap<PeripheralId, JoinHandle<()>>,
+}
+
+fn uuid(s: &str) -> Uuid {
+    Uuid::parse_str(s).unwrap_or_default()
+}
+
+impl Driver {
+    /// Turns a btleplug event into receiver input. Discoveries need the
+    /// peripheral's properties, which are fetched off the main loop.
+    fn on_event(&mut self, event: CentralEvent) -> Option<Input<PeripheralId>> {
+        match event {
+            CentralEvent::DeviceDiscovered(id)
+            | CentralEvent::DeviceUpdated(id)
+            | CentralEvent::ManufacturerDataAdvertisement { id, .. } => {
+                let (adapter, tx) = (self.adapter.clone(), self.tx.clone());
+                tokio::spawn(async move {
+                    let Ok(peripheral) = adapter.peripheral(&id).await else { return };
+                    if let Ok(Some(props)) = peripheral.properties().await {
+                        let manufacturer_ids = props.manufacturer_data.keys().copied().collect();
+                        let _ = tx.send(Input::Discovered {
+                            id,
+                            name: props.local_name,
+                            manufacturer_ids,
+                        });
+                    }
+                });
+                None
+            }
+            CentralEvent::DeviceDisconnected(id) => {
+                if let Some(stream) = self.streams.remove(&id) {
+                    stream.abort();
+                }
+                Some(Input::Disconnected(id))
+            }
+            CentralEvent::StateUpdate(CentralState::PoweredOn) => Some(Input::AdapterPoweredOn),
+            CentralEvent::StateUpdate(CentralState::PoweredOff) => Some(Input::AdapterPoweredOff),
+            _ => None,
+        }
+    }
+
+    /// Carries out one receiver command. Slow operations run as tasks that
+    /// report back through `tx`, so the loop never blocks.
+    async fn execute<S: Sink>(
+        &mut self,
+        output: &Output<PeripheralId>,
+        hub: &Hub<PeripheralId, S>,
+    ) {
+        match output {
+            Output::StartScan => {
+                hub.log(|| "scanning".into());
+                if let Err(e) = self.adapter.start_scan(ScanFilter::default()).await {
+                    hub.error(&format!("Could not scan: {e}"));
+                }
+            }
+            Output::StopScan => {
+                let _ = self.adapter.stop_scan().await;
+            }
+            Output::Connect(id) => {
+                hub.log(|| format!("connecting to {id}"));
+                let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
+                tokio::spawn(async move {
+                    let connected = match adapter.peripheral(&id).await {
+                        Ok(p) => p.connect().await.is_ok(),
+                        Err(_) => false,
+                    };
+                    let _ = tx.send(if connected {
+                        Input::Connected(id)
+                    } else {
+                        Input::ConnectFailed(id)
+                    });
+                });
+            }
+            Output::Disconnect(id) => {
+                hub.log(|| format!("disconnecting {id}"));
+                if let Some(stream) = self.streams.remove(id) {
+                    stream.abort();
+                }
+                let (adapter, id) = (self.adapter.clone(), id.clone());
+                tokio::spawn(async move {
+                    if let Ok(p) = adapter.peripheral(&id).await {
+                        let _ = p.disconnect().await;
+                    }
+                });
+            }
+            Output::DiscoverServices(id) => {
+                let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
+                let characteristics = self.characteristics.clone();
+                tokio::spawn(async move {
+                    let Ok(p) = adapter.peripheral(&id).await else { return };
+                    let _ = p.discover_services().await;
+                    let found = p.characteristics();
+                    let find = |want: &str| found.iter().find(|c| c.uuid == uuid(want)).cloned();
+                    let (write, notify) = (find(WRITE_CHARACTERISTIC), find(NOTIFY_CHARACTERISTIC));
+                    let both = (write.is_some(), notify.is_some());
+                    if let (Some(w), Some(n)) = (write, notify)
+                        && let Ok(mut map) = characteristics.lock()
+                    {
+                        map.insert(id.clone(), (w, n));
+                    }
+                    let _ =
+                        tx.send(Input::CharacteristicsFound { id, write: both.0, notify: both.1 });
+                });
+            }
+            Output::Subscribe(id) => {
+                let Some((_, notify)) =
+                    self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
+                else {
+                    return;
+                };
+                let Ok(peripheral) = self.adapter.peripheral(id).await else { return };
+                if !self.streams.contains_key(id) {
+                    // One reader per connection, started before notifications are enabled.
+                    let (p, tx, id2, want) =
+                        (peripheral.clone(), self.tx.clone(), id.clone(), notify.uuid);
+                    let reader = tokio::spawn(async move {
+                        let Ok(mut stream) = p.notifications().await else { return };
+                        while let Some(n) = stream.next().await {
+                            if n.uuid == want {
+                                let _ =
+                                    tx.send(Input::Notification { id: id2.clone(), data: n.value });
+                            }
+                        }
+                    });
+                    self.streams.insert(id.clone(), reader);
+                }
+                hub.log(|| "enabling notifications".into());
+                tokio::spawn(async move {
+                    let _ = peripheral.subscribe(&notify).await;
+                });
+            }
+            Output::Write { id, data } => {
+                let Some((write, _)) =
+                    self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
+                else {
+                    return;
+                };
+                hub.log(|| format!("init command {data:02X?}"));
+                let (adapter, id, data) = (self.adapter.clone(), id.clone(), data.clone());
+                tokio::spawn(async move {
+                    if let Ok(p) = adapter.peripheral(&id).await {
+                        let _ = p.write(&write, &data, WriteType::WithoutResponse).await;
+                    }
+                });
+            }
+            Output::Status { .. } | Output::Report { .. } => {}
+        }
+    }
+}
