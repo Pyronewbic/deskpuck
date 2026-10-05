@@ -7,12 +7,13 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 - Xcode command line tools with Swift 5.9 or later, for the tests, `swift build` and the command-line tool.
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
-- Rust stable, for the [Rust workspace](#rust-workspace). Tested with 1.99. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
+- Rust stable: the app's core is the [Rust workspace](#rust-workspace). Tested with 1.99. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
 
 ## Building the Mac app
 
 ```sh
-tests/run.sh                 # unit tests (AddressSanitizer and UBSan on)
+tests/run.sh                 # C++ unit tests (AddressSanitizer and UBSan on)
+scripts/build-rust.sh        # the Rust core as a static library, needed before swift build
 swift build -c release       # app and command-line tool
 scripts/make-app.sh          # dist/Deskpuck.app
 scripts/make-dmg.sh          # dist/Deskpuck-<version>.dmg and .zip

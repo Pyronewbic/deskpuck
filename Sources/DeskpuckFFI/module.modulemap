@@ -1,0 +1,6 @@
+// The Rust core's C interface. scripts/build-rust.sh builds the library.
+module DeskpuckFFI [system] {
+    header "../../rust/deskpuck-ffi/include/deskpuck.h"
+    link "deskpuck_ffi"
+    export *
+}

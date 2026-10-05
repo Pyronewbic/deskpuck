@@ -50,6 +50,8 @@ if ! xcrun --find actool >/dev/null 2>&1; then
     exit 1
 fi
 
+# Any Rust build failure is a build failure (1); 2 means a missing signing identity.
+scripts/build-rust.sh || exit 1
 swift build -c release --product Deskpuck
 
 rm -rf "$APP"

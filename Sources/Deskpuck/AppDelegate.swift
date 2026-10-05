@@ -1,23 +1,21 @@
 import AppKit
 import ApplicationServices
-import DeskpuckCore
 import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let controller: DPController
+    private let controller: Controller
     private let settings: SettingsModel
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var accessibilityTimer: Timer?
 
     override init() {
-        let url = DPConfig.defaultFileURL()
-        var warnings: NSArray?
-        let config = DPConfig(contentsOf: url, warnings: &warnings)
-        controller = DPController(config: config)
-        settings = SettingsModel(controller: controller, fileURL: url, config: config,
-                                 warnings: (warnings as? [String]) ?? [])
+        Core.checkLibrary()
+        let url = Core.defaultFileURL
+        let (config, warnings) = Core.load(from: url)
+        controller = Controller(config: config)
+        settings = SettingsModel(controller: controller, fileURL: url, config: config, warnings: warnings)
         super.init()
     }
 
@@ -37,6 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             watchAccessibility()
         }
         controller.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Release any held key or click and let the Joy-Con go.
+        controller.stop()
     }
 
     // MARK: Menu
@@ -94,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch controller.connectionState {
         case .bluetoothOff: return "Bluetooth is off"
         case .bluetoothUnauthorized: return "Bluetooth access needed"
+        case .unavailable: return "Bluetooth is unavailable"
         case .searching:
             return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Searching: hold SYNC on the Joy-Con"
         case .connecting: return controller.isPaused ? "Connecting to \(name)... (paused)" : "Connecting to \(name)..."

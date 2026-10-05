@@ -1,0 +1,177 @@
+import DeskpuckFFI
+import Foundation
+
+/// The settings in config.json. The Rust core validates and saves them.
+struct DeskpuckConfig: Codable, Equatable {
+    var version = 1
+    var keyMappings: [String: Int]
+    var pointerSpeed: Double
+    var repeatDelay: Double
+    var repeatInterval: Double
+    var scrollEnabled: Bool
+}
+
+struct CoreError: LocalizedError {
+    let errorDescription: String?
+}
+
+/// Settings calls into the Rust core.
+enum Core {
+    /// A stale or mismatched static library must fail loudly, not misbehave.
+    static func checkLibrary() {
+        guard dp_abi_version() == UInt32(DP_ABI_VERSION) else {
+            fatalError("Deskpuck's Rust library is out of date; run scripts/build-rust.sh and rebuild.")
+        }
+    }
+
+    /// Takes ownership of a string returned by the library.
+    static func take(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
+        guard let pointer else { return nil }
+        defer { dp_string_free(pointer) }
+        return String(cString: pointer)
+    }
+
+    static func json(_ config: DeskpuckConfig) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(config)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, _ string: String?) -> T? {
+        string.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(type, from: $0) }
+    }
+
+    static var defaultFileURL: URL {
+        if let path = take(dp_config_default_path()) {
+            return URL(fileURLWithPath: path)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Deskpuck/config.json")
+    }
+
+    static var defaults: DeskpuckConfig {
+        decode(DeskpuckConfig.self, take(dp_config_defaults()))
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true)
+    }
+
+    /// Never fails: anything unusable falls back to its default and is described in the warnings.
+    static func load(from url: URL) -> (DeskpuckConfig, [String]) {
+        struct Loaded: Decodable {
+            let config: DeskpuckConfig
+            let warnings: [String]
+        }
+        let loaded = url.path.withCString { decode(Loaded.self, take(dp_config_load($0))) }
+        return loaded.map { ($0.config, $0.warnings) } ?? (defaults, ["Settings could not be read; using defaults."])
+    }
+
+    static func problems(_ config: DeskpuckConfig) -> [String] {
+        json(config).withCString { decode([String].self, take(dp_config_problems($0))) } ?? ["Settings could not be checked."]
+    }
+
+    /// Validates, then replaces the file atomically.
+    static func save(_ config: DeskpuckConfig, to url: URL) throws {
+        let message = json(config).withCString { config in
+            url.path.withCString { path in take(dp_config_save(config, path)) }
+        }
+        if let message {
+            throw CoreError(errorDescription: message)
+        }
+    }
+}
+
+enum ConnectionState {
+    case bluetoothOff, bluetoothUnauthorized, unavailable, searching, connecting, connected
+
+    init(_ status: dp_status) {
+        switch status {
+        case DP_STATUS_BLUETOOTH_UNAUTHORIZED: self = .bluetoothUnauthorized
+        case DP_STATUS_UNAVAILABLE: self = .unavailable
+        case DP_STATUS_SEARCHING: self = .searching
+        case DP_STATUS_CONNECTING: self = .connecting
+        case DP_STATUS_CONNECTED: self = .connected
+        default: self = .bluetoothOff
+        }
+    }
+}
+
+/// The Joy-Con connection, run by the Rust core on its own thread.
+@MainActor
+final class Controller {
+    private(set) var connectionState = ConnectionState.bluetoothOff
+    private(set) var deviceName: String?
+    var stateDidChange: (() -> Void)?
+
+    // Retained for the library's callbacks; it holds the controller weakly, so a
+    // callback queued during shutdown finds nothing rather than a freed object.
+    private final class Relay {
+        weak var target: Controller?
+    }
+
+    private var config: DeskpuckConfig
+    private var handle: OpaquePointer?
+    private var relay: Unmanaged<Relay>?
+    private var paused = false
+
+    init(config: DeskpuckConfig) {
+        self.config = config
+    }
+
+    func start() {
+        guard handle == nil else { return }
+        let relay = Relay()
+        relay.target = self
+        let context = Unmanaged.passRetained(relay)
+        let callback: dp_status_callback = { context, status, name in
+            guard let context else { return }
+            let relay = Unmanaged<Relay>.fromOpaque(context).takeUnretainedValue()
+            let name = name.map { String(cString: $0) }
+            DispatchQueue.main.async {
+                relay.target?.update(ConnectionState(status), name)
+            }
+        }
+        handle = Core.json(config).withCString { dp_controller_start($0, callback, context.toOpaque()) }
+        if handle == nil {
+            context.release()
+            update(.unavailable, nil)
+        } else {
+            self.relay = context
+            dp_controller_set_paused(handle, paused)
+        }
+    }
+
+    /// Releases held input and disconnects; no callback arrives after this.
+    func stop() {
+        dp_controller_free(handle)
+        handle = nil
+        relay?.release()
+        relay = nil
+    }
+
+    var isPaused: Bool {
+        get { paused }
+        set {
+            paused = newValue
+            dp_controller_set_paused(handle, newValue)
+        }
+    }
+
+    /// Takes effect immediately. Throws the problems if the settings are invalid.
+    func apply(_ config: DeskpuckConfig) throws {
+        let problems = Core.problems(config)
+        guard problems.isEmpty else {
+            throw CoreError(errorDescription: problems.joined(separator: " "))
+        }
+        self.config = config
+        // Not started yet: start() picks the new config up.
+        guard let handle else { return }
+        if let message = Core.json(config).withCString({ Core.take(dp_controller_apply_config(handle, $0)) }) {
+            throw CoreError(errorDescription: message)
+        }
+    }
+
+    private func update(_ state: ConnectionState, _ name: String?) {
+        connectionState = state
+        deviceName = name
+        stateDidChange?()
+    }
+}

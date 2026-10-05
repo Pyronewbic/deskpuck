@@ -1,5 +1,4 @@
 import Foundation
-import DeskpuckCore
 
 @MainActor
 final class SettingsModel: ObservableObject {
@@ -14,14 +13,14 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var loadWarnings: [String]
     @Published private(set) var saveError: String?
 
-    static let defaultRepeatRate = 1.0 / DPConfig.default().repeatInterval
+    static let defaultRepeatRate = 1.0 / Core.defaults.repeatInterval
 
-    private let controller: DPController
+    private let controller: Controller
     private let fileURL: URL
     private var loading = false
     private var pendingSave: DispatchWorkItem?
 
-    init(controller: DPController, fileURL: URL, config: DPConfig, warnings: [String]) {
+    init(controller: Controller, fileURL: URL, config: DeskpuckConfig, warnings: [String]) {
         self.controller = controller
         self.fileURL = fileURL
         loadWarnings = warnings
@@ -35,7 +34,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func restoreDefaults() {
-        load(DPConfig.default())
+        load(Core.defaults)
         commit()
     }
 
@@ -47,19 +46,19 @@ final class SettingsModel: ObservableObject {
         mappings[button] = code == KeyChoice.none.code ? nil : code
     }
 
-    var config: DPConfig {
-        let config = DPConfig.default()
-        config.keyMappings = mappings.mapValues { NSNumber(value: $0) }
-        config.pointerSpeed = pointerSpeed
-        config.scrollEnabled = scrollEnabled
-        config.repeatDelay = repeatDelay
-        config.repeatInterval = repeatEnabled ? 1.0 / repeatRate : 0
-        return config
+    var config: DeskpuckConfig {
+        DeskpuckConfig(
+            keyMappings: mappings,
+            pointerSpeed: pointerSpeed,
+            repeatDelay: repeatDelay,
+            repeatInterval: repeatEnabled ? 1.0 / repeatRate : 0,
+            scrollEnabled: scrollEnabled
+        )
     }
 
-    private func load(_ config: DPConfig) {
+    private func load(_ config: DeskpuckConfig) {
         loading = true
-        mappings = config.keyMappings.mapValues { $0.intValue }
+        mappings = config.keyMappings
         pointerSpeed = config.pointerSpeed
         scrollEnabled = config.scrollEnabled
         repeatDelay = config.repeatDelay
@@ -83,7 +82,7 @@ final class SettingsModel: ObservableObject {
         let url = fileURL
         let work = DispatchWorkItem { [weak self] in
             do {
-                try config.write(to: url)
+                try Core.save(config, to: url)
             } catch {
                 self?.saveError = "Could not save settings: \(error.localizedDescription)"
             }
