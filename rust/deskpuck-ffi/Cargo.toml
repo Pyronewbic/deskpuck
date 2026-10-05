@@ -1,0 +1,19 @@
+[package]
+name = "deskpuck-ffi"
+description = "C interface to the Deskpuck core for the Mac app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+deskpuck-ble = { path = "../deskpuck-ble" }
+deskpuck-core = { path = "../deskpuck-core" }
+deskpuck-inject = { path = "../deskpuck-inject" }
+serde_json = "1"

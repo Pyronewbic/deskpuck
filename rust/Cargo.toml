@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["deskpuck-ble", "deskpuck-core", "deskpuck-inject", "deskpuck-replay"]
+members = ["deskpuck-ble", "deskpuck-core", "deskpuck-ffi", "deskpuck-inject", "deskpuck-replay"]
 
 [workspace.package]
 version = "0.1.0"

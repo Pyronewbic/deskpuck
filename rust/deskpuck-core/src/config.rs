@@ -206,7 +206,8 @@ impl Config {
         Self::from_json(&bytes)
     }
 
-    fn to_value(&self) -> Value {
+    /// The config as a JSON value, valid or not; `validation_problems` says which.
+    pub fn to_value(&self) -> Value {
         json!({
             VERSION: CONFIG_VERSION as u8,
             KEY_MAPPINGS: self.key_mappings,

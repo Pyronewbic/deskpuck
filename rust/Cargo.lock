@@ -219,6 +219,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "deskpuck-ffi"
+version = "0.1.0"
+dependencies = [
+ "deskpuck-ble",
+ "deskpuck-core",
+ "deskpuck-inject",
+ "serde_json",
+]
+
+[[package]]
 name = "deskpuck-inject"
 version = "0.1.0"
 dependencies = [
