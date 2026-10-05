@@ -58,7 +58,7 @@ fn wheel_levels() {
     assert_eq!(wheel_for_stick_deviation(0), 0);
     assert_eq!(wheel_for_stick_deviation(30), 0);
     assert_eq!(wheel_for_stick_deviation(-30), 0);
-    // Past the deadzone but under one 60-unit level: still zero.
+    // Anything under one 60-unit level is the deadzone.
     assert_eq!(wheel_for_stick_deviation(59), 0);
     assert_eq!(wheel_for_stick_deviation(60), -5);
     assert_eq!(wheel_for_stick_deviation(-60), 5);

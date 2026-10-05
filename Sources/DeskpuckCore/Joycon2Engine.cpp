@@ -17,13 +17,10 @@ uint8_t mouseButtonsForJoyconButtons(uint32_t buttons) {
     return mouse;
 }
 
-// 20 speed levels of 60 stick units each, after a 30-unit deadzone. Stick up scrolls up.
+// 20 speed levels of 60 stick units each; the first 60 units are the deadzone.
+// Stick up scrolls up.
 int wheelForStickDeviation(int deviation) {
-    int magnitude = std::abs(deviation);
-    if (magnitude <= 30) {
-        return 0;
-    }
-    int level = magnitude / 60;
+    int level = std::abs(deviation) / 60;
     if (level > 20) level = 20;
     int speed = level * 5;
     return deviation > 0 ? -speed : speed;

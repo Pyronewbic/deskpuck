@@ -36,7 +36,7 @@ static void testWheelLevels() {
     CHECK(wheelForStickDeviation(0) == 0);
     CHECK(wheelForStickDeviation(30) == 0);
     CHECK(wheelForStickDeviation(-30) == 0);
-    // Past the deadzone but under one 60-unit level: still zero.
+    // Anything under one 60-unit level is the deadzone.
     CHECK(wheelForStickDeviation(59) == 0);
     CHECK(wheelForStickDeviation(60) == -5);
     CHECK(wheelForStickDeviation(-60) == 5);

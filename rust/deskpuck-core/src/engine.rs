@@ -56,13 +56,10 @@ pub fn mouse_buttons_for_joycon_buttons(buttons: u32) -> u8 {
     mouse
 }
 
-/// 20 speed levels of 60 stick units each, after a 30-unit deadzone. Stick up scrolls up.
+/// 20 speed levels of 60 stick units each; the first 60 units are the deadzone.
+/// Stick up scrolls up.
 pub fn wheel_for_stick_deviation(deviation: i32) -> i32 {
-    let magnitude = deviation.saturating_abs();
-    if magnitude <= 30 {
-        return 0;
-    }
-    let speed = (magnitude / 60).min(20) * 5;
+    let speed = (deviation.saturating_abs() / 60).min(20) * 5;
     if deviation > 0 { -speed } else { speed }
 }
 
