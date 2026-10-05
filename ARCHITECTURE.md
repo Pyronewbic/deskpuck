@@ -23,6 +23,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 **`rust/`**: a cross-platform port of the core.
 - `deskpuck-core`: parser, engine, mapping and config, ported from the C++ with the same tests.
+- `deskpuck-ble`: the Bluetooth connection as a state machine with no I/O (`receiver.rs`: inputs and the time in, commands out, every timer a deadline), driven through btleplug by `deskpuck-blecli`.
 - `deskpuck-inject`: turns engine output into events and posts them through a backend per OS: CGEvent, uinput, or SendInput.
 - `deskpuck-replay`: feeds a built-in demo or a capture file through engine and backend, so the input layer can be tested without Bluetooth.
 
@@ -35,5 +36,5 @@ Bluetooth report -> parse -> engine -> post as OS input events
 - Both cores read and write the same `config.json` schema (version 1), with the same validation. A file written by one loads in the other without warnings.
 - On macOS, pointer motion is posted as real move or drag events, never as cursor warps. The Dock and hot corners only react to real events.
 - A pointer move is posted before the same report's button changes, so a press in that report starts a drag on the next move.
-- Every path that starts a Bluetooth scan goes through `startScan` in the receiver, which is where Pause blocks scanning.
+- Every path that starts a Bluetooth scan goes through one function in each receiver (`startScan` in C++, `scan` in Rust), which is where Pause blocks scanning.
 - The C++ core is what ships today. The Rust core must stay in step with it, test for test.

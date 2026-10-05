@@ -7,7 +7,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 - Xcode command line tools with Swift 5.9 or later, for the tests, `swift build` and the command-line tool.
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
-- Rust stable, for the [Rust workspace](#rust-workspace). Tested with 1.99.
+- Rust stable, for the [Rust workspace](#rust-workspace). Tested with 1.99. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
 
 ## Building the Mac app
 
@@ -30,14 +30,15 @@ Only one program can connect to the Joy-Con at a time, so quit the app before ru
 
 ## Rust workspace
 
-`rust/` holds a cross-platform port: `deskpuck-core` (the same parser, engine and config as the C++ core), `deskpuck-inject` (input backends for macOS, Linux and Windows) and `deskpuck-replay` (a tool that drives them without Bluetooth).
+`rust/` holds a cross-platform port: `deskpuck-core` (the same parser, engine and config as the C++ core), `deskpuck-ble` (the Bluetooth connection and `deskpuck-blecli`), `deskpuck-inject` (input backends for macOS, Linux and Windows) and `deskpuck-replay` (a tool that drives them without Bluetooth).
 
 ```sh
 cd rust
 cargo test
 cargo clippy --all-targets
-cargo run --release -p deskpuck-replay -- --dry-run   # print the events
-cargo run --release -p deskpuck-replay                # post them for real
+cargo run --release --bin deskpuck-blecli -- --monitor   # Joy-Con over Bluetooth
+cargo run --release -p deskpuck-replay -- --dry-run      # print the events
+cargo run --release -p deskpuck-replay                   # post them for real
 ```
 
 Without `--dry-run`, the replay moves the real pointer, scrolls and presses arrow keys for about eight seconds after a three-second countdown. It never clicks or presses Return. Focus a text editor first. `--help` lists the options and exit codes.
@@ -51,7 +52,7 @@ EOF
 sudo usermod -aG input "$USER"   # then log out and back in
 ```
 
-The Windows backend compiles but has not been run on Windows yet.
+`deskpuck-blecli` takes the same options as `deskpuck-cli` and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
 
 ## Changes
 

@@ -44,7 +44,7 @@ Change the key mappings, pointer speed, scrolling and key repeat from the menu b
 
 ## Linux and Windows
 
-A cross-platform port is in progress in [`rust/`](rust). Its input layer is tested on Linux (X11), but it has no Bluetooth support yet, so it cannot be used with a Joy-Con on those systems. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
+A cross-platform port is in progress in [`rust/`](rust). It connects to a Joy-Con and drives the pointer on macOS, and its input layer is tested on Linux (X11), but Bluetooth has not been tested on Linux or Windows yet. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
 
 ## Build from source
 
