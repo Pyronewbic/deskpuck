@@ -8,6 +8,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
 - Rust stable: the app's core is the [Rust workspace](#rust-workspace). Tested with 1.99. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
+- `gitleaks` and `cargo-deny`, for the checks before a push (`brew install gitleaks cargo-deny`).
 
 ## Building the Mac app
 
@@ -50,7 +51,8 @@ sudo usermod -aG input "$USER"   # then log out and back in
 
 ## Changes
 
-- `cargo test` and `cargo clippy --all-targets` in `rust/` must pass.
+- `scripts/check.sh` must pass: Rust format, lints and tests, known advisories and licenses of every crate (`rust/deny.toml`), the C++ tests and the app build. Exit 1 means a check failed, 3 that one could not run. CI runs it on pushes to main, on pull requests and weekly.
+- Turn on the pre-push hook once per clone, which scans the commits being pushed for secrets and then runs `scripts/check.sh`: `git config core.hooksPath .githooks`.
 - A behavior change or bug fix includes a test that fails without it.
 - Changes go to the Rust core. The C++ in `Sources/DeskpuckCore` is frozen until it is removed; `tests/run.sh` still runs its tests.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/), one change per commit.
