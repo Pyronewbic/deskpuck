@@ -70,6 +70,13 @@ for key in CFBundleIconFile CFBundleIconName; do
 done
 rm -f "$icon_plist"
 
-codesign --force --sign "$sign_as" "$APP"
+# Hardened runtime: without it, DYLD_INSERT_LIBRARIES can load code into the app
+# and borrow its Accessibility permission.
+codesign --force --options runtime --sign "$sign_as" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
+signature=$(codesign -dv "$APP" 2>&1)
+if ! grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\([^)]*runtime' <<<"$signature"; then
+    echo "$APP is not signed with the hardened runtime" >&2
+    exit 1
+fi
 echo "Built $APP ($VERSION), signed with: ${sign_as/#-/ad hoc}"
