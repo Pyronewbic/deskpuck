@@ -4,11 +4,11 @@ Use a Nintendo Switch 2 Joy-Con (R) as a Mac mouse and keyboard: slide it on a d
 
 It runs as a normal app with Bluetooth and Accessibility permission. No kernel extension, and no need to turn off System Integrity Protection.
 
-Tested on macOS 26 on Apple Silicon. The build targets macOS 13 and later, untested there.
+Runs on Apple Silicon Macs. Tested on macOS 26; the build targets macOS 13 and later, untested there.
 
 ## Install
 
-1. Open `Deskpuck-<version>.dmg` and drag Deskpuck to Applications.
+1. Download `Deskpuck-<version>.dmg` from the [latest release](https://github.com/Pyronewbic/deskpuck/releases/latest), open it, and drag Deskpuck to Applications. `SHA256SUMS` on the same page lists its checksum.
 2. Open Deskpuck. macOS blocks it the first time because it is not notarized by Apple. Click **Done**.
 3. Open **System Settings > Privacy & Security**, scroll to Security, and click **Open Anyway** next to the Deskpuck message. Confirm with your password or Touch ID.
 4. When asked, allow **Bluetooth** and **Accessibility** access. Accessibility is what lets Deskpuck move the pointer and press keys.

@@ -19,6 +19,8 @@ scripts/make-app.sh          # dist/Deskpuck.app
 scripts/make-dmg.sh          # dist/Deskpuck-<version>.dmg and .zip
 ```
 
+Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md).
+
 `make-app.sh` signs with a self-signed certificate named "Deskpuck Dev" (or the one named in `DESKPUCK_SIGN_IDENTITY`), so macOS keeps the Accessibility permission across rebuilds. If the certificate is missing, it prints the one-time steps to create it in Keychain Access. `--adhoc` skips the certificate, but then the permission resets on every build.
 
 To debug input, run the same core without the app: `deskpuck-cli --monitor` shows a live readout of every Joy-Con report (see [Rust workspace](#rust-workspace)). Only one program can connect to the Joy-Con at a time, so quit the app first.
