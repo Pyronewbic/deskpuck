@@ -7,7 +7,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 - Xcode command line tools with Swift 5.9 or later, for `swift build` and the C++ tests.
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
-- Rust stable: the app's core is the [Rust workspace](#rust-workspace). Tested with 1.99. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
+- Rust through rustup: the app's core is the [Rust workspace](#rust-workspace), and `rust/rust-toolchain.toml` pins the version, which rustup installs on first use. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
 - `gitleaks` and `cargo-deny`, for the checks before a push (`brew install gitleaks cargo-deny`).
 
 ## Building the Mac app

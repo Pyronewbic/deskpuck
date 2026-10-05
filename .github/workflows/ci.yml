@@ -24,7 +24,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: brew install gitleaks cargo-deny
-      - run: rustup component add clippy rustfmt
       - name: Secrets in the full history
         run: scripts/scan-secrets.sh
       - run: scripts/check.sh
@@ -39,6 +38,5 @@ jobs:
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
-      - run: rustup component add clippy
       - run: cargo clippy --locked --all-targets
       - run: cargo test --locked
