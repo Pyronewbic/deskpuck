@@ -107,8 +107,10 @@ static void testKeyRepeat() {
     std::vector<KeyEvent> second = keys.update(A, 0.46);
     CHECK(second.size() == 1 && isEvent(second[0], 124, true, true));
 
-    // A long packet gap yields one repeat, not a burst.
+    // A long packet gap yields one repeat, not a burst, and the schedule restarts
+    // from the gap rather than firing on every packet until it catches up.
     CHECK(keys.update(A, 5.0).size() == 1);
+    CHECK(keys.update(A, 5.03).empty());
 
     // Release sends a plain key up and stops repeating; the positive control is the
     // repeat just above, proving the same repeater would otherwise have fired.
