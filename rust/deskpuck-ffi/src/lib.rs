@@ -1,14 +1,15 @@
 //! The C interface in `include/deskpuck.h`, for the Mac app. Settings cross as
 //! JSON so the Rust validator stays the only one.
 
-use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, StatusHook};
+use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup, StatusHook};
 use deskpuck_core::config::Config;
+use deskpuck_core::pairing::PairedDevice;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
 
-pub const DP_ABI_VERSION: u32 = 1;
+pub const DP_ABI_VERSION: u32 = 2;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -22,6 +23,8 @@ pub fn status_code(status: LinkStatus) -> i32 {
         LinkStatus::Searching => 3,
         LinkStatus::Connecting => 4,
         LinkStatus::Connected => 5,
+        LinkStatus::NotPaired => 6,
+        LinkStatus::Pairing => 7,
     }
 }
 
@@ -180,7 +183,8 @@ pub unsafe extern "C" fn dp_controller_start(
         let sink = deskpuck_inject::macos::MacSink::unchecked();
         #[cfg(not(target_os = "macos"))]
         let Ok(sink) = deskpuck_inject::platform_sink() else { return ptr::null_mut() };
-        match Controller::start(config.engine_settings(), sink, hooks) {
+        let pairing = PairingSetup { file: PairedDevice::default_path(), pair_at_start: false };
+        match Controller::start(config.engine_settings(), sink, hooks, pairing) {
             Ok(controller) => Box::into_raw(Box::new(DpController { controller })),
             Err(_) => ptr::null_mut(),
         }
@@ -208,6 +212,36 @@ pub unsafe extern "C" fn dp_controller_set_paused(controller: *mut DpController,
 pub unsafe extern "C" fn dp_controller_is_paused(controller: *const DpController) -> bool {
     // SAFETY: live per the caller's contract.
     guard(|| false, || unsafe { controller.as_ref() }.is_some_and(|c| c.controller.is_paused()))
+}
+
+/// # Safety
+/// `controller` must be NULL or a live pointer from `dp_controller_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_controller_start_pairing(controller: *mut DpController) {
+    guard(
+        || (),
+        || {
+            // SAFETY: live per the caller's contract.
+            if let Some(c) = unsafe { controller.as_ref() } {
+                c.controller.start_pairing();
+            }
+        },
+    )
+}
+
+/// # Safety
+/// `controller` must be NULL or a live pointer from `dp_controller_start`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_controller_cancel_pairing(controller: *mut DpController) {
+    guard(
+        || (),
+        || {
+            // SAFETY: live per the caller's contract.
+            if let Some(c) = unsafe { controller.as_ref() } {
+                c.controller.cancel_pairing();
+            }
+        },
+    )
 }
 
 /// # Safety

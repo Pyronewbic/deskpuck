@@ -22,9 +22,16 @@ fn has(out: &[Output<u32>], want: &Output<u32>) -> bool {
     out.contains(want)
 }
 
-/// Powered on and scanning, optionally suspended.
-fn ready(suspended: bool) -> R {
+/// Paired with JOYCON.
+fn paired() -> R {
     let mut r = R::default();
+    r.set_paired(Some(JOYCON.to_string()));
+    r
+}
+
+/// Paired, powered on and scanning, optionally suspended.
+fn ready(suspended: bool) -> R {
+    let mut r = paired();
     r.handle(Input::AdapterPoweredOn, 0.0);
     r.start();
     r.set_suspended(suspended);
@@ -46,7 +53,7 @@ fn report_bytes(packet_id: u32) -> Vec<u8> {
 
 #[test]
 fn start_scans_only_once_bluetooth_is_on() {
-    let mut r = R::default();
+    let mut r = paired();
     assert_eq!(scans(&r.start()), 0);
     let out = r.handle(Input::AdapterPoweredOn, 0.0);
     assert_eq!(scans(&out), 1);
@@ -60,7 +67,7 @@ fn suspended_blocks_every_scan_path() {
     for suspended in [false, true] {
         let expect = usize::from(!suspended);
 
-        let mut r = R::default();
+        let mut r = paired();
         r.set_suspended(suspended);
         r.start();
         assert_eq!(
@@ -121,7 +128,7 @@ fn pause_and_resume() {
     assert_eq!(scans(&r.set_suspended(false)), 0);
 
     // A receiver that never wanted a scan does not start one on resume.
-    let mut idle = R::default();
+    let mut idle = paired();
     idle.handle(Input::AdapterPoweredOn, 0.0);
     idle.set_suspended(true);
     assert_eq!(scans(&idle.set_suspended(false)), 0);
@@ -339,4 +346,196 @@ fn control_characters_are_removed_from_device_names() {
         r.handle(Input::CharacteristicsFound { id: JOYCON, write: true, notify: true }, 2.0);
         assert_eq!(r.linked().map(|(_, n)| n.map(str::to_owned)), Some(shown.map(Into::into)));
     }
+}
+
+fn status(out: &[Output<u32>]) -> Option<Status> {
+    out.iter().rev().find_map(|o| match o {
+        Output::Status { status, .. } => Some(*status),
+        _ => None,
+    })
+}
+
+fn paired_output(out: &[Output<u32>]) -> Option<u32> {
+    out.iter().find_map(|o| match o {
+        Output::Paired { id, .. } => Some(*id),
+        _ => None,
+    })
+}
+
+/// Never paired, powered on, start called.
+fn unpaired() -> R {
+    let mut r = R::default();
+    r.start();
+    r.handle(Input::AdapterPoweredOn, 0.0);
+    r
+}
+
+#[test]
+fn unpaired_neither_scans_nor_connects() {
+    let mut r = R::default();
+    r.start();
+    let out = r.handle(Input::AdapterPoweredOn, 0.0);
+    assert_eq!((status(&out), scans(&out)), (Some(Status::NotPaired), 0));
+    assert!(r.handle(discovered(JOYCON), 1.0).is_empty());
+    // Positive control: the same discovery connects once JOYCON is paired.
+    assert!(has(&ready(false).handle(discovered(JOYCON), 1.0), &Output::Connect(JOYCON)));
+}
+
+#[test]
+fn outside_a_window_only_the_paired_joycon_connects() {
+    let mut r = ready(false);
+    assert!(r.handle(discovered(OTHER), 1.0).is_empty());
+    assert!(has(&r.handle(discovered(JOYCON), 1.0), &Output::Connect(JOYCON)));
+}
+
+#[test]
+fn pairing_window_pairs_the_first_joycon_and_remembers_it() {
+    let mut r = unpaired();
+    let out = r.start_pairing(10.0);
+    assert_eq!((status(&out), scans(&out)), (Some(Status::Pairing), 1));
+    assert!(r.is_pairing());
+
+    assert!(has(&r.handle(discovered(OTHER), 20.0), &Output::Connect(OTHER)));
+    r.handle(Input::Connected(OTHER), 21.0);
+    // Connected is not enough: only a link with the Joy-Con 2 characteristics pairs.
+    assert_eq!(r.paired(), None);
+    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 22.0);
+    assert_eq!(paired_output(&out), Some(OTHER));
+    assert!(has(&out, &Output::Subscribe(OTHER)));
+    assert_eq!((r.paired(), r.is_pairing()), (Some("8"), false));
+
+    // After a drop it is searched for and reconnected without a window.
+    let out = r.handle(Input::Disconnected(OTHER), 30.0);
+    assert_eq!(status(&out), Some(Status::Searching));
+    assert_eq!(scans(&r.tick(30.0 + RESCAN_AFTER_DISCONNECT)), 1);
+    assert!(r.handle(discovered(JOYCON), 34.0).is_empty(), "the old id is no longer paired");
+    assert!(has(&r.handle(discovered(OTHER), 34.0), &Output::Connect(OTHER)));
+    r.handle(Input::Connected(OTHER), 35.0);
+    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 36.0);
+    assert_eq!(paired_output(&out), None, "a reconnect is not a new pairing");
+}
+
+#[test]
+fn a_link_without_the_characteristics_is_not_paired() {
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: false }, 3.0);
+    assert_eq!((paired_output(&out), r.paired()), (None, None));
+    assert!(r.is_pairing(), "the window stays open for a real Joy-Con");
+}
+
+#[test]
+fn pairing_window_expires() {
+    // Unpaired: back to NotPaired and the scan stops.
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    assert!(has(&r.handle(discovered(OTHER), PAIRING_WINDOW - 0.01), &Output::Connect(OTHER)));
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    assert!(r.tick(PAIRING_WINDOW - 0.01).is_empty());
+    assert!(r.handle(discovered(OTHER), PAIRING_WINDOW).is_empty(), "window is half-open");
+    let out = r.tick(PAIRING_WINDOW);
+    assert_eq!(status(&out), Some(Status::NotPaired));
+    assert!(has(&out, &Output::StopScan));
+    assert!(!r.is_pairing());
+
+    // Paired: back to Searching, still scanning for the paired Joy-Con.
+    let mut r = ready(false);
+    r.start_pairing(0.0);
+    let out = r.tick(PAIRING_WINDOW);
+    assert_eq!(status(&out), Some(Status::Searching));
+    assert!(!has(&out, &Output::StopScan));
+    assert!(r.handle(discovered(OTHER), PAIRING_WINDOW + 1.0).is_empty());
+}
+
+#[test]
+fn a_joycon_accepted_in_the_window_may_finish_after_it() {
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), PAIRING_WINDOW - 1.0);
+    let out = r.tick(PAIRING_WINDOW);
+    assert_eq!(status(&out), None, "still connecting, so no idle status");
+    r.handle(Input::Connected(OTHER), PAIRING_WINDOW + 1.0);
+    let out = r.handle(
+        Input::CharacteristicsFound { id: OTHER, write: true, notify: true },
+        PAIRING_WINDOW + 2.0,
+    );
+    assert_eq!(paired_output(&out), Some(OTHER));
+}
+
+#[test]
+fn starting_a_window_lets_go_of_the_linked_joycon() {
+    let mut r = linked();
+    let out = r.start_pairing(5.0);
+    assert!(has(&out, &Output::Disconnect(JOYCON)));
+    assert_eq!(status(&out), Some(Status::Pairing));
+    assert_eq!(r.linked(), None);
+    // Its late disconnect changes nothing; the new Joy-Con can connect.
+    assert!(r.handle(Input::Disconnected(JOYCON), 5.5).is_empty());
+    assert!(has(&r.handle(discovered(OTHER), 6.0), &Output::Connect(OTHER)));
+
+    // A connection in progress is dropped too.
+    let mut r = ready(false);
+    r.handle(discovered(JOYCON), 1.0);
+    assert!(has(&r.start_pairing(2.0), &Output::Disconnect(JOYCON)));
+    assert!(has(&r.handle(Input::Connected(JOYCON), 3.0), &Output::Disconnect(JOYCON)));
+}
+
+#[test]
+fn cancel_pairing() {
+    assert!(unpaired().cancel_pairing().is_empty(), "no window, nothing to cancel");
+
+    // An unconfirmed Joy-Con from the window is dropped; nothing else is scanned for.
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), 1.0);
+    let out = r.cancel_pairing();
+    assert!(has(&out, &Output::Disconnect(OTHER)));
+    assert!(has(&out, &Output::StopScan));
+    assert_eq!(status(&out), Some(Status::NotPaired));
+    assert!(has(&r.handle(Input::Connected(OTHER), 2.0), &Output::Disconnect(OTHER)));
+
+    // Same once it has connected but before it is confirmed.
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    assert!(has(&r.cancel_pairing(), &Output::Disconnect(OTHER)));
+    assert_eq!(r.linked(), None);
+
+    // Paired: the search for the paired Joy-Con carries on.
+    let mut r = ready(false);
+    r.start_pairing(0.0);
+    let out = r.cancel_pairing();
+    assert_eq!((status(&out), scans(&out)), (Some(Status::Searching), 1));
+    assert!(!has(&out, &Output::StopScan));
+}
+
+#[test]
+fn suspend_blocks_pairing_too() {
+    let mut r = unpaired();
+    r.set_suspended(true);
+    assert!(r.start_pairing(0.0).is_empty());
+    assert!(!r.is_pairing());
+
+    // A window opened before pausing neither scans nor connects while paused.
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    assert_eq!(r.set_suspended(true), [Output::StopScan]);
+    assert!(r.handle(discovered(OTHER), 1.0).is_empty());
+    assert_eq!(scans(&r.tick(1.0)), 0);
+    // Positive control: resuming inside the window scans and connects again.
+    assert_eq!(scans(&r.set_suspended(false)), 1);
+    assert!(has(&r.handle(discovered(OTHER), 2.0), &Output::Connect(OTHER)));
+}
+
+#[test]
+fn a_failed_connect_inside_the_window_keeps_pairing() {
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), 1.0);
+    assert_eq!(status(&r.handle(Input::ConnectFailed(OTHER), 2.0)), Some(Status::Pairing));
+    assert_eq!(scans(&r.tick(2.0 + RESCAN_AFTER_FAILURE)), 1);
 }

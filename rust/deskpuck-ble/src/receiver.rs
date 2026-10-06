@@ -5,6 +5,7 @@
 
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash::Hash;
 
 pub const MANUFACTURER_ID: u16 = 0x0553;
@@ -27,10 +28,17 @@ pub const INIT_SPACING: f64 = 0.5;
 /// Notifications are enabled on discovery and again after this delay, as the
 /// C++ receiver does; some connections only start streaming on the second.
 pub const RESUBSCRIBE_DELAY: f64 = 2.0;
+/// How long a pairing window accepts a Joy-Con that is not the paired one.
+pub const PAIRING_WINDOW: f64 = 60.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     BluetoothOff,
+    /// Nothing is paired and no pairing window is open, so nothing connects.
+    NotPaired,
+    /// A pairing window is open: the first Joy-Con found becomes the paired one.
+    Pairing,
+    /// Looking for the paired Joy-Con.
     Searching,
     Connecting,
     Connected,
@@ -69,6 +77,11 @@ pub enum Output<Id> {
         report: Report,
         data: Vec<u8>,
     },
+    /// A Joy-Con connected during a pairing window is now the paired one.
+    Paired {
+        id: Id,
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -78,6 +91,15 @@ struct Link<Id> {
     data_deadline: f64,
     pending_writes: Vec<(f64, Vec<u8>)>,
     resubscribe_at: Option<f64>,
+    /// Accepted by a pairing window and not yet confirmed as a Joy-Con.
+    pairing: bool,
+}
+
+#[derive(Debug)]
+struct Pending {
+    deadline: f64,
+    name: Option<String>,
+    pairing: bool,
 }
 
 #[derive(Debug)]
@@ -86,9 +108,12 @@ pub struct Receiver<Id> {
     want_scan: bool,
     suspended: bool,
     /// At most one: a second Joy-Con is ignored while one is connecting or connected.
-    connecting: HashMap<Id, (f64, Option<String>)>,
+    connecting: HashMap<Id, Pending>,
     link: Option<Link<Id>>,
     rescan_at: Option<f64>,
+    /// The paired Joy-Con's id, as its `Display` string.
+    paired: Option<String>,
+    pairing_until: Option<f64>,
 }
 
 impl<Id> Default for Receiver<Id> {
@@ -100,17 +125,83 @@ impl<Id> Default for Receiver<Id> {
             connecting: HashMap::new(),
             link: None,
             rescan_at: None,
+            paired: None,
+            pairing_until: None,
         }
     }
 }
 
-impl<Id: Clone + Eq + Hash> Receiver<Id> {
+impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
     /// Starts looking for a Joy-Con, now or as soon as Bluetooth is on.
     pub fn start(&mut self) -> Vec<Output<Id>> {
         self.want_scan = true;
         let mut out = Vec::new();
         self.scan(&mut out);
         out
+    }
+
+    /// Set before `start`, from the stored pairing.
+    pub fn set_paired(&mut self, id: Option<String>) {
+        self.paired = id;
+    }
+
+    pub fn paired(&self) -> Option<&str> {
+        self.paired.as_deref()
+    }
+
+    pub fn is_pairing(&self) -> bool {
+        self.pairing_until.is_some()
+    }
+
+    /// Opens a pairing window, letting go of any Joy-Con linked now so a new
+    /// one can connect. Ignored while suspended, which never connects.
+    pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+        let mut out = Vec::new();
+        if self.suspended {
+            return out;
+        }
+        self.pairing_until = Some(now + PAIRING_WINDOW);
+        let dropped: Vec<Id> = self.connecting.drain().map(|(id, _)| id).collect();
+        out.extend(dropped.into_iter().map(Output::Disconnect));
+        if let Some(link) = self.link.take() {
+            out.push(Output::Disconnect(link.id));
+        }
+        self.rescan_at = None;
+        if self.powered {
+            self.idle_status(&mut out);
+        }
+        self.scan(&mut out);
+        out
+    }
+
+    /// Closes the pairing window, dropping a Joy-Con it accepted that is not
+    /// confirmed yet. The paired Joy-Con, if any, is searched for again.
+    pub fn cancel_pairing(&mut self) -> Vec<Output<Id>> {
+        let mut out = Vec::new();
+        if self.pairing_until.take().is_none() {
+            return out;
+        }
+        let unconfirmed: Vec<Id> =
+            self.connecting.iter().filter(|(_, p)| p.pairing).map(|(id, _)| id.clone()).collect();
+        for id in unconfirmed {
+            self.connecting.remove(&id);
+            out.push(Output::Disconnect(id));
+        }
+        if let Some(link) = self.link.take_if(|l| l.pairing) {
+            out.push(Output::Disconnect(link.id));
+        }
+        self.pairing_ended(&mut out);
+        self.scan(&mut out);
+        out
+    }
+
+    fn pairing_ended(&mut self, out: &mut Vec<Output<Id>>) {
+        if self.powered && self.link.is_none() && self.connecting.is_empty() {
+            self.idle_status(out);
+        }
+        if self.paired.is_none() {
+            out.push(Output::StopScan);
+        }
     }
 
     pub fn is_suspended(&self) -> bool {
@@ -130,9 +221,10 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
         out
     }
 
-    // Every scan goes through here, so the suspend gate cannot be bypassed.
+    // Every scan goes through here, so the suspend and pairing gates cannot be bypassed.
     fn scan(&mut self, out: &mut Vec<Output<Id>>) {
-        if self.want_scan && !self.suspended && self.powered {
+        let anything_to_find = self.paired.is_some() || self.pairing_until.is_some();
+        if self.want_scan && !self.suspended && self.powered && anything_to_find {
             out.push(Output::StartScan);
         }
     }
@@ -141,13 +233,25 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
         out.push(Output::Status { status, name });
     }
 
+    /// The status while nothing is linked or connecting.
+    fn idle_status(&self, out: &mut Vec<Output<Id>>) {
+        let status = if self.pairing_until.is_some() {
+            Status::Pairing
+        } else if self.paired.is_some() {
+            Status::Searching
+        } else {
+            Status::NotPaired
+        };
+        Self::status(out, status, None);
+    }
+
     pub fn handle(&mut self, input: Input<Id>, now: f64) -> Vec<Output<Id>> {
         let mut out = Vec::new();
         match input {
             Input::AdapterPoweredOn => {
                 self.powered = true;
                 if self.link.is_none() && self.connecting.is_empty() {
-                    Self::status(&mut out, Status::Searching, None);
+                    self.idle_status(&mut out);
                 }
                 self.scan(&mut out);
             }
@@ -161,18 +265,26 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
                 if self.suspended || busy || !manufacturer_ids.contains(&MANUFACTURER_ID) {
                     return out;
                 }
+                // Outside a pairing window only the paired Joy-Con may connect.
+                let pairing = self.pairing_until.is_some_and(|until| now < until);
+                if !pairing && self.paired.as_deref() != Some(id.to_string().as_str()) {
+                    return out;
+                }
                 // The advertised name is attacker-chosen and ends up in terminals and menus.
                 let name = name
                     .map(|n| n.chars().filter(|c| !c.is_control()).collect::<String>())
                     .filter(|n| !n.is_empty());
-                self.connecting.insert(id.clone(), (now + CONNECT_TIMEOUT, name.clone()));
+                self.connecting.insert(
+                    id.clone(),
+                    Pending { deadline: now + CONNECT_TIMEOUT, name: name.clone(), pairing },
+                );
                 // A rescan still pending from an earlier drop is moot now.
                 self.rescan_at = None;
                 Self::status(&mut out, Status::Connecting, name);
                 out.push(Output::Connect(id));
             }
             Input::Connected(id) => {
-                let Some((_, name)) = self.connecting.remove(&id) else {
+                let Some(Pending { name, pairing, .. }) = self.connecting.remove(&id) else {
                     // Not ours, or it already timed out: let it go.
                     out.push(Output::Disconnect(id));
                     return out;
@@ -183,23 +295,24 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
                     data_deadline: now + DATA_TIMEOUT,
                     pending_writes: Vec::new(),
                     resubscribe_at: None,
+                    pairing,
                 });
                 Self::status(&mut out, Status::Connected, name);
                 out.push(Output::DiscoverServices(id));
             }
             Input::ConnectFailed(id) => {
                 if self.connecting.remove(&id).is_some() {
-                    Self::status(&mut out, Status::Searching, None);
+                    self.idle_status(&mut out);
                     self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
                 }
             }
             Input::Disconnected(id) => {
                 if self.link.as_ref().is_some_and(|l| l.id == id) {
                     self.link = None;
-                    Self::status(&mut out, Status::Searching, None);
+                    self.idle_status(&mut out);
                     self.rescan_at = Some(now + RESCAN_AFTER_DISCONNECT);
                 } else if self.connecting.remove(&id).is_some() {
-                    Self::status(&mut out, Status::Searching, None);
+                    self.idle_status(&mut out);
                     self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
                 }
             }
@@ -208,6 +321,13 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
                 if !(write && notify) {
                     // Without both there is no data, and the data timeout reconnects.
                     return out;
+                }
+                // Both characteristics make it a Joy-Con 2, so a pairing link is confirmed.
+                if link.pairing {
+                    link.pairing = false;
+                    self.pairing_until = None;
+                    self.paired = Some(id.to_string());
+                    out.push(Output::Paired { id: id.clone(), name: link.name.clone() });
                 }
                 out.push(Output::Subscribe(id));
                 link.pending_writes = INIT_COMMANDS
@@ -239,14 +359,20 @@ impl<Id: Clone + Eq + Hash> Receiver<Id> {
         let expired: Vec<Id> = self
             .connecting
             .iter()
-            .filter(|(_, (deadline, _))| *deadline <= now)
+            .filter(|(_, pending)| pending.deadline <= now)
             .map(|(id, _)| id.clone())
             .collect();
         for id in expired {
             self.connecting.remove(&id);
             out.push(Output::Disconnect(id));
-            Self::status(&mut out, Status::Searching, None);
+            self.idle_status(&mut out);
             self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
+        }
+
+        // A Joy-Con already accepted by the window may still finish connecting.
+        if self.pairing_until.is_some_and(|until| until <= now) {
+            self.pairing_until = None;
+            self.pairing_ended(&mut out);
         }
 
         if let Some(link) = self.link.as_mut() {

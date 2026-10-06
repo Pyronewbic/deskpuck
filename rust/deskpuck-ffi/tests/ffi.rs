@@ -49,7 +49,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 12, "{exported:?}");
+    assert_eq!(exported.len(), 14, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -64,10 +64,15 @@ fn header_status_values_match() {
         (LinkStatus::Searching, "DP_STATUS_SEARCHING"),
         (LinkStatus::Connecting, "DP_STATUS_CONNECTING"),
         (LinkStatus::Connected, "DP_STATUS_CONNECTED"),
+        (LinkStatus::NotPaired, "DP_STATUS_NOT_PAIRED"),
+        (LinkStatus::Pairing, "DP_STATUS_PAIRING"),
     ] {
         let declared = format!("{name} = {},", status_code(status));
         assert!(HEADER.contains(&declared), "header lacks {declared}");
     }
+    let window =
+        format!("#define DP_PAIRING_SECONDS {:.0}\n", deskpuck_ble::receiver::PAIRING_WINDOW);
+    assert!(HEADER.contains(&window), "header lacks {window}");
 }
 
 #[test]
@@ -136,6 +141,8 @@ fn load_falls_back_on_bad_paths() {
 fn controller_functions_tolerate_null() {
     unsafe {
         dp_controller_set_paused(ptr::null_mut(), true);
+        dp_controller_start_pairing(ptr::null_mut());
+        dp_controller_cancel_pairing(ptr::null_mut());
         assert!(!dp_controller_is_paused(ptr::null()));
         let config = c(r#"{"version": 1}"#);
         let err = take(dp_controller_apply_config(ptr::null_mut(), config.as_ptr()));

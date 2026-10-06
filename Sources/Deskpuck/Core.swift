@@ -80,12 +80,14 @@ enum Core {
 }
 
 enum ConnectionState {
-    case bluetoothOff, bluetoothUnauthorized, unavailable, searching, connecting, connected
+    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, connecting, connected
 
     init(_ status: dp_status) {
         switch status {
         case DP_STATUS_BLUETOOTH_UNAUTHORIZED: self = .bluetoothUnauthorized
         case DP_STATUS_UNAVAILABLE: self = .unavailable
+        case DP_STATUS_NOT_PAIRED: self = .notPaired
+        case DP_STATUS_PAIRING: self = .pairing
         case DP_STATUS_SEARCHING: self = .searching
         case DP_STATUS_CONNECTING: self = .connecting
         case DP_STATUS_CONNECTED: self = .connected
@@ -99,6 +101,8 @@ enum ConnectionState {
 final class Controller {
     private(set) var connectionState = ConnectionState.bluetoothOff
     private(set) var deviceName: String?
+    /// When the open pairing window closes; nil when none is open.
+    private(set) var pairingEndsAt: Date?
     var stateDidChange: (() -> Void)?
 
     // Retained for the library's callbacks; it holds the controller weakly, so a
@@ -155,6 +159,17 @@ final class Controller {
         }
     }
 
+    /// The first Joy-Con that connects in the next DP_PAIRING_SECONDS replaces the paired one.
+    func startPairing() {
+        guard handle != nil, !paused else { return }
+        pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
+        dp_controller_start_pairing(handle)
+    }
+
+    func cancelPairing() {
+        dp_controller_cancel_pairing(handle)
+    }
+
     /// Takes effect immediately. Throws the problems if the settings are invalid.
     func apply(_ config: DeskpuckConfig) throws {
         let problems = Core.problems(config)
@@ -172,6 +187,9 @@ final class Controller {
     private func update(_ state: ConnectionState, _ name: String?) {
         connectionState = state
         deviceName = name
+        if state != .pairing {
+            pairingEndsAt = nil
+        }
         stateDidChange?()
     }
 }

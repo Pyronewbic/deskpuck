@@ -62,6 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status.isEnabled = false
         menu.addItem(status)
 
+        if controller.connectionState == .pairing {
+            menu.addItem(item("Cancel Pairing", action: #selector(cancelPairing)))
+        } else {
+            let pair = item("Pair New Joy-Con...", action: #selector(startPairing))
+            // Pausing stops all connecting, so a window opened now could never pair.
+            pair.isEnabled = !controller.isPaused
+            menu.addItem(pair)
+        }
+
         let pause = item("Pause Mouse Control", action: #selector(togglePause))
         pause.state = controller.isPaused ? .on : .off
         menu.addItem(pause)
@@ -98,8 +107,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .bluetoothOff: return "Bluetooth is off"
         case .bluetoothUnauthorized: return "Bluetooth access needed"
         case .unavailable: return "Bluetooth is unavailable"
+        case .notPaired: return "Not paired: choose Pair New Joy-Con"
+        case .pairing:
+            let left = controller.pairingEndsAt.map { max(0, Int($0.timeIntervalSinceNow.rounded())) }
+            let suffix = left.map { " (\($0) s left)" } ?? ""
+            return controller.isPaused ? "Pairing paused" : "Pairing: hold SYNC on the Joy-Con\(suffix)"
         case .searching:
-            return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Searching: hold SYNC on the Joy-Con"
+            return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Searching: hold SYNC on the paired Joy-Con"
         case .connecting: return controller.isPaused ? "Connecting to \(name)... (paused)" : "Connecting to \(name)..."
         case .connected: return controller.isPaused ? "Connected to \(name) (paused)" : "Connected to \(name)"
         @unknown default: return "Unknown state"
@@ -120,6 +134,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: Actions
+
+    @objc private func startPairing() {
+        controller.startPairing()
+    }
+
+    @objc private func cancelPairing() {
+        controller.cancelPairing()
+    }
 
     @objc private func togglePause() {
         controller.isPaused.toggle()

@@ -2,6 +2,10 @@
 
 Notable changes to Deskpuck. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+- Pairing: Deskpuck now connects only to the Joy-Con you pair. Choose **Pair New Joy-Con...** in the menu, then hold SYNC within 60 seconds. Pairing another Joy-Con replaces it. **Upgrading:** nothing connects until you pair once; holding SYNC alone no longer connects. `deskpuck-cli --pair` does the same from the terminal, and the app and the tool share the pairing.
+
 ## [0.1.0]
 
 First release. Apple Silicon Macs only, macOS 13 or later (tested on macOS 26).

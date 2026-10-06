@@ -12,7 +12,7 @@ Runs on Apple Silicon Macs. Tested on macOS 26; the build targets macOS 13 and l
 2. Open Deskpuck. macOS blocks it the first time because it is not notarized by Apple. Click **Done**.
 3. Open **System Settings > Privacy & Security**, scroll to Security, and click **Open Anyway** next to the Deskpuck message. Confirm with your password or Touch ID.
 4. When asked, allow **Bluetooth** and **Accessibility** access. Accessibility is what lets Deskpuck move the pointer and press keys.
-5. Hold the **SYNC** button on the Joy-Con until its lights flash. The menu bar icon fills in once it connects.
+5. Choose **Pair New Joy-Con...** from the menu bar icon, then hold the **SYNC** button on the Joy-Con until its lights flash, within 60 seconds. The menu bar icon fills in once it connects. From then on only this Joy-Con connects; hold SYNC to reconnect it.
 
 If step 3 shows no Open Anyway button, run this in Terminal instead:
 
@@ -32,6 +32,8 @@ xattr -dr com.apple.quarantine /Applications/Deskpuck.app
 
 Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
 
+To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces the paired one. The pairing is saved beside the settings, in `pairing.json`.
+
 **Pause Mouse Control** stops the Joy-Con from moving the pointer or pressing keys, and stops Deskpuck from looking for a Joy-Con. A connected Joy-Con stays connected, so resuming is instant. Quit Deskpuck to release it completely.
 
 ## Troubleshooting
@@ -40,7 +42,7 @@ Change the key mappings, pointer speed, scrolling and key repeat from the menu b
   ```sh
   tccutil reset Accessibility com.pyronewbic.deskpuck
   ```
-- **The Joy-Con does not connect:** hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time.
+- **The Joy-Con does not connect:** if the menu says Not paired, pair it first (Install, step 5). Otherwise hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time.
 
 ## Linux and Windows
 

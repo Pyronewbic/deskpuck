@@ -14,10 +14,13 @@ use btleplug::api::{
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::packet::Report;
+use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::Sink;
 use futures::StreamExt;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -32,6 +35,8 @@ pub enum LinkStatus {
     BluetoothOff,
     BluetoothUnauthorized,
     Unavailable,
+    NotPaired,
+    Pairing,
     Searching,
     Connecting,
     Connected,
@@ -41,6 +46,8 @@ impl From<Status> for LinkStatus {
     fn from(status: Status) -> Self {
         match status {
             Status::BluetoothOff => LinkStatus::BluetoothOff,
+            Status::NotPaired => LinkStatus::NotPaired,
+            Status::Pairing => LinkStatus::Pairing,
             Status::Searching => LinkStatus::Searching,
             Status::Connecting => LinkStatus::Connecting,
             Status::Connected => LinkStatus::Connected,
@@ -70,16 +77,46 @@ pub struct Hub<Id, S: Sink> {
     session: Session<S>,
     hooks: Hooks,
     connected_at: f64,
+    pairing_file: Option<PathBuf>,
 }
 
-impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
-    pub fn new(settings: EngineSettings, sink: S, hooks: Hooks) -> Self {
-        Self {
+impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
+    /// Connects only to the Joy-Con paired in `pairing_file`, and saves a new
+    /// pairing there. Without a file, a pairing lasts until the Hub is dropped.
+    pub fn new(
+        settings: EngineSettings,
+        sink: S,
+        hooks: Hooks,
+        pairing_file: Option<PathBuf>,
+    ) -> Self {
+        let mut hub = Self {
             receiver: Receiver::default(),
             session: Session::new(settings, sink),
             hooks,
             connected_at: 0.0,
+            pairing_file,
+        };
+        if let Some(path) = &hub.pairing_file {
+            match PairedDevice::load(path) {
+                Ok(device) => hub.receiver.set_paired(device.map(|d| d.id)),
+                Err(problem) => (hub.hooks.error)(&format!("{problem}; pair the Joy-Con again.")),
+            }
         }
+        hub
+    }
+
+    pub fn paired(&self) -> Option<&str> {
+        self.receiver.paired()
+    }
+
+    pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.start_pairing(now);
+        self.route(out, now)
+    }
+
+    pub fn cancel_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.cancel_pairing();
+        self.route(out, now)
     }
 
     pub fn session(&self) -> &Session<S> {
@@ -167,17 +204,40 @@ impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
                         (self.hooks.error)(&e.to_string());
                     }
                 }
+                Output::Paired { id, name } => self.remember(&id, name.as_deref()),
                 command => commands.push(command),
             }
         }
         commands
+    }
+
+    fn remember(&self, id: &Id, name: Option<&str>) {
+        self.log(|| format!("paired with {id}"));
+        let Some(path) = &self.pairing_file else { return };
+        let Some(device) = PairedDevice::new(&id.to_string(), name) else {
+            (self.hooks.error)("This Joy-Con's id cannot be saved; it stays paired until quit.");
+            return;
+        };
+        if let Err(e) = device.save(path) {
+            (self.hooks.error)(&format!("Could not save the pairing to {}: {e}", path.display()));
+        }
     }
 }
 
 enum Command {
     SetPaused(bool),
     Apply(EngineSettings),
+    StartPairing,
+    CancelPairing,
     Shutdown,
+}
+
+/// Where the paired Joy-Con is remembered, and whether to open a pairing
+/// window as soon as Bluetooth is ready.
+#[derive(Clone, Debug, Default)]
+pub struct PairingSetup {
+    pub file: Option<PathBuf>,
+    pub pair_at_start: bool,
 }
 
 /// A running connection. Dropping it releases held input, disconnects the
@@ -193,12 +253,14 @@ impl Controller {
         settings: EngineSettings,
         sink: S,
         hooks: Hooks,
+        pairing: PairingSetup,
     ) -> std::io::Result<Self> {
         let (tx, rx) = unbounded_channel();
         let runtime =
             tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
         let thread = std::thread::Builder::new().name("deskpuck-ble".into()).spawn(move || {
-            runtime.block_on(run(Hub::new(settings, sink, hooks), rx));
+            let hub = Hub::new(settings, sink, hooks, pairing.file);
+            runtime.block_on(run(hub, rx, pairing.pair_at_start));
         })?;
         Ok(Self { tx, paused: Arc::default(), thread: Some(thread) })
     }
@@ -214,6 +276,15 @@ impl Controller {
 
     pub fn apply_settings(&self, settings: EngineSettings) {
         let _ = self.tx.send(Command::Apply(settings));
+    }
+
+    /// Opens a pairing window of `PAIRING_WINDOW` seconds.
+    pub fn start_pairing(&self) {
+        let _ = self.tx.send(Command::StartPairing);
+    }
+
+    pub fn cancel_pairing(&self) {
+        let _ = self.tx.send(Command::CancelPairing);
     }
 }
 
@@ -238,13 +309,18 @@ async fn idle<S: Sink>(
                 hub.set_paused(paused, start.elapsed().as_secs_f64());
             }
             Command::Apply(settings) => hub.apply_settings(settings),
+            Command::StartPairing | Command::CancelPairing => {}
             Command::Shutdown => break,
         }
     }
     hub.shutdown();
 }
 
-async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<Command>) {
+async fn run<S: Sink>(
+    mut hub: Hub<PeripheralId, S>,
+    mut rx: UnboundedReceiver<Command>,
+    pair_at_start: bool,
+) {
     let start = Instant::now();
     let now = || start.elapsed().as_secs_f64();
 
@@ -282,7 +358,9 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
         streams: HashMap::new(),
     };
 
-    let mut commands = hub.start(now());
+    // Before the first status, so a pairing run never reports NotPaired first.
+    let mut commands = if pair_at_start { hub.start_pairing(now()) } else { Vec::new() };
+    commands.extend(hub.start(now()));
     match adapter.adapter_state().await {
         Ok(CentralState::PoweredOn) => commands.extend(hub.input(Input::AdapterPoweredOn, now())),
         Ok(CentralState::PoweredOff) => commands.extend(hub.input(Input::AdapterPoweredOff, now())),
@@ -301,6 +379,8 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
                     hub.apply_settings(settings);
                     Vec::new()
                 }
+                Some(Command::StartPairing) => hub.start_pairing(now()),
+                Some(Command::CancelPairing) => hub.cancel_pairing(now()),
                 Some(Command::Shutdown) | None => break,
             },
             Some(event) = events.next() => match driver.on_event(event) {
@@ -474,7 +554,7 @@ impl Driver {
                     }
                 });
             }
-            Output::Status { .. } | Output::Report { .. } => {}
+            Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
         }
     }
 }

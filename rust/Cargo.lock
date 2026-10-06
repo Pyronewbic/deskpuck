@@ -203,6 +203,7 @@ dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
  "futures",
+ "tempfile",
  "tokio",
  "uuid",
 ]

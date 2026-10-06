@@ -3,9 +3,13 @@
 //! file only parses options and prints.
 
 use deskpuck_ble::Monitor;
-use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, MessageHook, ReportHook};
+use deskpuck_ble::controller::{
+    Controller, Hooks, LinkStatus, MessageHook, PairingSetup, ReportHook,
+};
+use deskpuck_ble::receiver::PAIRING_WINDOW;
 use deskpuck_core::config::Config;
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::InjectError;
 use std::io::Write;
 use std::path::PathBuf;
@@ -20,34 +24,40 @@ macro_rules! note {
 }
 
 const USAGE: &str = "\
-Usage: deskpuck-cli [--config PATH] [--verbose] [--monitor]
+Usage: deskpuck-cli [--pair] [--config PATH] [--verbose] [--monitor]
 
 Connects to a Joy-Con 2 over Bluetooth and uses it as a mouse and keyboard.
-Hold SYNC on the Joy-Con to connect. Ctrl+C releases any held input and quits.
-Quit the Deskpuck app first: only one program can connect at a time.
+Only the paired Joy-Con connects; pair one first with --pair. Hold SYNC on
+the Joy-Con to connect. Ctrl+C releases any held input and quits.
+Quit the Deskpuck app first: only one program can connect at a time. The
+app and this tool share the pairing.
 
+  --pair         for 60 seconds, connect to any Joy-Con and pair it,
+                 replacing the paired one; then carry on as usual
   --config PATH  settings file (default: the Deskpuck app's config.json)
   --verbose      print Bluetooth connection detail
   --monitor      show a live readout of every Joy-Con report
 
 Exit status: 0 quit (Ctrl+C, the terminal closed, or SIGTERM), 1 Bluetooth
-failed, 2 bad usage or config path, 3 the OS refused Bluetooth or input
-injection (permission needed).";
+failed, 2 bad usage or config path, or no Joy-Con paired, 3 the OS refused
+Bluetooth or input injection (permission needed).";
 
 struct Args {
     config: Option<PathBuf>,
+    pair: bool,
     verbose: bool,
     monitor: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut args = Args { config: None, verbose: false, monitor: false };
+    let mut args = Args { config: None, pair: false, verbose: false, monitor: false };
     let mut it = std::env::args_os().skip(1);
     while let Some(arg) = it.next() {
         match arg.to_str() {
             Some("--config") => {
                 args.config = Some(it.next().ok_or("--config needs a path")?.into())
             }
+            Some("--pair") => args.pair = true,
             Some("--verbose") => args.verbose = true,
             Some("--monitor") => args.monitor = true,
             Some("--help" | "-h") => return Err(String::new()),
@@ -73,6 +83,21 @@ fn load_settings(path: Option<PathBuf>) -> Result<EngineSettings, String> {
     Ok(config.engine_settings())
 }
 
+const NOT_PAIRED: &str =
+    "No Joy-Con is paired. Run deskpuck-cli --pair and hold SYNC on the Joy-Con.";
+
+/// Without --pair there must be a usable pairing, or nothing could connect.
+fn check_paired(pair: bool, file: Option<&std::path::Path>) -> Result<(), String> {
+    if pair {
+        return Ok(());
+    }
+    match file.map(PairedDevice::load) {
+        Some(Ok(Some(_))) => Ok(()),
+        Some(Err(problem)) => Err(format!("{problem}.\n{NOT_PAIRED}")),
+        Some(Ok(None)) | None => Err(NOT_PAIRED.into()),
+    }
+}
+
 fn status_line(status: LinkStatus, name: Option<&str>) -> String {
     let name = name.unwrap_or("Joy-Con");
     match status {
@@ -83,7 +108,11 @@ fn status_line(status: LinkStatus, name: Option<&str>) -> String {
                 .into()
         }
         LinkStatus::Unavailable => "Bluetooth is unavailable".into(),
-        LinkStatus::Searching => "Searching: hold SYNC on the Joy-Con".into(),
+        LinkStatus::NotPaired => NOT_PAIRED.into(),
+        LinkStatus::Pairing => {
+            format!("Pairing for {PAIRING_WINDOW:.0} seconds: hold SYNC on the Joy-Con to use")
+        }
+        LinkStatus::Searching => "Searching: hold SYNC on the paired Joy-Con".into(),
         LinkStatus::Connecting => format!("Connecting to {name}..."),
         LinkStatus::Connected => format!("Connected to {name}"),
     }
@@ -129,6 +158,11 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let pairing_file = PairedDevice::default_path();
+    if let Err(problem) = check_paired(args.pair, pairing_file.as_deref()) {
+        note!("deskpuck-cli: {problem}");
+        return ExitCode::from(2);
+    }
     // Checked before Bluetooth: without it every event would be dropped silently.
     let sink = match deskpuck_inject::platform_sink() {
         Ok(sink) => sink,
@@ -154,6 +188,8 @@ fn main() -> ExitCode {
             match status {
                 LinkStatus::BluetoothUnauthorized => drop(exit_tx.send(3)),
                 LinkStatus::Unavailable => drop(exit_tx.send(1)),
+                // The pairing window closed with nothing paired.
+                LinkStatus::NotPaired => drop(exit_tx.send(2)),
                 _ => {}
             }
         }),
@@ -184,7 +220,8 @@ fn main() -> ExitCode {
         quit.await;
         let _ = quit_tx.send(0);
     });
-    let controller = match Controller::start(settings, sink, hooks) {
+    let pairing = PairingSetup { file: pairing_file, pair_at_start: args.pair };
+    let controller = match Controller::start(settings, sink, hooks, pairing) {
         Ok(controller) => controller,
         Err(e) => {
             note!("deskpuck-cli: could not start: {e}");

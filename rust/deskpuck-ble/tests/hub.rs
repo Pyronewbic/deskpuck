@@ -2,7 +2,9 @@ use deskpuck_ble::controller::{Hooks, Hub, LinkStatus};
 use deskpuck_ble::receiver::{Input, MANUFACTURER_ID, Output};
 use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::packet::{Report, encode_report};
+use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::{InputEvent, RecordingSink};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 const JOYCON: u32 = 7;
@@ -14,11 +16,31 @@ struct Recorder {
     statuses: Seen<(LinkStatus, Option<String>)>,
     reports: Seen<(u32, Option<String>, u128)>,
     errors: Seen<String>,
+    /// Holds the pairing file's directory for the test's lifetime.
+    dir: tempfile::TempDir,
 }
 
+impl Recorder {
+    fn pairing_file(&self) -> PathBuf {
+        self.dir.path().join("pairing.json")
+    }
+}
+
+fn save_pairing(path: &Path, id: u32) {
+    PairedDevice::new(&id.to_string(), Some("Joy-Con 2 (R)")).unwrap().save(path).unwrap();
+}
+
+/// Paired with JOYCON.
 fn hub() -> (Hub<u32, RecordingSink>, Recorder) {
+    let dir = tempfile::tempdir().unwrap();
+    save_pairing(&dir.path().join("pairing.json"), JOYCON);
+    hub_in(dir)
+}
+
+/// Uses whatever pairing.json `dir` holds.
+fn hub_in(dir: tempfile::TempDir) -> (Hub<u32, RecordingSink>, Recorder) {
     let rec =
-        Recorder { statuses: Arc::default(), reports: Arc::default(), errors: Arc::default() };
+        Recorder { statuses: Arc::default(), reports: Arc::default(), errors: Arc::default(), dir };
     let (s, r, e) = (rec.statuses.clone(), rec.reports.clone(), rec.errors.clone());
     let hooks = Hooks {
         status: Box::new(move |status, name| {
@@ -30,7 +52,8 @@ fn hub() -> (Hub<u32, RecordingSink>, Recorder) {
         log: None,
         error: Box::new(move |m| e.lock().unwrap().push(m.to_owned())),
     };
-    (Hub::new(EngineSettings::default(), RecordingSink::default(), hooks), rec)
+    let file = Some(rec.pairing_file());
+    (Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, file), rec)
 }
 
 fn discovered() -> Input<u32> {
@@ -143,4 +166,97 @@ fn settings_apply_live() {
     hub.input(notification(2, RS), 2.1);
     // Return is released by the change and not pressed again under the new mapping.
     assert_eq!(hub.session().sink().events, [key(true), key(false)]);
+}
+
+const NEW: u32 = 9;
+
+fn pair_new(hub: &mut Hub<u32, RecordingSink>) {
+    hub.start(0.0);
+    hub.input(Input::AdapterPoweredOn, 0.0);
+    hub.start_pairing(1.0);
+    hub.input(
+        Input::Discovered {
+            id: NEW,
+            name: Some("New\x07Pad".into()),
+            manufacturer_ids: vec![MANUFACTURER_ID],
+        },
+        2.0,
+    );
+    hub.input(Input::Connected(NEW), 3.0);
+    hub.input(Input::CharacteristicsFound { id: NEW, write: true, notify: true }, 4.0);
+}
+
+#[test]
+fn pairing_is_saved_and_survives_a_restart() {
+    let (mut hub, rec) = hub_in(tempfile::tempdir().unwrap());
+    assert_eq!(hub.paired(), None);
+    pair_new(&mut hub);
+    let statuses: Vec<LinkStatus> = rec.statuses.lock().unwrap().iter().map(|s| s.0).collect();
+    assert_eq!(
+        statuses,
+        [LinkStatus::NotPaired, LinkStatus::Pairing, LinkStatus::Connecting, LinkStatus::Connected]
+    );
+    let saved = PairedDevice::load(&rec.pairing_file()).unwrap().expect("saved");
+    assert_eq!(saved, PairedDevice::new("9", Some("NewPad")).unwrap());
+    assert!(rec.errors.lock().unwrap().is_empty());
+
+    // A new Hub on the same file connects to NEW and only NEW.
+    let (mut again, rec2) = hub_in(rec.dir);
+    assert_eq!(again.paired(), Some("9"));
+    again.start(0.0);
+    assert_eq!(again.input(Input::AdapterPoweredOn, 0.0), [Output::StartScan]);
+    assert!(again.input(discovered(), 1.0).is_empty(), "the old Joy-Con is not paired");
+    let new = Input::Discovered { id: NEW, name: None, manufacturer_ids: vec![MANUFACTURER_ID] };
+    assert_eq!(again.input(new, 1.0), [Output::Connect(NEW)]);
+    assert_eq!(rec2.statuses.lock().unwrap()[0], (LinkStatus::Searching, None));
+}
+
+#[test]
+fn a_malformed_pairing_file_is_reported_and_connects_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("pairing.json"), r#"{"version": 1, "id": "7", "x": 1}"#)
+        .unwrap();
+    let (mut hub, rec) = hub_in(dir);
+    assert_eq!(hub.paired(), None);
+    let errors = rec.errors.lock().unwrap().clone();
+    assert!(errors.len() == 1 && errors[0].contains("pair the Joy-Con again"), "{errors:?}");
+    hub.start(0.0);
+    assert!(hub.input(Input::AdapterPoweredOn, 0.0).is_empty(), "no scan");
+    assert!(hub.input(discovered(), 1.0).is_empty());
+    assert_eq!(rec.statuses.lock().unwrap()[0], (LinkStatus::NotPaired, None));
+}
+
+#[test]
+fn a_failed_save_is_reported_but_the_pairing_holds_until_quit() {
+    let dir = tempfile::tempdir().unwrap();
+    // A directory where the file should be: loading and saving both fail.
+    std::fs::create_dir(dir.path().join("pairing.json")).unwrap();
+    let (mut hub, rec) = hub_in(dir);
+    pair_new(&mut hub);
+    let errors = rec.errors.lock().unwrap().clone();
+    assert!(errors.last().is_some_and(|e| e.contains("Could not save the pairing")), "{errors:?}");
+    assert_eq!(hub.paired(), Some("9"));
+}
+
+#[test]
+fn without_a_file_pairing_lasts_for_the_hub() {
+    let hooks = Hooks {
+        status: Box::new(|_, _| {}),
+        report: None,
+        log: None,
+        error: Box::new(|m| panic!("unexpected error: {m}")),
+    };
+    let mut hub = Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, None);
+    pair_new(&mut hub);
+    assert_eq!(hub.paired(), Some("9"));
+}
+
+#[test]
+fn cancel_pairing_goes_through_the_hub() {
+    let (mut hub, rec) = hub_in(tempfile::tempdir().unwrap());
+    hub.start(0.0);
+    hub.input(Input::AdapterPoweredOn, 0.0);
+    assert_eq!(hub.start_pairing(1.0), [Output::StartScan]);
+    assert_eq!(hub.cancel_pairing(2.0), [Output::StopScan]);
+    assert_eq!(rec.statuses.lock().unwrap().last(), Some(&(LinkStatus::NotPaired, None)));
 }

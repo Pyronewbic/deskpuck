@@ -49,7 +49,7 @@ EOF
 sudo usermod -aG input "$USER"   # then log out and back in
 ```
 
-`deskpuck-cli` reads the app's `config.json` (`--config` picks another file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
+`deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
 
 ## Changes
 
