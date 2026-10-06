@@ -3,6 +3,7 @@
 //! deadlines checked by `tick`, so tests can drive every timeout directly.
 
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
+use deskpuck_core::pairing::clean_name;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -223,24 +224,34 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
     }
 
     /// Closes the pairing window, dropping a Joy-Con it accepted that is not
-    /// confirmed yet. The paired Joy-Con, if any, is searched for again.
+    /// confirmed yet, even one still finishing after the window expired. The
+    /// paired Joy-Con, if any, is searched for again.
     pub fn cancel_pairing(&mut self) -> Vec<Output<Id>> {
         let mut out = Vec::new();
-        if self.pairing_until.take().is_none() {
+        let window_open = self.pairing_until.take().is_some();
+        if !self.drop_unconfirmed(&mut out) && !window_open {
             return out;
         }
+        self.pairing_ended(&mut out);
+        self.scan(&mut out);
+        out
+    }
+
+    /// Disconnects any Joy-Con accepted by a pairing window and not yet
+    /// confirmed, so nothing is paired without the user's window open.
+    fn drop_unconfirmed(&mut self, out: &mut Vec<Output<Id>>) -> bool {
         let unconfirmed: Vec<Id> =
             self.connecting.iter().filter(|(_, p)| p.pairing).map(|(id, _)| id.clone()).collect();
+        let mut dropped = !unconfirmed.is_empty();
         for id in unconfirmed {
             self.connecting.remove(&id);
             out.push(Output::Disconnect(id));
         }
         if let Some(link) = self.link.take_if(|l| l.pairing) {
             out.push(Output::Disconnect(link.id));
+            dropped = true;
         }
-        self.pairing_ended(&mut out);
-        self.scan(&mut out);
-        out
+        dropped
     }
 
     fn pairing_ended(&mut self, out: &mut Vec<Output<Id>>) {
@@ -263,6 +274,14 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         let mut out = Vec::new();
         if suspended {
             out.push(Output::StopScan);
+            // Pausing must not let a pairing finish; the window itself survives.
+            if self.drop_unconfirmed(&mut out)
+                && self.powered
+                && self.link.is_none()
+                && self.connecting.is_empty()
+            {
+                self.idle_status(&mut out);
+            }
         } else if self.connecting.is_empty() && self.link.is_none() {
             self.scan(&mut out);
         }
@@ -321,9 +340,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     return out;
                 }
                 // The advertised name is attacker-chosen and ends up in terminals and menus.
-                let name = name
-                    .map(|n| n.chars().filter(|c| !c.is_control()).collect::<String>())
-                    .filter(|n| !n.is_empty());
+                let name = name.as_deref().and_then(clean_name);
                 self.held_elsewhere = false;
                 self.connecting.insert(
                     id.clone(),

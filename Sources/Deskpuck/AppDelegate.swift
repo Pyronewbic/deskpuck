@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func refreshMenu() {
         statusLine?.title = statusText()
-        let pairing = controller.connectionState == .pairing
+        let pairing = controller.isPairing
         pairItem?.title = pairing ? "Cancel Pairing" : "Pair New Joy-Con..."
         pairItem?.action = pairing ? #selector(cancelPairing) : #selector(startPairing)
     }

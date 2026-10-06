@@ -29,10 +29,25 @@ fn valid_id(id: &str) -> bool {
     (1..=MAX_ID_LEN).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_graphic())
 }
 
+/// Control characters, and invisible ones that reorder or hide text
+/// (bidi overrides and isolates, zero-width, soft hyphen, BOM).
+fn is_hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{FEFF}')
+        || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}')
+        || matches!(c, '\u{2060}'..='\u{206F}' | '\u{FFF9}'..='\u{FFFB}')
+}
+
+/// A device name safe to show in a menu or terminal: hidden characters
+/// removed, at most `MAX_NAME_CHARS`. `None` if nothing is left. The name
+/// comes from whatever device advertised it.
+pub fn clean_name(name: &str) -> Option<String> {
+    let clean: String = name.chars().filter(|c| !is_hidden(*c)).take(MAX_NAME_CHARS).collect();
+    (!clean.is_empty()).then_some(clean)
+}
+
 fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.chars().count() <= MAX_NAME_CHARS
-        && !name.chars().any(char::is_control)
+    clean_name(name).as_deref() == Some(name)
 }
 
 impl PairedDevice {
@@ -42,9 +57,7 @@ impl PairedDevice {
         if !valid_id(id) {
             return None;
         }
-        let name = name
-            .map(|n| n.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect::<String>())
-            .filter(|n| !n.is_empty());
+        let name = name.and_then(clean_name);
         Some(Self { id: id.to_owned(), name })
     }
 

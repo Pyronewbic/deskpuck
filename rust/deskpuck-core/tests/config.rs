@@ -451,3 +451,22 @@ fn bad_modifier_buttons_are_dropped_one_by_one() {
     assert!(warned(&w, r#"Unknown modifier "Shift" for PLUS"#), "{w:?}");
     assert_eq!(w.len(), 5, "{w:?}");
 }
+
+#[test]
+fn unknown_names_are_escaped_in_warnings() {
+    let (_, w) = parse(
+        "{\"version\": 1, \"\\u001b]52;c;x\\u0007\": 1, \"keyMappings\": {\
+         \"\\u001b[31mB\\u202e\": 36, \"A\": {\"key\": 8, \"\\u001b\": 1},\
+         \"X\": {\"modifier\": \"shift\", \"\\u202e\": true}}}",
+    );
+    assert_eq!(w.len(), 4, "{w:?}");
+    for warning in &w {
+        assert!(!warning.chars().any(|c| c.is_control() || c == '\u{202E}'), "{warning:?}");
+    }
+    assert!(warned(&w, "Unknown setting \"\\u{1b}]52;c;x\\u{7}\""), "{w:?}");
+    // Positive control: an ordinary unknown name reads as before.
+    assert!(warned(
+        &parse(r#"{"version": 1, "pointerSpeeed": 1}"#).1,
+        "Unknown setting \"pointerSpeeed\""
+    ));
+}

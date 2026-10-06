@@ -7,7 +7,7 @@ pub mod receiver;
 use deskpuck_core::engine::{EngineSettings, InputEngine};
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::{Report, button_names};
-use deskpuck_inject::{InjectError, InputEvent, Poster, Sink};
+use deskpuck_inject::{InjectError, InputEvent, Poster, Sink, post_all};
 use receiver::Status;
 use std::fmt::Write;
 
@@ -87,15 +87,17 @@ impl<S: Sink> Session<S> {
     /// Takes effect immediately, releasing keys held under the old mapping.
     /// Only keys are posted: a held mouse button stays held, as in the Mac app.
     pub fn apply_settings(&mut self, settings: EngineSettings) -> Result<(), InjectError> {
-        for key in self.engine.apply_settings(settings) {
-            let event = InputEvent::Key {
+        let events: Vec<InputEvent> = self
+            .engine
+            .apply_settings(settings)
+            .into_iter()
+            .map(|key| InputEvent::Key {
                 key_code: key.key_code,
                 down: key.is_down,
                 repeat: key.is_repeat,
-            };
-            self.sink.post(&event)?;
-        }
-        Ok(())
+            })
+            .collect();
+        post_all(&events, &mut self.sink).map(|_| ())
     }
 
     /// Releases every held key and button, e.g. on Ctrl+C.

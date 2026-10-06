@@ -597,3 +597,67 @@ fn starting_a_window_clears_in_use() {
     assert_eq!(status(&r.start_pairing(2.0)), Some(Status::Pairing));
     assert_eq!(status(&r.cancel_pairing()), Some(Status::Searching));
 }
+
+#[test]
+fn cancel_drops_a_joycon_still_finishing_after_the_window() {
+    let mut r = unpaired();
+    r.start_pairing(0.0);
+    r.handle(discovered(OTHER), PAIRING_WINDOW - 0.1);
+    r.tick(PAIRING_WINDOW + 1.0);
+    assert!(!r.is_pairing(), "the window has expired");
+    let out = r.cancel_pairing();
+    assert!(has(&out, &Output::Disconnect(OTHER)), "{out:?}");
+    assert_eq!(status(&out), Some(Status::NotPaired));
+    // Its late connection is refused and nothing is paired.
+    assert!(has(
+        &r.handle(Input::Connected(OTHER), PAIRING_WINDOW + 2.0),
+        &Output::Disconnect(OTHER)
+    ));
+    assert_eq!(r.paired(), None);
+    // Positive control: with nothing in flight, a cancel after expiry does nothing.
+    let mut idle = unpaired();
+    idle.start_pairing(0.0);
+    idle.tick(PAIRING_WINDOW);
+    assert!(idle.cancel_pairing().is_empty());
+}
+
+#[test]
+fn pausing_drops_an_unconfirmed_pairing() {
+    // Connecting, and connected but unconfirmed: both are dropped, nothing is paired.
+    for confirm_step in [false, true] {
+        let mut r = unpaired();
+        r.start_pairing(0.0);
+        r.handle(discovered(OTHER), 1.0);
+        if confirm_step {
+            r.handle(Input::Connected(OTHER), 2.0);
+        }
+        let out = r.set_suspended(true);
+        assert!(has(&out, &Output::Disconnect(OTHER)), "connected={confirm_step}: {out:?}");
+        assert_eq!(status(&out), Some(Status::Pairing), "the window is paused, not closed");
+        r.handle(Input::Connected(OTHER), 3.0);
+        let late =
+            r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 4.0);
+        assert_eq!((paired_output(&late), r.paired()), (None, None), "connected={confirm_step}");
+    }
+    // A paired Joy-Con's normal link is kept on pause, as before.
+    let mut r = linked();
+    assert_eq!(r.set_suspended(true), [Output::StopScan]);
+    assert!(r.linked().is_some());
+}
+
+#[test]
+fn advertised_names_are_cleaned_and_capped() {
+    let mut r = ready(false);
+    let long = format!("Joy\u{202E}Con\u{200B}{}", "x".repeat(300));
+    let out = r.handle(
+        Input::Discovered { id: JOYCON, name: Some(long), manufacturer_ids: vec![MANUFACTURER_ID] },
+        1.0,
+    );
+    let shown = out.iter().find_map(|o| match o {
+        Output::Status { name, .. } => name.clone(),
+        _ => None,
+    });
+    let shown = shown.expect("a name");
+    assert!(shown.starts_with("JoyConx"), "{shown:?}");
+    assert_eq!(shown.chars().count(), deskpuck_core::pairing::MAX_NAME_CHARS);
+}

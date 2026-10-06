@@ -106,17 +106,24 @@ struct ShortcutRecorder: View {
             Button("Cancel", action: onCancel)
         }
         .onAppear {
+            // onAppear can repeat before onDisappear; a second monitor would
+            // outlive the row and swallow every key press in the app.
+            removeMonitor()
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 handle(event)
                 return nil
             }
         }
         .onDisappear {
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
-            }
-            monitor = nil
+            removeMonitor()
         }
+    }
+
+    private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        monitor = nil
     }
 
     private func handle(_ event: NSEvent) {

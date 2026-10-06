@@ -137,3 +137,22 @@ fn default_path_sits_beside_the_config() {
     assert_eq!(pairing.parent(), config.parent());
     assert_eq!(pairing.file_name().and_then(|n| n.to_str()), Some("pairing.json"));
 }
+
+#[test]
+fn names_lose_hidden_characters_and_are_capped() {
+    // Right-to-left override, zero-width space, isolate, BOM and an escape.
+    let sneaky = "Joy\u{202E}lortnoc\u{200B}\u{2066}x\u{FEFF}\x1b[2J";
+    assert_eq!(clean_name(sneaky).as_deref(), Some("Joylortnocx[2J"));
+    assert_eq!(clean_name("\u{200B}\u{202E}\n"), None);
+    assert_eq!(clean_name(&"N".repeat(300)).map(|n| n.chars().count()), Some(MAX_NAME_CHARS));
+    // Positive control: ordinary names, accents included, pass unchanged.
+    assert_eq!(clean_name("Joy-Con 2 (R) caf\u{e9}").as_deref(), Some("Joy-Con 2 (R) caf\u{e9}"));
+
+    // The file accepts only names that are already clean.
+    let bidi = r#"{"version": 1, "id": "a", "name": "Joy\u202eCon"}"#;
+    assert!(PairedDevice::from_json(bidi.as_bytes()).is_err_and(|e| e.contains("invalid name")));
+    assert_eq!(
+        PairedDevice::new("a", Some(sneaky)).unwrap().name.as_deref(),
+        Some("Joylortnocx[2J")
+    );
+}

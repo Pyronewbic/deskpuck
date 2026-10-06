@@ -145,6 +145,9 @@ final class Controller {
     private(set) var latchedModifiers: [String] = []
     /// When the open pairing window closes; nil when none is open.
     private(set) var pairingEndsAt: Date?
+    /// From Pair New Joy-Con until a Joy-Con connects or the window closes,
+    /// including while one it accepted is still connecting, which Cancel drops.
+    private(set) var isPairing = false
     var stateDidChange: (() -> Void)?
 
     // Retained for the library's callbacks; it holds the controller weakly, so a
@@ -213,11 +216,14 @@ final class Controller {
     func startPairing() {
         guard handle != nil, !paused else { return }
         pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
+        isPairing = true
         dp_controller_start_pairing(handle)
     }
 
     func cancelPairing() {
+        isPairing = false
         dp_controller_cancel_pairing(handle)
+        stateDidChange?()
     }
 
     /// Takes effect immediately. Throws the problems if the settings are invalid.
@@ -244,6 +250,9 @@ final class Controller {
         deviceName = name
         if state != .pairing {
             pairingEndsAt = nil
+        }
+        if state != .pairing && state != .connecting {
+            isPairing = false
         }
         stateDidChange?()
     }
