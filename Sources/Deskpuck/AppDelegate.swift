@@ -3,12 +3,16 @@ import ApplicationServices
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     private let controller: Controller
     private let settings: SettingsModel
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var accessibilityTimer: Timer?
+    // Kept so an open menu follows state changes and the pairing countdown.
+    private var statusLine: NSMenuItem?
+    private var pairItem: NSMenuItem?
+    private var menuTimer: Timer?
 
     override init() {
         Core.checkLibrary()
@@ -25,7 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        controller.stateDidChange = { [weak self] in self?.updateIcon() }
+        controller.stateDidChange = { [weak self] in
+            self?.updateIcon()
+            self?.refreshMenu()
+        }
         updateIcon()
 
         if !AXIsProcessTrusted() {
@@ -58,18 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let status = NSMenuItem(title: statusText(), action: nil, keyEquivalent: "")
-        status.isEnabled = false
+        let status = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         menu.addItem(status)
-
-        if controller.connectionState == .pairing {
-            menu.addItem(item("Cancel Pairing", action: #selector(cancelPairing)))
-        } else {
-            let pair = item("Pair New Joy-Con...", action: #selector(startPairing))
-            // Pausing stops all connecting, so a window opened now could never pair.
-            pair.isEnabled = !controller.isPaused
-            menu.addItem(pair)
-        }
+        statusLine = status
+        let pair = item("", action: #selector(startPairing))
+        menu.addItem(pair)
+        pairItem = pair
+        refreshMenu()
 
         let pause = item("Pause Mouse Control", action: #selector(togglePause))
         pause.state = controller.isPaused ? .on : .off
@@ -82,6 +84,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         version.isEnabled = false
         menu.addItem(version)
         menu.addItem(item("Quit Deskpuck", action: #selector(NSApplication.terminate(_:)), key: "q", target: NSApp))
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        // .common includes menu tracking, when the default run loop mode does not run.
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshMenu() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        menuTimer = timer
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuTimer?.invalidate()
+        menuTimer = nil
+    }
+
+    private func refreshMenu() {
+        statusLine?.title = statusText()
+        let pairing = controller.connectionState == .pairing
+        pairItem?.title = pairing ? "Cancel Pairing" : "Pair New Joy-Con..."
+        pairItem?.action = pairing ? #selector(cancelPairing) : #selector(startPairing)
+    }
+
+    // The menu enables items by validation, so isEnabled alone would be ignored.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(startPairing) {
+            // Pausing stops all connecting, so a window opened now could never pair.
+            return !controller.isPaused
+        }
+        return true
     }
 
     private func item(_ title: String, action: Selector, key: String = "", symbol: String? = nil,
