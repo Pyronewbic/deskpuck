@@ -514,11 +514,17 @@ impl Driver {
                 });
             }
             Output::Subscribe(id) => {
-                let Some((_, notify)) =
+                let Some((write, notify)) =
                     self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
                 else {
                     return;
                 };
+                hub.log(|| {
+                    format!(
+                        "services: write {}, notify {}",
+                        write.service_uuid, notify.service_uuid
+                    )
+                });
                 let Ok(peripheral) = self.adapter.peripheral(id).await else { return };
                 if !self.streams.contains_key(id) {
                     // One reader per connection, started before notifications are enabled.
