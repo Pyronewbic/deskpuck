@@ -201,7 +201,7 @@ impl Config {
         let mut keys: Vec<&String> = dict.keys().collect();
         keys.sort();
         for key in keys.into_iter().filter(|k| !KNOWN_KEYS.contains(&k.as_str())) {
-            warnings.push(format!("Unknown setting \"{key}\" ignored."));
+            warnings.push(format!("Unknown setting {key:?} ignored."));
         }
 
         match dict.get(KEY_MAPPINGS) {
@@ -331,7 +331,7 @@ const MODIFIER_NAMES: &str = "control, option, shift or command";
 /// `{"modifier": <name>, "latch": <bool>}`, latch optional.
 fn parse_modifier_button(button: &str, fields: &Map<String, Value>) -> Result<Mapping, String> {
     if let Some(field) = fields.keys().find(|k| !["modifier", "latch"].contains(&k.as_str())) {
-        return Err(format!("Modifier button {button} has an unknown field \"{field}\""));
+        return Err(format!("Modifier button {button} has an unknown field {field:?}"));
     }
     let name = &fields["modifier"];
     let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
@@ -363,7 +363,7 @@ fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
         return read_key_code(value).map(Shortcut::from).ok_or_else(bad_key);
     };
     if let Some(field) = fields.keys().find(|k| !["key", "modifiers"].contains(&k.as_str())) {
-        return Err(format!("Shortcut for {button} has an unknown field \"{field}\""));
+        return Err(format!("Shortcut for {button} has an unknown field {field:?}"));
     }
     let key = fields.get("key").and_then(read_key_code).ok_or_else(bad_key)?;
     let mut modifiers = Modifiers::NONE;
@@ -400,7 +400,7 @@ fn parse_key_mappings(
         if is_mouse_button(button) {
             warnings.push(format!("{button} is a mouse button and cannot be mapped to a key."));
         } else if !mappable.contains(&button.as_str()) {
-            warnings.push(format!("Unknown button \"{button}\" in keyMappings ignored."));
+            warnings.push(format!("Unknown button {button:?} in keyMappings ignored."));
         } else {
             match parse_mapping(button, &mappings[button]) {
                 Ok(mapping) => {

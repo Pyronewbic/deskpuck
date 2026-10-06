@@ -644,3 +644,20 @@ fn pausing_drops_an_unconfirmed_pairing() {
     assert_eq!(r.set_suspended(true), [Output::StopScan]);
     assert!(r.linked().is_some());
 }
+
+#[test]
+fn advertised_names_are_cleaned_and_capped() {
+    let mut r = ready(false);
+    let long = format!("Joy\u{202E}Con\u{200B}{}", "x".repeat(300));
+    let out = r.handle(
+        Input::Discovered { id: JOYCON, name: Some(long), manufacturer_ids: vec![MANUFACTURER_ID] },
+        1.0,
+    );
+    let shown = out.iter().find_map(|o| match o {
+        Output::Status { name, .. } => name.clone(),
+        _ => None,
+    });
+    let shown = shown.expect("a name");
+    assert!(shown.starts_with("JoyConx"), "{shown:?}");
+    assert_eq!(shown.chars().count(), deskpuck_core::pairing::MAX_NAME_CHARS);
+}

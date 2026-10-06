@@ -3,6 +3,7 @@
 //! deadlines checked by `tick`, so tests can drive every timeout directly.
 
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
+use deskpuck_core::pairing::clean_name;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -339,9 +340,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     return out;
                 }
                 // The advertised name is attacker-chosen and ends up in terminals and menus.
-                let name = name
-                    .map(|n| n.chars().filter(|c| !c.is_control()).collect::<String>())
-                    .filter(|n| !n.is_empty());
+                let name = name.as_deref().and_then(clean_name);
                 self.held_elsewhere = false;
                 self.connecting.insert(
                     id.clone(),
