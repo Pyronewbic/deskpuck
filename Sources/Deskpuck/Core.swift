@@ -1,10 +1,45 @@
 import DeskpuckFFI
 import Foundation
 
+/// What a button presses. A bare key code in config.json when there are no
+/// modifiers, else {"key": code, "modifiers": [...]}, matching the Rust core.
+struct KeyMapping: Codable, Hashable {
+    var key: Int
+    var modifiers: [String] = []
+
+    private enum CodingKeys: String, CodingKey { case key, modifiers }
+
+    init(key: Int, modifiers: [String] = []) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+
+    init(from decoder: Decoder) throws {
+        if let key = try? decoder.singleValueContainer().decode(Int.self) {
+            self.init(key: key)
+            return
+        }
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(key: try fields.decode(Int.self, forKey: .key),
+                  modifiers: try fields.decodeIfPresent([String].self, forKey: .modifiers) ?? [])
+    }
+
+    func encode(to encoder: Encoder) throws {
+        if modifiers.isEmpty {
+            var value = encoder.singleValueContainer()
+            try value.encode(key)
+        } else {
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(key, forKey: .key)
+            try fields.encode(modifiers, forKey: .modifiers)
+        }
+    }
+}
+
 /// The settings in config.json. The Rust core validates and saves them.
 struct DeskpuckConfig: Codable, Equatable {
     var version = 1
-    var keyMappings: [String: Int]
+    var keyMappings: [String: KeyMapping]
     var pointerSpeed: Double
     var repeatDelay: Double
     var repeatInterval: Double

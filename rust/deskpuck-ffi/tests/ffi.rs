@@ -191,3 +191,12 @@ fn status_reaches_the_callback_from_another_thread() {
     // No callback registered: nothing happens, nothing crashes.
     status_hook(None, 0)(LinkStatus::Connected, Some("x"));
 }
+
+#[test]
+fn shortcuts_cross_as_json() {
+    let copy = r#"{"version": 1, "keyMappings": {"A": {"key": 8, "modifiers": ["control"]}}}"#;
+    assert_eq!(problems(copy), Vec::<String>::new());
+    let bad =
+        problems(r#"{"version": 1, "keyMappings": {"A": {"key": 8, "modifiers": ["meta"]}}}"#);
+    assert!(bad.len() == 1 && bad[0].contains("Unknown modifier \"meta\""), "{bad:?}");
+}

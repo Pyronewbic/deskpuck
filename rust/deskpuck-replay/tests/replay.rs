@@ -1,5 +1,5 @@
 use deskpuck_core::engine::EngineSettings;
-use deskpuck_core::mapping::{ButtonKeyMapping, MoveKind};
+use deskpuck_core::mapping::{ButtonKeyMapping, Modifiers, MoveKind};
 use deskpuck_inject::{InjectError, InputEvent, RecordingSink, Sink};
 use deskpuck_replay::{Frame, MAX_REPORT_BYTES, Summary, TICK, demo, read_capture, run};
 use std::collections::BTreeMap;
@@ -111,7 +111,11 @@ fn demo_follows_the_config_mapping() {
     // Remapped A (Right arrow) to Space: the held-A segment now types spaces.
     let mut settings = EngineSettings::default();
     settings.key_mappings.retain(|m| m.button_mask != 0x0000_0800);
-    settings.key_mappings.push(ButtonKeyMapping { button_mask: 0x0000_0800, key_code: 49 });
+    settings.key_mappings.push(ButtonKeyMapping {
+        button_mask: 0x0000_0800,
+        key_code: 49,
+        modifiers: Modifiers::NONE,
+    });
     let (_, events) = replay(&demo(), settings);
     assert!(events.iter().any(|e| matches!(e, InputEvent::Key { key_code: 49, .. })));
     assert!(events.iter().all(|e| !matches!(e, InputEvent::Key { key_code: 124, .. })));

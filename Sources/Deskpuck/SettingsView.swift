@@ -26,9 +26,21 @@ struct SettingsView: View {
 
             Section {
                 ForEach(ButtonRow.rightJoyCon, id: \.self) { row in
-                    Picker(row.label, selection: binding(for: row.id)) {
-                        ForEach(choices(for: row.id), id: \.self) { choice in
-                            Text(choice.name).tag(choice.code)
+                    if model.recordingButton == row.id {
+                        LabeledContent(row.label) {
+                            ShortcutRecorder(
+                                onRecord: { mapping in
+                                    model.setMapping(mapping, for: row.id)
+                                    model.recordingButton = nil
+                                },
+                                onCancel: { model.recordingButton = nil }
+                            )
+                        }
+                    } else {
+                        Picker(row.label, selection: binding(for: row.id)) {
+                            ForEach(choices(for: row.id), id: \.self) { choice in
+                                Text(choice.name).tag(choice)
+                            }
                         }
                     }
                 }
@@ -93,19 +105,23 @@ struct SettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func binding(for button: String) -> Binding<Int> {
+    private func binding(for button: String) -> Binding<KeyChoice> {
         Binding(
-            get: { model.keyCode(for: button) },
-            set: { model.setKeyCode($0, for: button) }
+            get: { KeyChoice(mapping: model.mapping(for: button)) },
+            set: { choice in
+                if choice == .record {
+                    model.recordingButton = button
+                } else {
+                    model.setMapping(choice.mapping, for: button)
+                }
+            }
         )
     }
 
-    // Keeps a hand-edited key code selectable instead of silently showing "None".
+    // Keeps a recorded shortcut or hand-edited key selectable instead of showing "None".
     private func choices(for button: String) -> [KeyChoice] {
-        let code = model.keyCode(for: button)
-        if KeyChoice.all.contains(where: { $0.code == code }) {
-            return KeyChoice.all
-        }
-        return KeyChoice.all + [KeyChoice(code: code, name: "Key code \(code)")]
+        let current = KeyChoice(mapping: model.mapping(for: button))
+        let extra = KeyChoice.all.contains(current) ? [] : [current]
+        return KeyChoice.all + extra + [.record]
     }
 }

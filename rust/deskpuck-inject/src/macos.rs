@@ -4,8 +4,9 @@ use crate::{InjectError, InputEvent, Sink};
 use deskpuck_core::mapping::{MouseButton, MoveKind, Point, Rect, clamp_to_displays};
 use objc2_core_foundation::{CFRetained, CGPoint, CGRect};
 use objc2_core_graphics::{
-    CGDirectDisplayID, CGDisplayBounds, CGError, CGEvent, CGEventField, CGEventTapLocation,
-    CGEventType, CGGetDisplaysWithPoint, CGMainDisplayID, CGMouseButton, CGScrollEventUnit,
+    CGDirectDisplayID, CGDisplayBounds, CGError, CGEvent, CGEventField, CGEventFlags,
+    CGEventTapLocation, CGEventType, CGGetDisplaysWithPoint, CGMainDisplayID, CGMouseButton,
+    CGScrollEventUnit,
 };
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -15,7 +16,9 @@ unsafe extern "C" {
 
 /// Posts at the HID level, like a real device, so the Dock and hot corners react.
 pub struct MacSink {
-    _private: (),
+    /// Modifier keys this sink has pressed and not released. A posted
+    /// modifier key-down does not mark later key events, so they are set here.
+    held: CGEventFlags,
 }
 
 impl MacSink {
@@ -36,8 +39,29 @@ impl MacSink {
     /// For an app that asks for Accessibility itself: events posted before
     /// the user grants it are dropped by macOS, and start working once granted.
     pub fn unchecked() -> Self {
-        Self { _private: () }
+        Self { held: CGEventFlags::empty() }
     }
+}
+
+/// The flag a modifier key sets, left or right.
+fn modifier_flag(key_code: u16) -> Option<CGEventFlags> {
+    match key_code {
+        54 | 55 => Some(CGEventFlags::MaskCommand),
+        56 | 60 => Some(CGEventFlags::MaskShift),
+        58 | 61 => Some(CGEventFlags::MaskAlternate),
+        59 | 62 => Some(CGEventFlags::MaskControl),
+        _ => None,
+    }
+}
+
+/// What the event already carries (e.g. a modifier held on the real
+/// keyboard) plus what this sink holds; a modifier's own key-up drops its flag.
+fn key_flags(
+    existing: CGEventFlags,
+    held: CGEventFlags,
+    modifier: Option<CGEventFlags>,
+) -> CGEventFlags {
+    existing.difference(modifier.unwrap_or(CGEventFlags::empty())) | held
 }
 
 fn to_rect(r: CGRect) -> Rect {
@@ -143,6 +167,14 @@ impl Sink for MacSink {
             InputEvent::Key { key_code, down, repeat } => {
                 let cg_event = CGEvent::new_keyboard_event(None, key_code, down)
                     .ok_or_else(|| failed("create a key event"))?;
+                let modifier = modifier_flag(key_code);
+                if let Some(flag) = modifier {
+                    self.held.set(flag, down);
+                }
+                if modifier.is_some() || !self.held.is_empty() {
+                    let existing = CGEvent::flags(Some(&cg_event));
+                    CGEvent::set_flags(Some(&cg_event), key_flags(existing, self.held, modifier));
+                }
                 if repeat {
                     CGEvent::set_integer_value_field(
                         Some(&cg_event),
@@ -153,5 +185,36 @@ impl Sink for MacSink {
                 post(Some(cg_event), "create a key event")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CMD: CGEventFlags = CGEventFlags::MaskCommand;
+    const CTRL: CGEventFlags = CGEventFlags::MaskControl;
+    const SHIFT: CGEventFlags = CGEventFlags::MaskShift;
+
+    #[test]
+    fn modifier_keys_map_to_their_flags() {
+        for (code, flag) in [(55, CMD), (54, CMD), (56, SHIFT), (60, SHIFT), (59, CTRL), (62, CTRL)]
+        {
+            assert_eq!(modifier_flag(code), Some(flag), "{code}");
+        }
+        assert_eq!(modifier_flag(58), Some(CGEventFlags::MaskAlternate));
+        assert_eq!(modifier_flag(8), None, "C is not a modifier");
+    }
+
+    #[test]
+    fn key_events_carry_held_modifiers() {
+        let none = CGEventFlags::empty();
+        // Ctrl+C: Control down marks itself, C carries it, Control up clears it.
+        assert_eq!(key_flags(none, CTRL, Some(CTRL)), CTRL);
+        assert_eq!(key_flags(none, CTRL, None), CTRL);
+        assert_eq!(key_flags(CTRL, none, Some(CTRL)), none);
+        // A modifier held on the real keyboard is kept, not replaced.
+        assert_eq!(key_flags(SHIFT, CTRL, None), SHIFT | CTRL);
+        assert_eq!(key_flags(SHIFT | CTRL, none, Some(CTRL)), SHIFT);
     }
 }

@@ -11,8 +11,8 @@ fn warned(warnings: &[String], fragment: &str) -> bool {
     warnings.iter().any(|w| w.contains(fragment))
 }
 
-fn mappings(pairs: &[(&str, u16)]) -> BTreeMap<String, u16> {
-    pairs.iter().map(|&(name, code)| (name.to_owned(), code)).collect()
+fn mappings(pairs: &[(&str, u16)]) -> BTreeMap<String, Shortcut> {
+    pairs.iter().map(|&(name, code)| (name.to_owned(), Shortcut::from(code))).collect()
 }
 
 #[test]
@@ -331,4 +331,69 @@ fn save_failure_reports_io_error() {
     assert_eq!(std::fs::read_to_string(&blocker).expect("read blocker"), "file");
     // Only the blocker remains: no stray temp files beside it.
     assert_eq!(std::fs::read_dir(dir.path()).expect("read dir").count(), 1);
+}
+
+fn combo(key: u16, names: &[&str]) -> Shortcut {
+    let modifiers = names.iter().fold(deskpuck_core::mapping::Modifiers::NONE, |m, n| {
+        m.with(deskpuck_core::mapping::Modifiers::from_name(n).unwrap())
+    });
+    Shortcut { key, modifiers }
+}
+
+#[test]
+fn shortcuts_load_and_save() {
+    let (c, w) = parse(
+        r#"{"version": 1, "keyMappings": {
+            "A": {"key": 8, "modifiers": ["command", "control"]},
+            "B": {"key": 9},
+            "X": {"key": 7, "modifiers": []},
+            "Y": 36}}"#,
+    );
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(c.key_mappings["A"], combo(8, &["control", "command"]));
+    assert_eq!(c.key_mappings["B"], Shortcut::from(9));
+    assert_eq!(c.key_mappings["X"], Shortcut::from(7));
+
+    // Plain keys stay bare numbers on disk; shortcuts list modifiers in pressing order.
+    let value = c.to_value();
+    assert_eq!(value["keyMappings"]["Y"], 36);
+    assert_eq!(value["keyMappings"]["B"], 9);
+    assert_eq!(
+        value["keyMappings"]["A"],
+        serde_json::json!({"key": 8, "modifiers": ["control", "command"]})
+    );
+    let (back, w) = Config::from_json(&c.to_json().expect("valid"));
+    assert!(w.is_empty() && back == c, "{w:?}");
+
+    // The engine gets the modifiers.
+    let settings = c.engine_settings();
+    let a = settings.key_mappings.iter().find(|m| m.key_code == 8).expect("A mapped");
+    assert_eq!(a.modifiers, combo(8, &["control", "command"]).modifiers);
+}
+
+#[test]
+fn bad_shortcuts_are_dropped_one_by_one() {
+    let (c, w) = parse(
+        r#"{"version": 1, "keyMappings": {
+            "A": {"key": 8, "modifiers": ["hyper"]},
+            "B": {"key": 8, "modifiers": ["shift", "shift"]},
+            "X": {"key": 8, "modifiers": "shift"},
+            "Y": {"key": 8, "repeat": true},
+            "PLUS": {"modifiers": ["shift"]},
+            "HOME": {"key": 300, "modifiers": ["shift"]},
+            "CHAT": {"key": 8, "modifiers": [1]},
+            "SL": {"key": 8, "modifiers": ["Shift"]},
+            "SR": {"key": 9, "modifiers": ["option"]}}}"#,
+    );
+    assert_eq!(c.key_mappings, BTreeMap::from([("SR".to_owned(), combo(9, &["option"]))]));
+    assert!(warned(&w, "Unknown modifier \"hyper\" for A"), "{w:?}");
+    assert!(warned(&w, "Modifier \"shift\" is listed twice for B"), "{w:?}");
+    assert!(warned(&w, "Modifiers for X must be a list"), "{w:?}");
+    assert!(warned(&w, "Shortcut for Y has an unknown field \"repeat\""), "{w:?}");
+    assert!(warned(&w, "Key code for PLUS"), "{w:?}");
+    assert!(warned(&w, "Key code for HOME"), "{w:?}");
+    assert!(warned(&w, "Unknown modifier \"1\" for CHAT"), "{w:?}");
+    assert!(warned(&w, "Unknown modifier \"Shift\" for SL"), "names are lower case: {w:?}");
+    assert_eq!(w.len(), 8, "{w:?}");
+    assert!(w.iter().all(|w| w.ends_with("mapping ignored.")), "{w:?}");
 }

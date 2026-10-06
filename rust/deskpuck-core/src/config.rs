@@ -4,7 +4,7 @@
 
 use crate::engine::{EngineSettings, mouse_buttons_for_joycon_buttons};
 use crate::files;
-use crate::mapping::{ButtonKeyMapping, KeyCode};
+use crate::mapping::{ButtonKeyMapping, KeyCode, Modifiers};
 use crate::packet::{button_mask, button_name, button_names};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -48,10 +48,35 @@ fn read_number(value: &Value) -> Option<f64> {
     value.as_f64().filter(|n| n.is_finite())
 }
 
+/// What a button presses: a key (macOS virtual key code, 0-127), with any
+/// modifiers held around it. Stored as a bare key code when there are none,
+/// so files without shortcuts are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    pub key: KeyCode,
+    pub modifiers: Modifiers,
+}
+
+impl From<KeyCode> for Shortcut {
+    fn from(key: KeyCode) -> Self {
+        Self { key, modifiers: Modifiers::NONE }
+    }
+}
+
+impl Shortcut {
+    fn to_value(self) -> Value {
+        if self.modifiers.is_empty() {
+            json!(self.key)
+        } else {
+            json!({ "key": self.key, "modifiers": self.modifiers.names() })
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    /// Button name -> macOS virtual key code (0-127).
-    pub key_mappings: BTreeMap<String, KeyCode>,
+    /// Button name -> what it presses.
+    pub key_mappings: BTreeMap<String, Shortcut>,
     pub pointer_speed: f64,
     pub repeat_delay: f64,
     pub repeat_interval: f64,
@@ -65,7 +90,10 @@ impl Default for Config {
             key_mappings: defaults
                 .key_mappings
                 .iter()
-                .filter_map(|m| button_name(m.button_mask).map(|n| (n.to_owned(), m.key_code)))
+                .filter_map(|m| {
+                    let shortcut = Shortcut { key: m.key_code, modifiers: m.modifiers };
+                    button_name(m.button_mask).map(|n| (n.to_owned(), shortcut))
+                })
                 .collect(),
             pointer_speed: defaults.pointer_speed,
             repeat_delay: defaults.repeat_delay,
@@ -189,7 +217,11 @@ impl Config {
     pub fn to_value(&self) -> Value {
         json!({
             VERSION: CONFIG_VERSION as u8,
-            KEY_MAPPINGS: self.key_mappings,
+            KEY_MAPPINGS: self
+                .key_mappings
+                .iter()
+                .map(|(button, shortcut)| (button.clone(), shortcut.to_value()))
+                .collect::<Map<String, Value>>(),
             POINTER_SPEED: self.pointer_speed,
             REPEAT_DELAY: self.repeat_delay,
             REPEAT_INTERVAL: self.repeat_interval,
@@ -231,8 +263,12 @@ impl Config {
         let key_mappings = mappable_buttons()
             .into_iter()
             .filter_map(|name| {
-                let key_code = *self.key_mappings.get(name)?;
-                Some(ButtonKeyMapping { button_mask: button_mask(name)?, key_code })
+                let shortcut = *self.key_mappings.get(name)?;
+                Some(ButtonKeyMapping {
+                    button_mask: button_mask(name)?,
+                    key_code: shortcut.key,
+                    modifiers: shortcut.modifiers,
+                })
             })
             .collect();
         EngineSettings {
@@ -245,27 +281,66 @@ impl Config {
     }
 }
 
+fn read_key_code(value: &Value) -> Option<KeyCode> {
+    read_number(value)
+        .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= f64::from(KEY_CODE_MAX))
+        .map(|c| c as KeyCode)
+}
+
+/// A key code, or `{"key": <code>, "modifiers": [<name>...]}`. `Err` says why
+/// not, without the "mapping ignored" ending.
+fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
+    let bad_key =
+        || format!("Key code for {button} must be a whole number from 0 to {KEY_CODE_MAX}");
+    let Value::Object(fields) = value else {
+        return read_key_code(value).map(Shortcut::from).ok_or_else(bad_key);
+    };
+    if let Some(field) = fields.keys().find(|k| !["key", "modifiers"].contains(&k.as_str())) {
+        return Err(format!("Shortcut for {button} has an unknown field \"{field}\""));
+    }
+    let key = fields.get("key").and_then(read_key_code).ok_or_else(bad_key)?;
+    let mut modifiers = Modifiers::NONE;
+    match fields.get("modifiers") {
+        None => {}
+        Some(Value::Array(names)) => {
+            for name in names {
+                let shown = name.as_str().map_or_else(|| name.to_string(), str::to_owned);
+                let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
+                    return Err(format!(
+                        "Unknown modifier {shown:?} for {button} (use control, option, shift or command)"
+                    ));
+                };
+                if modifiers.contains(modifier) {
+                    return Err(format!("Modifier {shown:?} is listed twice for {button}"));
+                }
+                modifiers = modifiers.with(modifier);
+            }
+        }
+        Some(_) => return Err(format!("Modifiers for {button} must be a list")),
+    }
+    Ok(Shortcut { key, modifiers })
+}
+
 fn parse_key_mappings(
     mappings: &Map<String, Value>,
     warnings: &mut Vec<String>,
-) -> BTreeMap<String, KeyCode> {
+) -> BTreeMap<String, Shortcut> {
     let mappable = mappable_buttons();
     let mut buttons: Vec<&String> = mappings.keys().collect();
     buttons.sort();
     let mut parsed = BTreeMap::new();
     for button in buttons {
-        let code = read_number(&mappings[button])
-            .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= f64::from(KEY_CODE_MAX));
         if is_mouse_button(button) {
             warnings.push(format!("{button} is a mouse button and cannot be mapped to a key."));
         } else if !mappable.contains(&button.as_str()) {
             warnings.push(format!("Unknown button \"{button}\" in keyMappings ignored."));
-        } else if let Some(code) = code {
-            parsed.insert(button.clone(), code as KeyCode);
         } else {
-            warnings.push(format!(
-                "Key code for {button} must be a whole number from 0 to {KEY_CODE_MAX}; mapping ignored."
-            ));
+            match parse_shortcut(button, &mappings[button]) {
+                Ok(shortcut) => {
+                    parsed.insert(button.clone(), shortcut);
+                }
+                Err(problem) => warnings.push(format!("{problem}; mapping ignored.")),
+            }
         }
     }
     parsed
