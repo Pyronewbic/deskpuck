@@ -62,6 +62,30 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: scripts/check.sh
 
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # CRLF checkouts would break check.sh under bash and byte-exact fixtures.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: scripts/check.sh
+
   workflows:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

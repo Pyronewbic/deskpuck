@@ -4,6 +4,10 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Added
+
+- CI builds and tests the Rust workspace on Windows.
+
 ## [0.2.0] - 2026-10-06
 
 ### Changed
