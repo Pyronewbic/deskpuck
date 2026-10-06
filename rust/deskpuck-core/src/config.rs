@@ -3,13 +3,13 @@
 //! described in the returned warnings.
 
 use crate::engine::{EngineSettings, mouse_buttons_for_joycon_buttons};
+use crate::files;
 use crate::mapping::{ButtonKeyMapping, KeyCode};
 use crate::packet::{button_mask, button_name, button_names};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs::OpenOptions;
-use std::io::{self, Read, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 pub const POINTER_SPEED_MIN: f64 = 0.1;
@@ -176,34 +176,13 @@ impl Config {
     /// A missing file gives the defaults without a warning. Reads at most
     /// `MAX_CONFIG_BYTES` and refuses anything but a regular file.
     pub fn load(path: &Path) -> (Config, Vec<String>) {
-        let mut options = OpenOptions::new();
-        options.read(true);
-        // O_NONBLOCK: opening a FIFO must not hang; it is rejected below.
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
-
-        let fail = |problem: String| {
-            (Config::default(), vec![format!("{} {problem}; using defaults.", path.display())])
-        };
-        let file = match options.open(path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return (Config::default(), Vec::new());
+        match files::read_capped(path, MAX_CONFIG_BYTES) {
+            Ok(Some(bytes)) => Self::from_json(&bytes),
+            Ok(None) => (Config::default(), Vec::new()),
+            Err(problem) => {
+                (Config::default(), vec![format!("{} {problem}; using defaults.", path.display())])
             }
-            Err(e) => return fail(format!("could not be opened ({e})")),
-        };
-        if !file.metadata().is_ok_and(|m| m.is_file()) {
-            return fail("is not a regular file".to_owned());
         }
-        // Read at most one byte past the cap, even if the file grows meanwhile.
-        let mut bytes = Vec::new();
-        if file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes).is_err() {
-            return fail("could not be read".to_owned());
-        }
-        if bytes.len() as u64 > MAX_CONFIG_BYTES {
-            return fail("is larger than 64 KB".to_owned());
-        }
-        Self::from_json(&bytes)
     }
 
     /// The config as a JSON value, valid or not; `validation_problems` says which.
@@ -242,23 +221,7 @@ impl Config {
             return Err(SaveError::Invalid(problems));
         }
         let data = serde_json::to_vec_pretty(&self.to_value()).map_err(io::Error::other)?;
-
-        let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(dir)?;
-
-        let mut temp = tempfile::Builder::new().prefix(".config.json.").tempfile_in(dir)?;
-        temp.write_all(&data)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            temp.as_file().set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        }
-        temp.as_file().sync_all()?;
-        temp.persist(path).map_err(|e| SaveError::Io(e.error))?;
+        files::write_private(path, &data)?;
         Ok(())
     }
 
