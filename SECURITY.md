@@ -10,3 +10,5 @@ Deskpuck has Accessibility permission, so it can post any keyboard and mouse inp
 ## Known limitation
 
 Deskpuck connects only to the paired Joy-Con, except during the 60 seconds after you choose **Pair New Joy-Con...**, when the first device that advertises as a Joy-Con 2 is paired. Pairing remembers the Bluetooth identity the Mac sees; it identifies the Joy-Con but does not authenticate it, so a device that copies your Joy-Con's Bluetooth address could still connect. Use **Pause Mouse Control** or quit Deskpuck when you are not using the Joy-Con.
+
+On Linux, `deskpuck-tray`'s menu is served over D-Bus, so other programs running as you can choose its items, including **Pair New Joy-Con...**. Those programs can already rewrite `pairing.json` or post input through `/dev/uinput`, so this gives them nothing new.
