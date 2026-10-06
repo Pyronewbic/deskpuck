@@ -8,6 +8,8 @@ Notable changes to Deskpuck. Versions follow [Semantic Versioning](https://semve
 - The menu says when the paired Joy-Con is in use by another app on this Mac (for example `deskpuck-cli`), instead of searching for it.
 - A Joy-Con shows as Joy-Con 2 (L) or (R) as soon as it is found.
 - Modifier buttons: a button can act as Control, Option, Shift or Command while held, or latch it on and off with a tap, including for clicks. The menu bar shows a latched modifier, and pausing, quitting or changing settings releases it. In `config.json`: `{"modifier": "shift", "latch": true}`.
+- Held keys, clicks and latched modifiers are released even if macOS refuses one input event.
+- Device names have hidden characters (such as text-direction overrides) removed and are capped at 64 characters.
 - The old C++ core and its command-line tool are gone; the app and `deskpuck-cli` share one Rust core.
 - Shortcuts: a button can press a key with modifiers, such as Control+C. Choose **Record Shortcut...** in Settings. In `config.json` a mapping is either a key code or `{"key": 8, "modifiers": ["control"]}`; existing files load unchanged.
 
