@@ -1,19 +1,36 @@
 # Changelog
 
-Notable changes to Deskpuck. Versions follow [Semantic Versioning](https://semver.org/).
+Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.2.0]
+## [Unreleased]
 
-- Pairing: Deskpuck now connects only to the Joy-Con you pair. Choose **Pair New Joy-Con...** in the menu, then hold SYNC within 60 seconds. Pairing another Joy-Con replaces it. **Upgrading:** nothing connects until you pair once; holding SYNC alone no longer connects. `deskpuck-cli --pair` does the same from the terminal, and the app and the tool share the pairing.
+## [0.2.0] - 2026-10-06
+
+### Changed
+
+- **Upgrading:** Deskpuck now connects only to the Joy-Con you pair, and nothing connects until you pair once; holding SYNC alone no longer connects. Choose **Pair New Joy-Con...** in the menu, then hold SYNC within 60 seconds. Pairing another Joy-Con replaces it. `deskpuck-cli --pair` does the same from the terminal, and the app and the tool share the pairing.
 - The menu says when the paired Joy-Con is in use by another app on this Mac (for example `deskpuck-cli`), instead of searching for it.
 - A Joy-Con shows as Joy-Con 2 (L) or (R) as soon as it is found.
-- Modifier buttons: a button can act as Control, Option, Shift or Command while held, or latch it on and off with a tap, including for clicks. The menu bar shows a latched modifier, and pausing, quitting or changing settings releases it. In `config.json`: `{"modifier": "shift", "latch": true}`.
-- Held keys, clicks and latched modifiers are released even if macOS refuses one input event.
-- Device names have hidden characters (such as text-direction overrides) removed and are capped at 64 characters.
-- The old C++ core and its command-line tool are gone; the app and `deskpuck-cli` share one Rust core.
-- Shortcuts: a button can press a key with modifiers, such as Control+C. Choose **Record Shortcut...** in Settings. In `config.json` a mapping is either a key code or `{"key": 8, "modifiers": ["control"]}`; existing files load unchanged.
 
-## [0.1.0]
+### Added
+
+- Shortcuts: a button can press a key with modifiers, such as Control+C. Choose **Record Shortcut...** in Settings. In `config.json` a mapping is either a key code or `{"key": 8, "modifiers": ["control"]}`; existing files load unchanged.
+- Modifier buttons: a button can act as Control, Option, Shift or Command while held, or latch it on and off with a tap, including for clicks. The menu bar shows a latched modifier, and pausing, quitting or changing settings releases it. In `config.json`: `{"modifier": "shift", "latch": true}`.
+
+### Removed
+
+- The old C++ core and its command-line tool. The app and `deskpuck-cli` share one Rust core.
+
+### Fixed
+
+- Held keys, clicks and latched modifiers are released even if macOS refuses one input event.
+
+### Security
+
+- Deskpuck no longer connects to any nearby device that advertises as a Joy-Con 2, only to the paired one (see Changed). This resolves the 0.1.0 known limitation.
+- Device names have hidden characters (such as text-direction overrides) removed and are capped at 64 characters.
+
+## [0.1.0] - 2026-10-05
 
 First release. Apple Silicon Macs only, macOS 13 or later (tested on macOS 26).
 
@@ -22,3 +39,7 @@ First release. Apple Silicon Macs only, macOS 13 or later (tested on macOS 26).
 - Pause Mouse Control stops input and stops looking for a Joy-Con, while keeping a connected one linked.
 - Signed with the hardened runtime and a stable certificate, so the Accessibility permission carries over to later versions.
 - Known limitation: Deskpuck connects to any nearby device that advertises as a Joy-Con 2. See [SECURITY.md](https://github.com/Pyronewbic/deskpuck/blob/main/SECURITY.md).
+
+[Unreleased]: https://github.com/Pyronewbic/deskpuck/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Pyronewbic/deskpuck/releases/tag/v0.1.0
