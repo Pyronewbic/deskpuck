@@ -57,6 +57,29 @@ fn property(bus: &Connection, service: &str, name: &str) -> Option<OwnedValue> {
 
 type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 
+/// Stands in for a panel's StatusNotifierWatcher with a host registered.
+struct Watcher;
+
+#[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
+impl Watcher {
+    fn register_status_notifier_item(&self, _service: &str) {}
+
+    #[zbus(property)]
+    fn is_status_notifier_host_registered(&self) -> bool {
+        true
+    }
+}
+
+const WAITING: &str = "Deskpuck: Waiting for a system tray";
+
+/// The tooltip's title, and the first line of its text.
+fn tooltip(bus: &Connection, service: &str) -> Option<(String, String)> {
+    let value = property(bus, service, "ToolTip")?;
+    let (_icon, _pixmaps, title, text) =
+        <(String, Pixmaps, String, String)>::try_from(value).ok()?;
+    Some((title, text.lines().next()?.to_owned()))
+}
+
 fn menu_labels(bus: &Connection, service: &str) -> Vec<String> {
     let reply = bus
         .call_method(
@@ -102,14 +125,11 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
             .find(|name| name.starts_with("org.kde.StatusNotifierItem-"))
     });
 
-    // Shown before any controller event: there may never be one.
-    let tooltip = eventually("the tooltip", || {
-        let value = property(&bus, &service, "ToolTip")?;
-        let (_icon, _pixmaps, _title, text) =
-            <(String, Pixmaps, String, String)>::try_from(value).ok()?;
-        text.starts_with("Deskpuck: ").then_some(text)
-    });
-    assert!(tooltip.len() > "Deskpuck: ".len(), "{tooltip:?}");
+    // This bus has no tray host, so nothing may connect yet; shown before any
+    // controller event, since there may never be one.
+    let (title, waiting) = eventually("the tooltip", || tooltip(&bus, &service));
+    assert_eq!(title, "Deskpuck", "hosts hide a tooltip without a title");
+    assert_eq!(waiting, WAITING);
     let pixmaps = eventually("the icon", || {
         let pixmaps = Pixmaps::try_from(property(&bus, &service, "IconPixmap")?).ok()?;
         (!pixmaps.is_empty()).then_some(pixmaps)
@@ -117,7 +137,7 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
     assert_eq!((pixmaps[0].0, pixmaps[0].1, pixmaps[0].2.len()), (32, 32, 32 * 32 * 4));
 
     let labels = menu_labels(&bus, &service);
-    assert!(!labels[0].is_empty(), "status line first: {labels:?}");
+    assert_eq!(format!("Deskpuck: {}", labels[0]), WAITING, "status line first: {labels:?}");
     for expected in
         ["Pair New Joy-Con...", "Pause Mouse Control", "Open Settings File", "Reload Settings"]
     {
@@ -126,6 +146,20 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
     let version = format!("Deskpuck {}", env!("CARGO_PKG_VERSION"));
     assert!(labels.contains(&version), "{version} in {labels:?}");
     assert_eq!(labels.last().map(String::as_str), Some("Quit Deskpuck"));
+
+    let _watcher = zbus::blocking::connection::Builder::address(address.as_str())
+        .unwrap()
+        .name("org.kde.StatusNotifierWatcher")
+        .unwrap()
+        .serve_at("/StatusNotifierWatcher", Watcher)
+        .unwrap()
+        .build()
+        .unwrap();
+    let started = eventually("the tray to notice the host", || {
+        let (_, line) = tooltip(&bus, &service)?;
+        (line != WAITING).then_some(line)
+    });
+    assert!(started.starts_with("Deskpuck: "), "{started:?}");
 
     let pid = tray.0.id().to_string();
     assert!(Command::new("kill").args(["-TERM", &pid]).status().unwrap().success());

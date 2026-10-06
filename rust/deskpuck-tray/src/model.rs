@@ -7,6 +7,7 @@ use deskpuck_core::mapping::Modifiers;
 
 pub const PAIR: &str = "Pair New Joy-Con...";
 pub const CANCEL_PAIRING: &str = "Cancel Pairing";
+pub const WAITING: &str = "Waiting for a system tray";
 
 /// Times are seconds since the tray started, like the receiver's clock.
 #[derive(Debug)]
@@ -19,6 +20,7 @@ pub struct Model {
     latched: Modifiers,
     note: Option<String>,
     failure: Option<String>,
+    host: bool,
 }
 
 impl Default for Model {
@@ -32,6 +34,7 @@ impl Default for Model {
             latched: Modifiers::NONE,
             note: None,
             failure: None,
+            host: false,
         }
     }
 }
@@ -89,6 +92,16 @@ impl Model {
         self.note = Some(message.into());
     }
 
+    /// Whether something is showing the icon. Without it nobody could see the
+    /// status or reach Pause and Quit, so nothing connects until it appears.
+    pub fn set_host(&mut self, present: bool) {
+        self.host = present;
+    }
+
+    pub fn host(&self) -> bool {
+        self.host
+    }
+
     /// Nothing can run (no input injection, no controller): the problem
     /// replaces the status line and only Quit is left.
     pub fn fail(&mut self, problem: impl Into<String>) {
@@ -111,6 +124,9 @@ impl Model {
     pub fn status_text(&self, now: f64) -> String {
         if let Some(problem) = &self.failure {
             return problem.clone();
+        }
+        if !self.host {
+            return WAITING.into();
         }
         let name = self.name.as_deref().unwrap_or("Joy-Con");
         let paused = self.paused;
@@ -145,7 +161,7 @@ impl Model {
 
     /// Cancel is always allowed; starting is not while paused.
     pub fn pair_enabled(&self) -> bool {
-        !self.failed() && (self.pairing || !self.paused)
+        !self.failed() && self.host && (self.pairing || !self.paused)
     }
 
     pub fn latched_text(&self) -> Option<String> {
@@ -169,6 +185,13 @@ impl Model {
     }
 }
 
+/// Hosts may render the tooltip text as markup (the StatusNotifierItem spec
+/// allows it), and it carries device names and OS messages.
+#[cfg_attr(windows, allow(dead_code))]
+pub fn escape_markup(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 /// The key each config name presses on this OS (see deskpuck-inject's
 /// keymap): config.json keeps the Mac names.
 pub fn modifier_label(name: &str) -> &'static str {
@@ -186,9 +209,27 @@ pub fn modifier_label(name: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    fn shown() -> Model {
+        let mut model = Model::default();
+        model.set_host(true);
+        model
+    }
+
+    #[test]
+    fn nothing_is_offered_until_a_tray_shows_the_icon() {
+        let mut model = Model::default();
+        assert_eq!(model.status_text(0.0), WAITING);
+        assert!(!model.pair_enabled());
+        model.set_host(true);
+        assert_eq!(model.status_text(0.0), "Searching: hold SYNC on the paired Joy-Con");
+        assert!(model.pair_enabled());
+        model.set_host(false);
+        assert_eq!(model.status_text(0.0), WAITING);
+    }
+
     #[test]
     fn countdown_starts_at_the_pairing_window_and_never_goes_negative() {
-        let mut model = Model::default();
+        let mut model = shown();
         assert!(model.start_pairing(10.0));
         model.status(LinkStatus::Pairing, None);
         assert_eq!(model.status_text(10.0), "Pairing: hold SYNC on the Joy-Con (60 s left)");
@@ -199,7 +240,7 @@ mod tests {
 
     #[test]
     fn pairing_survives_connecting_and_ends_on_anything_else() {
-        let mut model = Model::default();
+        let mut model = shown();
         model.start_pairing(0.0);
         model.status(LinkStatus::Pairing, None);
         model.status(LinkStatus::Connecting, Some("Joy-Con 2 (R)".into()));
@@ -219,7 +260,7 @@ mod tests {
 
     #[test]
     fn pausing_blocks_new_pairing_but_not_cancelling() {
-        let mut model = Model::default();
+        let mut model = shown();
         model.set_paused(true);
         assert!(!model.start_pairing(0.0));
         assert!(!model.pairing());
@@ -238,7 +279,7 @@ mod tests {
 
     #[test]
     fn paused_wording_matches_the_mac_app() {
-        let mut model = Model::default();
+        let mut model = shown();
         model.set_paused(true);
         for (status, text) in [
             (LinkStatus::Searching, "Paused: not looking for a Joy-Con"),
@@ -257,7 +298,7 @@ mod tests {
 
     #[test]
     fn latched_modifiers_use_this_os_key_names_in_pressing_order() {
-        let mut model = Model::default();
+        let mut model = shown();
         assert_eq!(model.latched_text(), None);
         model.latched(Modifiers::COMMAND.with(Modifiers::SHIFT).with(Modifiers::OPTION));
         let command = if cfg!(windows) { "Win" } else { "Super" };
@@ -265,6 +306,13 @@ mod tests {
         assert!(model.tooltip(0.0).ends_with(&format!("Latched: Alt+Shift+{command}")));
         model.latched(Modifiers::NONE);
         assert_eq!(model.latched_text(), None);
+    }
+
+    #[test]
+    fn markup_characters_are_escaped_ampersand_first() {
+        assert_eq!(escape_markup("<b>Joy & Con</b>"), "&lt;b&gt;Joy &amp; Con&lt;/b&gt;");
+        assert_eq!(escape_markup("&lt;"), "&amp;lt;");
+        assert_eq!(escape_markup("plain"), "plain");
     }
 
     #[test]
@@ -276,7 +324,7 @@ mod tests {
 
     #[test]
     fn a_failure_replaces_the_status_and_disables_pairing() {
-        let mut model = Model::default();
+        let mut model = shown();
         model.fail("Cannot post input: /dev/uinput: permission denied");
         model.status(LinkStatus::Searching, None);
         assert_eq!(model.status_text(0.0), "Cannot post input: /dev/uinput: permission denied");
@@ -286,7 +334,7 @@ mod tests {
 
     #[test]
     fn a_note_shows_until_the_next_connection() {
-        let mut model = Model::default();
+        let mut model = shown();
         model.note("Settings: pointer_speed is out of range");
         model.status(LinkStatus::Searching, None);
         assert_eq!(model.note_text(), Some("Settings: pointer_speed is out of range"));

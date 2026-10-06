@@ -2,6 +2,7 @@
 //! Windows. All state lives in `Model`; this file wires it to the controller
 //! and the tray library, and owns every tray object on the main thread.
 
+use crate::hook::release_hook;
 use crate::icon::{self, Look};
 use crate::model::Model;
 use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup};
@@ -22,8 +23,9 @@ enum Event {
     Latched(Modifiers),
     Note(String),
     Menu(MenuId),
-    /// A quit signal; Windows has none for a windowless process.
-    #[cfg(target_os = "linux")]
+    /// Whether a tray host is showing the icon.
+    Host(bool),
+    /// A quit signal, or a close request on Windows.
     Quit,
 }
 
@@ -72,19 +74,12 @@ pub fn run() -> ExitCode {
     let mut model = Model::default();
 
     let config_path = Config::default_path();
-    let settings = match &config_path {
-        Some(path) => {
-            let (config, warnings) = Config::load(path);
-            if let Some(warning) = summarize(&warnings) {
-                model.note(warning);
-            }
-            config.engine_settings()
-        }
-        None => Default::default(),
-    };
-
     let (menu, items) = build_menu();
-    let tray = match TrayIconBuilder::new().with_menu(Box::new(menu.clone())).build() {
+    let tray = match TrayIconBuilder::new()
+        .with_title("Deskpuck")
+        .with_menu(Box::new(menu.clone()))
+        .build()
+    {
         Ok(tray) => tray,
         Err(e) => {
             eprintln!("deskpuck-tray: could not create the tray icon: {e}");
@@ -100,28 +95,12 @@ pub fn run() -> ExitCode {
     }
     platform::quit_on_signals(wake.clone());
 
-    // Checked before Bluetooth: without it every event would be dropped silently.
-    let controller = match deskpuck_inject::platform_sink() {
-        Ok(sink) => start_controller(sink, settings, &wake),
-        Err(e) => Err(format!("Cannot post input: {e}")),
-    };
-    let controller = Rc::new(RefCell::new(match controller {
-        Ok(controller) => Some(controller),
-        Err(problem) => {
-            model.fail(problem);
-            items.reload.set_enabled(false);
-            items.pause.set_enabled(false);
-            None
-        }
-    }));
-    platform::on_session_end({
-        let controller = Rc::clone(&controller);
-        Box::new(move || {
-            if let Ok(mut controller) = controller.try_borrow_mut() {
-                controller.take();
-            }
-        })
-    });
+    // Started when a tray host first shows the icon, so it never runs unseen.
+    let controller: Rc<RefCell<Option<Controller>>> = Rc::default();
+    let mut started = false;
+    let mut told_waiting = false;
+    platform::on_session_end(release_hook(&controller), wake.clone());
+    platform::watch_host(wake.clone());
 
     'run: loop {
         // Before waiting, so the first state shows even if no event ever comes.
@@ -133,8 +112,30 @@ pub fn run() -> ExitCode {
                 Event::Status(status, name) => model.status(status, name),
                 Event::Latched(modifiers) => model.latched(modifiers),
                 Event::Note(message) => model.note(message),
-                #[cfg(target_os = "linux")]
                 Event::Quit => break 'run,
+                Event::Host(present) => {
+                    model.set_host(present);
+                    if present && !started {
+                        started = true;
+                        match connect(config_path.as_deref(), &mut model, &wake) {
+                            Ok(running) => *controller.borrow_mut() = Some(running),
+                            Err(problem) => {
+                                model.fail(problem);
+                                items.reload.set_enabled(false);
+                                items.pause.set_enabled(false);
+                            }
+                        }
+                    } else if let Some(controller) = controller.borrow().as_ref() {
+                        controller.set_paused(model.paused() || !present);
+                    }
+                    if !present && !started && !told_waiting {
+                        told_waiting = true;
+                        eprintln!(
+                            "deskpuck-tray: no system tray is showing icons (on GNOME, turn on \
+                             the AppIndicator extension); not connecting until one appears"
+                        );
+                    }
+                }
                 Event::Menu(id) => {
                     if id == *items.quit.id() {
                         break 'run;
@@ -151,7 +152,7 @@ pub fn run() -> ExitCode {
                     } else if id == *items.pause.id() {
                         let paused = !model.paused();
                         model.set_paused(paused);
-                        controller.set_paused(paused);
+                        controller.set_paused(paused || !model.host());
                     } else if id == *items.open_settings.id() {
                         if let Err(problem) = open_settings(config_path.as_deref(), &wake) {
                             model.note(problem);
@@ -174,6 +175,29 @@ pub fn run() -> ExitCode {
     controller.borrow_mut().take();
     drop(tray);
     ExitCode::SUCCESS
+}
+
+/// Loads the settings as they are now and starts the connection.
+fn connect(
+    config_path: Option<&Path>,
+    model: &mut Model,
+    wake: &Wake,
+) -> Result<Controller, String> {
+    let settings = match config_path {
+        Some(path) => {
+            let (config, warnings) = Config::load(path);
+            if let Some(warning) = summarize(&warnings) {
+                model.note(warning);
+            }
+            config.engine_settings()
+        }
+        None => Default::default(),
+    };
+    // Checked before Bluetooth: without it every event would be dropped silently.
+    match deskpuck_inject::platform_sink() {
+        Ok(sink) => start_controller(sink, settings, wake),
+        Err(e) => Err(format!("Cannot post input: {e}")),
+    }
 }
 
 fn start_controller<S: deskpuck_inject::Sink + Send + 'static>(
@@ -241,7 +265,10 @@ fn render(model: &Model, now: f64, menu: &Menu, items: &Items, tray: &TrayIcon, 
         }
         shown.look = Some(look);
     }
-    let _ = tray.set_tooltip(Some(model.tooltip(now)));
+    let tooltip = model.tooltip(now);
+    #[cfg(target_os = "linux")]
+    let tooltip = crate::model::escape_markup(&tooltip);
+    let _ = tray.set_tooltip(Some(tooltip));
 }
 
 fn show_line(menu: &Menu, item: &MenuItem, text: Option<&str>, at: usize, shown: &mut bool) {
@@ -306,7 +333,42 @@ mod platform {
     }
 
     /// Logout sends SIGTERM, handled by quit_on_signals.
-    pub fn on_session_end(_release: Box<dyn FnOnce()>) {}
+    pub fn on_session_end(_release: Box<dyn FnOnce()>, _wake: Wake) {}
+
+    const HOST_POLL: Duration = Duration::from_secs(2);
+
+    /// Without a StatusNotifier host the icon is registered but shown nowhere
+    /// (GNOME without the AppIndicator extension), and ksni still reports
+    /// success, so ask the watcher directly; hosts come and go with the panel.
+    pub fn watch_host(wake: Wake) {
+        std::thread::spawn(move || {
+            let bus = zbus::blocking::Connection::session().ok();
+            let mut last = None;
+            loop {
+                let present = bus.as_ref().is_some_and(host_registered);
+                if last != Some(present) {
+                    last = Some(present);
+                    wake.send(Event::Host(present));
+                }
+                std::thread::sleep(HOST_POLL);
+            }
+        });
+    }
+
+    fn host_registered(bus: &zbus::blocking::Connection) -> bool {
+        let reply = bus.call_method(
+            Some("org.kde.StatusNotifierWatcher"),
+            "/StatusNotifierWatcher",
+            Some("org.freedesktop.DBus.Properties"),
+            "Get",
+            &("org.kde.StatusNotifierWatcher", "IsStatusNotifierHostRegistered"),
+        );
+        reply
+            .ok()
+            .and_then(|reply| reply.body().deserialize::<zbus::zvariant::OwnedValue>().ok())
+            .and_then(|value| bool::try_from(value).ok())
+            .unwrap_or(false)
+    }
 
     pub fn editor(path: &Path) -> Command {
         let mut command = Command::new("xdg-open");
@@ -353,18 +415,27 @@ mod platform {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, MSG, MsgWaitForMultipleObjects,
         PM_REMOVE, PeekMessageW, PostThreadMessageW, QS_ALLINPUT, RegisterClassW, TranslateMessage,
-        WM_ENDSESSION, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
+        WM_CLOSE, WM_ENDSESSION, WM_NULL, WNDCLASSW, WS_OVERLAPPED,
     };
 
     thread_local! {
         static SESSION_END: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
+        static QUIT: RefCell<Option<Wake>> = const { RefCell::new(None) };
+    }
+
+    /// The taskbar shows the icon whenever Explorer runs.
+    pub fn watch_host(wake: Wake) {
+        wake.send(Event::Host(true));
     }
 
     /// Windows may end the process as soon as WM_ENDSESSION returns, so the
     /// release runs inside the handler. Only top-level windows get the
-    /// message, and the tray's own hidden window ignores it.
-    pub fn on_session_end(release: Box<dyn FnOnce()>) {
+    /// message, and the tray's own hidden window ignores it. A close request
+    /// (taskkill without /F) would otherwise destroy the windows and leave
+    /// the connection running with no menu, so it quits instead.
+    pub fn on_session_end(release: Box<dyn FnOnce()>, wake: Wake) {
         SESSION_END.with(|slot| *slot.borrow_mut() = Some(release));
+        QUIT.with(|slot| *slot.borrow_mut() = Some(wake));
         let class: Vec<u16> = "DeskpuckSession\0".encode_utf16().collect();
         // SAFETY: the class name outlives both calls; the window is never shown.
         unsafe {
@@ -397,10 +468,16 @@ mod platform {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        let quit = || QUIT.with(|slot| slot.borrow().as_ref().map(|wake| wake.send(Event::Quit)));
         if message == WM_ENDSESSION && wparam != 0 {
             if let Some(release) = SESSION_END.with(|slot| slot.borrow_mut().take()) {
                 release();
             }
+            quit();
+            return 0;
+        }
+        if message == WM_CLOSE {
+            quit();
             return 0;
         }
         // SAFETY: forwarding this window's own message unchanged.

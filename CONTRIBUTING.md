@@ -51,7 +51,7 @@ sudo usermod -aG input "$USER"   # then log out and back in
 
 `deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
 
-`cargo run --release -p deskpuck-tray` starts the tray app: the Mac menu's status, pairing, pause and latch lines, plus Open Settings File and Reload Settings in place of a settings window. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
+`cargo run --release -p deskpuck-tray` starts the tray app: the Mac menu's status, pairing, pause and latch lines, plus Open Settings File and Reload Settings in place of a settings window. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension, and until something shows the icon the app does not connect to the Joy-Con. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
 
 ## Changes
 

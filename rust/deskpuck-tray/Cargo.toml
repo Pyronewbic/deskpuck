@@ -21,10 +21,10 @@ tray-icon = { version = "0.26.0", default-features = false, features = ["ksni"] 
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tokio = { version = "1", features = ["rt", "signal"] }
+zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 tempfile = "3.27.0"
-zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }

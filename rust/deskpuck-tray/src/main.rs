@@ -4,6 +4,8 @@
 #[cfg(any(target_os = "linux", windows))]
 mod app;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+mod hook;
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod icon;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod model;
