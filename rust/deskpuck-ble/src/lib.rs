@@ -5,6 +5,7 @@ pub mod controller;
 pub mod receiver;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::{Report, button_names};
 use deskpuck_inject::{InjectError, InputEvent, Poster, Sink};
 use receiver::Status;
@@ -76,6 +77,11 @@ impl<S: Sink> Session<S> {
 
     pub fn is_paused(&self) -> bool {
         self.paused
+    }
+
+    /// Modifiers latched on by a modifier button; pausing or a disconnect clears them.
+    pub fn latched(&self) -> Modifiers {
+        self.engine.latched()
     }
 
     /// Takes effect immediately, releasing keys held under the old mapping.

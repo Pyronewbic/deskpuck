@@ -147,11 +147,7 @@ fn new_settings_release_old_keys_but_keep_a_held_click() {
     session.status(Status::Connected).expect("status");
     session.report(&report(RS | R, 0), 0.0).expect("post");
     let settings = EngineSettings {
-        key_mappings: vec![ButtonKeyMapping {
-            button_mask: RS,
-            key_code: 49,
-            modifiers: Modifiers::NONE,
-        }],
+        key_mappings: vec![ButtonKeyMapping::key(RS, 49)],
         ..EngineSettings::default()
     };
     session.apply_settings(settings).expect("apply");
@@ -178,11 +174,7 @@ fn pause_apply_and_shutdown_release_a_held_shortcut() {
     const C: u16 = 8;
     const CONTROL: u16 = 59;
     let copy = EngineSettings {
-        key_mappings: vec![ButtonKeyMapping {
-            button_mask: RS,
-            key_code: C,
-            modifiers: Modifiers::CONTROL,
-        }],
+        key_mappings: vec![ButtonKeyMapping::shortcut(RS, C, Modifiers::CONTROL)],
         ..EngineSettings::default()
     };
     let k = |key_code, down| InputEvent::Key { key_code, down, repeat: false };
@@ -213,4 +205,35 @@ fn pause_apply_and_shutdown_release_a_held_shortcut() {
     pressed(&mut session);
     session.status(Status::Searching).expect("disconnect");
     assert_eq!(session.sink().events[2..], released, "disconnect");
+}
+
+#[test]
+fn every_release_path_unlatches_a_modifier() {
+    const SHIFT: u16 = 56;
+    let latch = EngineSettings {
+        key_mappings: vec![ButtonKeyMapping::modifier(RS, Modifiers::SHIFT, true)],
+        ..EngineSettings::default()
+    };
+    let k = |down| InputEvent::Key { key_code: SHIFT, down, repeat: false };
+    let latched = |session: &mut Session<RecordingSink>| {
+        session.status(Status::Connected).expect("status");
+        session.report(&report(RS, 0), 0.0).expect("post");
+        session.report(&report(0, 0), 0.1).expect("post");
+        assert_eq!(session.latched(), Modifiers::SHIFT);
+        assert_eq!(session.sink().events, [k(true)]);
+    };
+    type Release = fn(&mut Session<RecordingSink>);
+    let paths: [(&str, Release); 4] = [
+        ("pause", |s| s.set_paused(true).expect("pause")),
+        ("apply", |s| s.apply_settings(EngineSettings::default()).expect("apply")),
+        ("shutdown", |s| s.shutdown().expect("shutdown")),
+        ("disconnect", |s| s.status(Status::Searching).expect("status")),
+    ];
+    for (why, release) in paths {
+        let mut session = Session::new(latch.clone(), RecordingSink::default());
+        latched(&mut session);
+        release(&mut session);
+        assert_eq!(session.sink().events, [k(true), k(false)], "{why}");
+        assert_eq!(session.latched(), Modifiers::NONE, "{why}");
+    }
 }

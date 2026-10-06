@@ -14,7 +14,7 @@ extern "C" {
 
 // Bumped on any change to this header; the app checks it at startup so a
 // stale static library fails loudly instead of misbehaving.
-#define DP_ABI_VERSION 3
+#define DP_ABI_VERSION 4
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -57,13 +57,23 @@ typedef enum {
 // during the call.
 typedef void (*dp_status_callback)(void *context, dp_status status, const char *device_name);
 
+// Bits of the modifiers latched on by modifier buttons.
+#define DP_MODIFIER_CONTROL 1
+#define DP_MODIFIER_OPTION 2
+#define DP_MODIFIER_SHIFT 4
+#define DP_MODIFIER_COMMAND 8
+
+// Called on a background thread whenever the latched modifiers change.
+typedef void (*dp_latch_callback)(void *context, uint32_t modifiers);
+
 typedef struct dp_controller dp_controller;
 
 // Starts looking for the Joy-Con paired in pairing.json beside the default
 // config.json; with none, reports DP_STATUS_NOT_PAIRED. NULL if config_json is invalid or the
 // background thread could not start. Runs before Accessibility is granted;
 // input is dropped by macOS until it is.
-dp_controller *dp_controller_start(const char *config_json, dp_status_callback on_status, void *context);
+dp_controller *dp_controller_start(const char *config_json, dp_status_callback on_status,
+                                   dp_latch_callback on_latch, void *context);
 void dp_controller_set_paused(dp_controller *controller, bool paused);
 bool dp_controller_is_paused(const dp_controller *controller);
 // Opens a pairing window, disconnecting the current Joy-Con. The first

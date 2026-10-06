@@ -7,6 +7,7 @@ Notable changes to Deskpuck. Versions follow [Semantic Versioning](https://semve
 - Pairing: Deskpuck now connects only to the Joy-Con you pair. Choose **Pair New Joy-Con...** in the menu, then hold SYNC within 60 seconds. Pairing another Joy-Con replaces it. **Upgrading:** nothing connects until you pair once; holding SYNC alone no longer connects. `deskpuck-cli --pair` does the same from the terminal, and the app and the tool share the pairing.
 - The menu says when the paired Joy-Con is in use by another app on this Mac (for example `deskpuck-cli`), instead of searching for it.
 - A Joy-Con shows as Joy-Con 2 (L) or (R) as soon as it is found.
+- Modifier buttons: a button can act as Control, Option, Shift or Command while held, or latch it on and off with a tap, including for clicks. The menu bar shows a latched modifier, and pausing, quitting or changing settings releases it. In `config.json`: `{"modifier": "shift", "latch": true}`.
 - The old C++ core and its command-line tool are gone; the app and `deskpuck-cli` share one Rust core.
 - Shortcuts: a button can press a key with modifiers, such as Control+C. Choose **Record Shortcut...** in Settings. In `config.json` a mapping is either a key code or `{"key": 8, "modifiers": ["control"]}`; existing files load unchanged.
 

@@ -14,6 +14,7 @@ use btleplug::api::{
 };
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::Report;
 use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::Sink;
@@ -62,6 +63,7 @@ pub type StatusHook = Box<dyn FnMut(LinkStatus, Option<&str>) + Send>;
 /// Report, raw bytes, device name, and milliseconds since connecting.
 pub type ReportHook = Box<dyn FnMut(&Report, &[u8], Option<&str>, u128) + Send>;
 pub type MessageHook = Box<dyn Fn(&str) + Send>;
+pub type LatchHook = Box<dyn FnMut(Modifiers) + Send>;
 
 /// Callbacks run on the controller's thread, never on the caller's.
 pub struct Hooks {
@@ -72,6 +74,8 @@ pub struct Hooks {
     pub log: Option<MessageHook>,
     /// Failures worth showing even without --verbose.
     pub error: MessageHook,
+    /// The modifiers latched on by modifier buttons, whenever they change.
+    pub latched: Option<LatchHook>,
 }
 
 /// The receiver plus the session: inputs in, Bluetooth commands out.
@@ -81,6 +85,7 @@ pub struct Hub<Id, S: Sink> {
     hooks: Hooks,
     connected_at: f64,
     pairing_file: Option<PathBuf>,
+    last_latched: Modifiers,
 }
 
 impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
@@ -98,6 +103,7 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
             hooks,
             connected_at: 0.0,
             pairing_file,
+            last_latched: Modifiers::NONE,
         };
         if let Some(path) = &hub.pairing_file {
             match PairedDevice::load(path) {
@@ -159,6 +165,17 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         if let Err(e) = self.session.apply_settings(settings) {
             (self.hooks.error)(&e.to_string());
         }
+        self.notify_latched();
+    }
+
+    fn notify_latched(&mut self) {
+        let latched = self.session.latched();
+        if latched != self.last_latched {
+            self.last_latched = latched;
+            if let Some(hook) = self.hooks.latched.as_mut() {
+                hook(latched);
+            }
+        }
     }
 
     /// A status from the Bluetooth stack rather than the receiver.
@@ -185,6 +202,7 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         if let Err(e) = self.session.shutdown() {
             (self.hooks.error)(&e.to_string());
         }
+        self.notify_latched();
     }
 
     pub fn linked(&self) -> Option<&Id> {
@@ -219,6 +237,7 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
                 command => commands.push(command),
             }
         }
+        self.notify_latched();
         commands
     }
 

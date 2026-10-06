@@ -4,7 +4,7 @@
 
 use crate::engine::{EngineSettings, mouse_buttons_for_joycon_buttons};
 use crate::files;
-use crate::mapping::{ButtonKeyMapping, KeyCode, Modifiers};
+use crate::mapping::{ButtonAction, ButtonKeyMapping, KeyCode, Modifiers};
 use crate::packet::{button_mask, button_name, button_names};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -73,10 +73,41 @@ impl Shortcut {
     }
 }
 
+/// What a button does: press a key or shortcut, or act as one modifier key
+/// while held (`{"modifier": "shift"}`) or toggled per press (`"latch": true`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mapping {
+    Shortcut(Shortcut),
+    Modifier { modifier: Modifiers, latch: bool },
+}
+
+impl From<KeyCode> for Mapping {
+    fn from(key: KeyCode) -> Self {
+        Mapping::Shortcut(Shortcut::from(key))
+    }
+}
+
+impl From<Shortcut> for Mapping {
+    fn from(shortcut: Shortcut) -> Self {
+        Mapping::Shortcut(shortcut)
+    }
+}
+
+impl Mapping {
+    fn to_value(self) -> Value {
+        match self {
+            Mapping::Shortcut(shortcut) => shortcut.to_value(),
+            Mapping::Modifier { modifier, latch } => {
+                json!({ "modifier": modifier.names().first(), "latch": latch })
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    /// Button name -> what it presses.
-    pub key_mappings: BTreeMap<String, Shortcut>,
+    /// Button name -> what it does.
+    pub key_mappings: BTreeMap<String, Mapping>,
     pub pointer_speed: f64,
     pub repeat_delay: f64,
     pub repeat_interval: f64,
@@ -91,8 +122,15 @@ impl Default for Config {
                 .key_mappings
                 .iter()
                 .filter_map(|m| {
-                    let shortcut = Shortcut { key: m.key_code, modifiers: m.modifiers };
-                    button_name(m.button_mask).map(|n| (n.to_owned(), shortcut))
+                    let mapping = match m.action {
+                        ButtonAction::Key { key_code, modifiers } => {
+                            Mapping::Shortcut(Shortcut { key: key_code, modifiers })
+                        }
+                        ButtonAction::Modifier { modifiers, latch } => {
+                            Mapping::Modifier { modifier: modifiers, latch }
+                        }
+                    };
+                    button_name(m.button_mask).map(|n| (n.to_owned(), mapping))
                 })
                 .collect(),
             pointer_speed: defaults.pointer_speed,
@@ -220,7 +258,7 @@ impl Config {
             KEY_MAPPINGS: self
                 .key_mappings
                 .iter()
-                .map(|(button, shortcut)| (button.clone(), shortcut.to_value()))
+                .map(|(button, mapping)| (button.clone(), mapping.to_value()))
                 .collect::<Map<String, Value>>(),
             POINTER_SPEED: self.pointer_speed,
             REPEAT_DELAY: self.repeat_delay,
@@ -263,11 +301,12 @@ impl Config {
         let key_mappings = mappable_buttons()
             .into_iter()
             .filter_map(|name| {
-                let shortcut = *self.key_mappings.get(name)?;
-                Some(ButtonKeyMapping {
-                    button_mask: button_mask(name)?,
-                    key_code: shortcut.key,
-                    modifiers: shortcut.modifiers,
+                let mask = button_mask(name)?;
+                Some(match *self.key_mappings.get(name)? {
+                    Mapping::Shortcut(s) => ButtonKeyMapping::shortcut(mask, s.key, s.modifiers),
+                    Mapping::Modifier { modifier, latch } => {
+                        ButtonKeyMapping::modifier(mask, modifier, latch)
+                    }
                 })
             })
             .collect();
@@ -287,8 +326,36 @@ fn read_key_code(value: &Value) -> Option<KeyCode> {
         .map(|c| c as KeyCode)
 }
 
-/// A key code, or `{"key": <code>, "modifiers": [<name>...]}`. `Err` says why
-/// not, without the "mapping ignored" ending.
+const MODIFIER_NAMES: &str = "control, option, shift or command";
+
+/// `{"modifier": <name>, "latch": <bool>}`, latch optional.
+fn parse_modifier_button(button: &str, fields: &Map<String, Value>) -> Result<Mapping, String> {
+    if let Some(field) = fields.keys().find(|k| !["modifier", "latch"].contains(&k.as_str())) {
+        return Err(format!("Modifier button {button} has an unknown field \"{field}\""));
+    }
+    let name = &fields["modifier"];
+    let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
+        return Err(format!("Unknown modifier {name} for {button} (use {MODIFIER_NAMES})"));
+    };
+    let latch = match fields.get("latch") {
+        None => false,
+        Some(Value::Bool(latch)) => *latch,
+        Some(_) => return Err(format!("latch for {button} must be true or false")),
+    };
+    Ok(Mapping::Modifier { modifier, latch })
+}
+
+/// A key code, `{"key": <code>, "modifiers": [<name>...]}`, or a modifier
+/// button. `Err` says why not, without the "mapping ignored" ending.
+fn parse_mapping(button: &str, value: &Value) -> Result<Mapping, String> {
+    match value {
+        Value::Object(fields) if fields.contains_key("modifier") => {
+            parse_modifier_button(button, fields)
+        }
+        _ => parse_shortcut(button, value).map(Mapping::Shortcut),
+    }
+}
+
 fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
     let bad_key =
         || format!("Key code for {button} must be a whole number from 0 to {KEY_CODE_MAX}");
@@ -307,7 +374,7 @@ fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
                 let shown = name.as_str().map_or_else(|| name.to_string(), str::to_owned);
                 let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
                     return Err(format!(
-                        "Unknown modifier {shown:?} for {button} (use control, option, shift or command)"
+                        "Unknown modifier {shown:?} for {button} (use {MODIFIER_NAMES})"
                     ));
                 };
                 if modifiers.contains(modifier) {
@@ -324,7 +391,7 @@ fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
 fn parse_key_mappings(
     mappings: &Map<String, Value>,
     warnings: &mut Vec<String>,
-) -> BTreeMap<String, Shortcut> {
+) -> BTreeMap<String, Mapping> {
     let mappable = mappable_buttons();
     let mut buttons: Vec<&String> = mappings.keys().collect();
     buttons.sort();
@@ -335,9 +402,9 @@ fn parse_key_mappings(
         } else if !mappable.contains(&button.as_str()) {
             warnings.push(format!("Unknown button \"{button}\" in keyMappings ignored."));
         } else {
-            match parse_shortcut(button, &mappings[button]) {
-                Ok(shortcut) => {
-                    parsed.insert(button.clone(), shortcut);
+            match parse_mapping(button, &mappings[button]) {
+                Ok(mapping) => {
+                    parsed.insert(button.clone(), mapping);
                 }
                 Err(problem) => warnings.push(format!("{problem}; mapping ignored.")),
             }

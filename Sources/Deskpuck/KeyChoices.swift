@@ -1,8 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
+import DeskpuckFFI
 import SwiftUI
 
-/// One entry in a button's menu: no key, a key or shortcut, or "record one".
+/// One entry in a button's menu: no key, a key, a shortcut, a modifier
+/// button, or "record one".
 struct KeyChoice: Hashable {
     let mapping: KeyMapping?
     let name: String
@@ -30,17 +32,33 @@ struct KeyChoice: Hashable {
         (124, "Right Arrow"), (116, "Page Up"), (121, "Page Down"), (115, "Home"), (119, "End"),
     ]
 
-    static let all: [KeyChoice] = [.none] + keys.map { KeyChoice(mapping: KeyMapping(key: $0.0), name: $0.1) }
+    // Built through describe() so a saved mapping matches its menu entry.
+    static let all: [KeyChoice] = [.none]
+        + keys.map { KeyChoice(mapping: .key($0.0)) }
+        + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: false)) }
+        + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: true)) }
 
-    /// Modifier names as config.json spells them, in the order the core presses them.
-    static let modifierNames: [(name: String, flag: NSEvent.ModifierFlags, label: String)] = [
-        ("control", .control, "Control"), ("option", .option, "Option"),
-        ("shift", .shift, "Shift"), ("command", .command, "Command"),
+    /// Modifier names as config.json spells them, in the order the core presses them,
+    /// with their DP_MODIFIER_* bit.
+    static let modifierNames: [(name: String, flag: NSEvent.ModifierFlags, label: String, bit: UInt32)] = [
+        ("control", .control, "Control", UInt32(DP_MODIFIER_CONTROL)),
+        ("option", .option, "Option", UInt32(DP_MODIFIER_OPTION)),
+        ("shift", .shift, "Shift", UInt32(DP_MODIFIER_SHIFT)),
+        ("command", .command, "Command", UInt32(DP_MODIFIER_COMMAND)),
     ]
 
+    static func label(_ modifier: String) -> String {
+        modifierNames.first { $0.name == modifier }?.label ?? modifier
+    }
+
     static func describe(_ mapping: KeyMapping) -> String {
-        let modifiers = modifierNames.filter { mapping.modifiers.contains($0.name) }.map(\.label)
-        return (modifiers + [keyName(mapping.key)]).joined(separator: "+")
+        switch mapping {
+        case .key(let key, let modifiers):
+            let labels = modifierNames.filter { modifiers.contains($0.name) }.map(\.label)
+            return (labels + [keyName(key)]).joined(separator: "+")
+        case .modifier(let modifier, let latch):
+            return latch ? "\(label(modifier)) (tap to latch)" : "\(label(modifier)) (while held)"
+        }
     }
 
     static func keyName(_ code: Int) -> String {
@@ -108,7 +126,7 @@ struct ShortcutRecorder: View {
         if code == kVK_Escape && modifiers.isEmpty {
             onCancel()
         } else if code <= 127 {
-            onRecord(KeyMapping(key: code, modifiers: modifiers))
+            onRecord(.key(code, modifiers: modifiers))
         }
     }
 }

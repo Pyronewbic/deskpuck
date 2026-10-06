@@ -1,37 +1,41 @@
 import DeskpuckFFI
 import Foundation
 
-/// What a button presses. A bare key code in config.json when there are no
-/// modifiers, else {"key": code, "modifiers": [...]}, matching the Rust core.
-struct KeyMapping: Codable, Hashable {
-    var key: Int
-    var modifiers: [String] = []
+/// What a button does, as config.json stores it: a bare key code, a
+/// shortcut {"key", "modifiers"}, or a modifier button {"modifier", "latch"}.
+enum KeyMapping: Codable, Hashable {
+    case key(Int, modifiers: [String] = [])
+    case modifier(String, latch: Bool)
 
-    private enum CodingKeys: String, CodingKey { case key, modifiers }
-
-    init(key: Int, modifiers: [String] = []) {
-        self.key = key
-        self.modifiers = modifiers
-    }
+    private enum CodingKeys: String, CodingKey { case key, modifiers, modifier, latch }
 
     init(from decoder: Decoder) throws {
         if let key = try? decoder.singleValueContainer().decode(Int.self) {
-            self.init(key: key)
+            self = .key(key)
             return
         }
         let fields = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(key: try fields.decode(Int.self, forKey: .key),
-                  modifiers: try fields.decodeIfPresent([String].self, forKey: .modifiers) ?? [])
+        if let modifier = try fields.decodeIfPresent(String.self, forKey: .modifier) {
+            self = .modifier(modifier, latch: try fields.decodeIfPresent(Bool.self, forKey: .latch) ?? false)
+        } else {
+            self = .key(try fields.decode(Int.self, forKey: .key),
+                        modifiers: try fields.decodeIfPresent([String].self, forKey: .modifiers) ?? [])
+        }
     }
 
     func encode(to encoder: Encoder) throws {
-        if modifiers.isEmpty {
+        switch self {
+        case .key(let key, let modifiers) where modifiers.isEmpty:
             var value = encoder.singleValueContainer()
             try value.encode(key)
-        } else {
+        case .key(let key, let modifiers):
             var fields = encoder.container(keyedBy: CodingKeys.self)
             try fields.encode(key, forKey: .key)
             try fields.encode(modifiers, forKey: .modifiers)
+        case .modifier(let modifier, let latch):
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(modifier, forKey: .modifier)
+            try fields.encode(latch, forKey: .latch)
         }
     }
 }
@@ -137,6 +141,8 @@ enum ConnectionState {
 final class Controller {
     private(set) var connectionState = ConnectionState.bluetoothOff
     private(set) var deviceName: String?
+    /// Config names of the modifiers latched on by modifier buttons.
+    private(set) var latchedModifiers: [String] = []
     /// When the open pairing window closes; nil when none is open.
     private(set) var pairingEndsAt: Date?
     var stateDidChange: (() -> Void)?
@@ -169,7 +175,15 @@ final class Controller {
                 relay.target?.update(ConnectionState(status), name)
             }
         }
-        handle = Core.json(config).withCString { dp_controller_start($0, callback, context.toOpaque()) }
+        let onLatch: dp_latch_callback = { context, bits in
+            guard let context else { return }
+            let relay = Unmanaged<Relay>.fromOpaque(context).takeUnretainedValue()
+            let names = KeyChoice.modifierNames.filter { bits & $0.bit != 0 }.map(\.name)
+            DispatchQueue.main.async {
+                relay.target?.latched(names)
+            }
+        }
+        handle = Core.json(config).withCString { dp_controller_start($0, callback, onLatch, context.toOpaque()) }
         if handle == nil {
             context.release()
             update(.unavailable, nil)
@@ -218,6 +232,11 @@ final class Controller {
         if let message = Core.json(config).withCString({ Core.take(dp_controller_apply_config(handle, $0)) }) {
             throw CoreError(errorDescription: message)
         }
+    }
+
+    private func latched(_ names: [String]) {
+        latchedModifiers = names
+        stateDidChange?()
     }
 
     private func update(_ state: ConnectionState, _ name: String?) {

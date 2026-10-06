@@ -1,5 +1,5 @@
 use deskpuck_core::engine::*;
-use deskpuck_core::mapping::{ButtonKeyMapping, Modifiers};
+use deskpuck_core::mapping::ButtonKeyMapping;
 use deskpuck_core::packet::Report;
 
 fn report(
@@ -201,11 +201,7 @@ fn apply_settings() {
 
     // Remap RS from Return to Space while it is held: Return must be released.
     let released = engine.apply_settings(EngineSettings {
-        key_mappings: vec![ButtonKeyMapping {
-            button_mask: RS,
-            key_code: 49,
-            modifiers: Modifiers::NONE,
-        }],
+        key_mappings: vec![ButtonKeyMapping::key(RS, 49)],
         pointer_speed: 2.0,
         ..EngineSettings::default()
     });

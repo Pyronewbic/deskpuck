@@ -9,6 +9,7 @@ use deskpuck_ble::controller::{
 use deskpuck_ble::receiver::PAIRING_WINDOW;
 use deskpuck_core::config::Config;
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::InjectError;
 use std::io::Write;
@@ -203,6 +204,13 @@ fn main() -> ExitCode {
             }) as ReportHook
         }),
         log: args.verbose.then(|| Box::new(|message: &str| note!("ble: {message}")) as MessageHook),
+        latched: Some(Box::new(|modifiers: Modifiers| {
+            if modifiers.is_empty() {
+                note!("Latched modifiers released");
+            } else {
+                note!("Latched: {}", modifiers.names().join("+"));
+            }
+        })),
         error: Box::new(|message| note!("deskpuck-cli: {message}")),
     };
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {

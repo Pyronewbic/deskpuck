@@ -155,6 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func updateIcon() {
+        // A latched modifier changes every click and key, so it shows by the icon.
+        let latched = controller.latchedModifiers.map(KeyChoice.label).joined(separator: "+")
+        statusItem.length = latched.isEmpty ? NSStatusItem.squareLength : NSStatusItem.variableLength
+        statusItem.button?.title = latched.isEmpty ? "" : " " + latched
+        statusItem.button?.imagePosition = .imageLeading
         let connected = controller.connectionState == .connected
         if controller.isPaused {
             let paused = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Deskpuck, paused")

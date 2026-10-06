@@ -104,6 +104,11 @@ impl Modifiers {
         self.0 == 0
     }
 
+    /// 1 Control, 2 Option, 4 Shift, 8 Command, as the C interface exposes them.
+    pub fn bits(self) -> u8 {
+        self.0
+    }
+
     pub fn contains(self, other: Modifiers) -> bool {
         self.0 & other.0 == other.0
     }
@@ -118,13 +123,43 @@ impl Modifiers {
     }
 }
 
+/// What a mapped button does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ButtonAction {
+    /// Types a key, with any modifiers pressed before it and released after
+    /// it. A key with modifiers is a shortcut: it never repeats.
+    Key { key_code: KeyCode, modifiers: Modifiers },
+    /// Acts as modifier keys while held, or with `latch`, toggles them on
+    /// each press, for one-handed use.
+    Modifier { modifiers: Modifiers, latch: bool },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonKeyMapping {
     pub button_mask: u32,
-    pub key_code: KeyCode,
-    /// Pressed before the key and released after it. A mapping with
-    /// modifiers is a shortcut: it never repeats.
-    pub modifiers: Modifiers,
+    pub action: ButtonAction,
+}
+
+impl ButtonKeyMapping {
+    pub fn key(button_mask: u32, key_code: KeyCode) -> Self {
+        Self::shortcut(button_mask, key_code, Modifiers::NONE)
+    }
+
+    pub fn shortcut(button_mask: u32, key_code: KeyCode, modifiers: Modifiers) -> Self {
+        Self { button_mask, action: ButtonAction::Key { key_code, modifiers } }
+    }
+
+    pub fn modifier(button_mask: u32, modifiers: Modifiers, latch: bool) -> Self {
+        Self { button_mask, action: ButtonAction::Modifier { modifiers, latch } }
+    }
+
+    /// The non-modifier key this mapping types, if any.
+    pub fn key_code(&self) -> Option<KeyCode> {
+        match self.action {
+            ButtonAction::Key { key_code, .. } => Some(key_code),
+            ButtonAction::Modifier { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,11 +178,7 @@ pub fn default_button_key_mappings() -> Vec<ButtonKeyMapping> {
         (0x0000_0800, 124), // A -> Right
     ]
     .into_iter()
-    .map(|(button_mask, key_code)| ButtonKeyMapping {
-        button_mask,
-        key_code,
-        modifiers: Modifiers::NONE,
-    })
+    .map(|(button_mask, key_code)| ButtonKeyMapping::key(button_mask, key_code))
     .collect()
 }
 
@@ -158,12 +189,14 @@ pub fn default_button_key_mappings() -> Vec<ButtonKeyMapping> {
 pub struct KeyRepeater {
     mappings: Vec<ButtonKeyMapping>,
     next_repeat_at: Vec<f64>,
+    /// Per mapping: a latching modifier button is toggled on.
+    latched: Vec<bool>,
     repeat_delay: f64,
     repeat_interval: f64,
     repeat_enabled: bool,
     last_buttons: u32,
-    /// Per `Modifiers::ALL` entry, how many held shortcuts use it, so two
-    /// shortcuts sharing Control press it once and release it with the last.
+    /// Per `Modifiers::ALL` entry, how many shortcuts and modifier buttons
+    /// hold it, so Control goes down with the first and up with the last.
     modifier_holds: [u8; 4],
 }
 
@@ -171,6 +204,7 @@ impl KeyRepeater {
     pub fn new(mappings: Vec<ButtonKeyMapping>, repeat_delay: f64, repeat_interval: f64) -> Self {
         Self {
             next_repeat_at: vec![0.0; mappings.len()],
+            latched: vec![false; mappings.len()],
             mappings,
             repeat_delay,
             repeat_interval,
@@ -184,22 +218,20 @@ impl KeyRepeater {
         KeyEvent { key_code, is_down, is_repeat: false }
     }
 
-    fn press(&mut self, mapping: &ButtonKeyMapping, events: &mut Vec<KeyEvent>) {
+    fn hold(&mut self, modifiers: Modifiers, events: &mut Vec<KeyEvent>) {
         for (i, (_, modifier, code)) in Modifiers::ALL.iter().enumerate() {
-            if mapping.modifiers.contains(*modifier) {
+            if modifiers.contains(*modifier) {
                 self.modifier_holds[i] += 1;
                 if self.modifier_holds[i] == 1 {
                     events.push(Self::key(*code, true));
                 }
             }
         }
-        events.push(Self::key(mapping.key_code, true));
     }
 
-    fn release(&mut self, mapping: &ButtonKeyMapping, events: &mut Vec<KeyEvent>) {
-        events.push(Self::key(mapping.key_code, false));
+    fn unhold(&mut self, modifiers: Modifiers, events: &mut Vec<KeyEvent>) {
         for (i, (_, modifier, code)) in Modifiers::ALL.iter().enumerate().rev() {
-            if mapping.modifiers.contains(*modifier) && self.modifier_holds[i] > 0 {
+            if modifiers.contains(*modifier) && self.modifier_holds[i] > 0 {
                 self.modifier_holds[i] -= 1;
                 if self.modifier_holds[i] == 0 {
                     events.push(Self::key(*code, false));
@@ -208,44 +240,96 @@ impl KeyRepeater {
         }
     }
 
+    /// Modifier buttons go down before keys and up after them, so a modifier
+    /// and a key pressed in the same report make a shortcut.
     pub fn update(&mut self, buttons: u32, now: f64) -> Vec<KeyEvent> {
         let mut events = Vec::new();
-        for i in 0..self.mappings.len() {
-            let mapping = self.mappings[i];
-            let is_down = buttons & mapping.button_mask != 0;
-            let was_down = self.last_buttons & mapping.button_mask != 0;
-            if is_down != was_down {
-                if is_down {
-                    self.press(&mapping, &mut events);
+        let changed = |m: &ButtonKeyMapping| {
+            let is_down = buttons & m.button_mask != 0;
+            (is_down, is_down != (self.last_buttons & m.button_mask != 0))
+        };
+        let edges: Vec<(bool, bool)> = self.mappings.iter().map(changed).collect();
+
+        for (i, &(is_down, changed)) in edges.iter().enumerate() {
+            if let ButtonAction::Modifier { modifiers, latch } = self.mappings[i].action
+                && changed
+                && is_down
+            {
+                if !latch {
+                    self.hold(modifiers, &mut events);
+                } else if self.latched[i] {
+                    self.latched[i] = false;
+                    self.unhold(modifiers, &mut events);
                 } else {
-                    self.release(&mapping, &mut events);
+                    self.latched[i] = true;
+                    self.hold(modifiers, &mut events);
+                }
+            }
+        }
+        for (i, &(is_down, changed)) in edges.iter().enumerate() {
+            let ButtonAction::Key { key_code, modifiers } = self.mappings[i].action else {
+                continue;
+            };
+            if changed {
+                if is_down {
+                    self.hold(modifiers, &mut events);
+                    events.push(Self::key(key_code, true));
+                } else {
+                    events.push(Self::key(key_code, false));
+                    self.unhold(modifiers, &mut events);
                 }
                 self.next_repeat_at[i] = now + self.repeat_delay;
             } else if is_down
-                && mapping.modifiers.is_empty()
+                && modifiers.is_empty()
                 && self.repeat_enabled
                 && now >= self.next_repeat_at[i]
             {
-                events.push(KeyEvent {
-                    key_code: mapping.key_code,
-                    is_down: true,
-                    is_repeat: true,
-                });
+                events.push(KeyEvent { key_code, is_down: true, is_repeat: true });
                 self.next_repeat_at[i] = now + self.repeat_interval;
+            }
+        }
+        for (i, &(is_down, changed)) in edges.iter().enumerate() {
+            if let ButtonAction::Modifier { modifiers, latch: false } = self.mappings[i].action
+                && changed
+                && !is_down
+            {
+                self.unhold(modifiers, &mut events);
             }
         }
         self.last_buttons = buttons;
         events
     }
 
-    /// Key-up for every held key and shortcut modifier, e.g. when the
-    /// controller disconnects mid-press.
+    /// Modifiers toggled on by latching buttons.
+    pub fn latched(&self) -> Modifiers {
+        self.mappings.iter().zip(&self.latched).filter(|(_, on)| **on).fold(
+            Modifiers::NONE,
+            |all, (m, _)| match m.action {
+                ButtonAction::Modifier { modifiers, .. } => all.with(modifiers),
+                ButtonAction::Key { .. } => all,
+            },
+        )
+    }
+
+    /// Key-up for every held key and modifier, latched ones included, e.g.
+    /// when the controller disconnects mid-press.
     pub fn release_all(&mut self) -> Vec<KeyEvent> {
         let mut events = Vec::new();
         for i in 0..self.mappings.len() {
-            let mapping = self.mappings[i];
-            if self.last_buttons & mapping.button_mask != 0 {
-                self.release(&mapping, &mut events);
+            let held = self.last_buttons & self.mappings[i].button_mask != 0;
+            match self.mappings[i].action {
+                ButtonAction::Key { key_code, modifiers } if held => {
+                    events.push(Self::key(key_code, false));
+                    self.unhold(modifiers, &mut events);
+                }
+                ButtonAction::Modifier { modifiers, latch: false } if held => {
+                    self.unhold(modifiers, &mut events);
+                }
+                ButtonAction::Modifier { modifiers, latch: true } if self.latched[i] => {
+                    self.latched[i] = false;
+                    self.unhold(modifiers, &mut events);
+                }
+                _ => {}
             }
         }
         self.last_buttons = 0;

@@ -1,5 +1,6 @@
 use deskpuck_core::config::*;
 use deskpuck_core::engine::{EngineSettings, InputEngine};
+use deskpuck_core::mapping::ButtonAction;
 use deskpuck_core::packet::Report;
 use std::collections::BTreeMap;
 
@@ -11,8 +12,8 @@ fn warned(warnings: &[String], fragment: &str) -> bool {
     warnings.iter().any(|w| w.contains(fragment))
 }
 
-fn mappings(pairs: &[(&str, u16)]) -> BTreeMap<String, Shortcut> {
-    pairs.iter().map(|&(name, code)| (name.to_owned(), Shortcut::from(code))).collect()
+fn mappings(pairs: &[(&str, u16)]) -> BTreeMap<String, Mapping> {
+    pairs.iter().map(|&(name, code)| (name.to_owned(), Mapping::from(code))).collect()
 }
 
 #[test]
@@ -350,9 +351,9 @@ fn shortcuts_load_and_save() {
             "Y": 36}}"#,
     );
     assert!(w.is_empty(), "{w:?}");
-    assert_eq!(c.key_mappings["A"], combo(8, &["control", "command"]));
-    assert_eq!(c.key_mappings["B"], Shortcut::from(9));
-    assert_eq!(c.key_mappings["X"], Shortcut::from(7));
+    assert_eq!(c.key_mappings["A"], Mapping::from(combo(8, &["control", "command"])));
+    assert_eq!(c.key_mappings["B"], Mapping::from(9));
+    assert_eq!(c.key_mappings["X"], Mapping::from(7));
 
     // Plain keys stay bare numbers on disk; shortcuts list modifiers in pressing order.
     let value = c.to_value();
@@ -367,8 +368,9 @@ fn shortcuts_load_and_save() {
 
     // The engine gets the modifiers.
     let settings = c.engine_settings();
-    let a = settings.key_mappings.iter().find(|m| m.key_code == 8).expect("A mapped");
-    assert_eq!(a.modifiers, combo(8, &["control", "command"]).modifiers);
+    let a = settings.key_mappings.iter().find(|m| m.key_code() == Some(8)).expect("A mapped");
+    let modifiers = combo(8, &["control", "command"]).modifiers;
+    assert_eq!(a.action, ButtonAction::Key { key_code: 8, modifiers });
 }
 
 #[test]
@@ -385,7 +387,10 @@ fn bad_shortcuts_are_dropped_one_by_one() {
             "SL": {"key": 8, "modifiers": ["Shift"]},
             "SR": {"key": 9, "modifiers": ["option"]}}}"#,
     );
-    assert_eq!(c.key_mappings, BTreeMap::from([("SR".to_owned(), combo(9, &["option"]))]));
+    assert_eq!(
+        c.key_mappings,
+        BTreeMap::from([("SR".to_owned(), Mapping::from(combo(9, &["option"])))])
+    );
     assert!(warned(&w, "Unknown modifier \"hyper\" for A"), "{w:?}");
     assert!(warned(&w, "Modifier \"shift\" is listed twice for B"), "{w:?}");
     assert!(warned(&w, "Modifiers for X must be a list"), "{w:?}");
@@ -396,4 +401,53 @@ fn bad_shortcuts_are_dropped_one_by_one() {
     assert!(warned(&w, "Unknown modifier \"Shift\" for SL"), "names are lower case: {w:?}");
     assert_eq!(w.len(), 8, "{w:?}");
     assert!(w.iter().all(|w| w.ends_with("mapping ignored.")), "{w:?}");
+}
+
+#[test]
+fn modifier_buttons_load_and_save() {
+    use deskpuck_core::mapping::Modifiers;
+    let (c, w) = parse(
+        r#"{"version": 1, "keyMappings": {
+            "A": {"modifier": "shift"},
+            "B": {"modifier": "command", "latch": true}}}"#,
+    );
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(c.key_mappings["A"], Mapping::Modifier { modifier: Modifiers::SHIFT, latch: false });
+    assert_eq!(
+        c.key_mappings["B"],
+        Mapping::Modifier { modifier: Modifiers::COMMAND, latch: true }
+    );
+    assert_eq!(
+        c.to_value()["keyMappings"]["A"],
+        serde_json::json!({"modifier": "shift", "latch": false})
+    );
+    let (back, w) = Config::from_json(&c.to_json().expect("valid"));
+    assert!(w.is_empty() && back == c, "{w:?}");
+    let a_mask = deskpuck_core::packet::button_mask("A");
+    let a = c.engine_settings().key_mappings.into_iter().find(|m| Some(m.button_mask) == a_mask);
+    assert_eq!(
+        a.map(|m| m.action),
+        Some(ButtonAction::Modifier { modifiers: Modifiers::SHIFT, latch: false })
+    );
+}
+
+#[test]
+fn bad_modifier_buttons_are_dropped_one_by_one() {
+    let (c, w) = parse(
+        r#"{"version": 1, "keyMappings": {
+            "A": {"modifier": "hyper"},
+            "B": {"modifier": ["shift"]},
+            "X": {"modifier": "shift", "latch": "yes"},
+            "Y": {"modifier": "shift", "key": 8},
+            "PLUS": {"modifier": "Shift"},
+            "SR": {"modifier": "option", "latch": true}}}"#,
+    );
+    assert_eq!(c.key_mappings.len(), 1, "{:?}", c.key_mappings);
+    assert!(c.key_mappings.contains_key("SR"));
+    assert!(warned(&w, r#"Unknown modifier "hyper" for A"#), "{w:?}");
+    assert!(warned(&w, r#"Unknown modifier ["shift"] for B"#), "{w:?}");
+    assert!(warned(&w, "latch for X must be true or false"), "{w:?}");
+    assert!(warned(&w, r#"Modifier button Y has an unknown field "key""#), "{w:?}");
+    assert!(warned(&w, r#"Unknown modifier "Shift" for PLUS"#), "{w:?}");
+    assert_eq!(w.len(), 5, "{w:?}");
 }

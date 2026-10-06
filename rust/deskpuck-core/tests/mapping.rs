@@ -72,10 +72,7 @@ const X: u32 = 0x0000_0200;
 const UNMAPPED: u32 = 0x0010_0000; // HOME
 
 fn test_mappings() -> Vec<ButtonKeyMapping> {
-    vec![
-        ButtonKeyMapping { button_mask: A, key_code: 124, modifiers: Modifiers::NONE },
-        ButtonKeyMapping { button_mask: X, key_code: 126, modifiers: Modifiers::NONE },
-    ]
+    vec![ButtonKeyMapping::key(A, 124), ButtonKeyMapping::key(X, 126)]
 }
 
 fn ev(key_code: KeyCode, is_down: bool, is_repeat: bool) -> KeyEvent {
@@ -177,7 +174,7 @@ fn repeat_disable_sentinels() {
 #[test]
 fn default_mappings() {
     let mappings = default_button_key_mappings();
-    let key_for = |mask| mappings.iter().find(|m| m.button_mask == mask).map(|m| m.key_code);
+    let key_for = |mask| mappings.iter().find(|m| m.button_mask == mask).and_then(|m| m.key_code());
     assert_eq!(key_for(0x0004_0000), Some(36)); // RS -> Return
     assert_eq!(key_for(0x0000_0200), Some(126)); // X -> Up
     assert_eq!(key_for(0x0000_0400), Some(125)); // B -> Down
@@ -209,7 +206,7 @@ const V: KeyCode = 9;
 const CONTROL: KeyCode = 59;
 
 fn shortcut(button_mask: u32, key_code: KeyCode, modifiers: Modifiers) -> ButtonKeyMapping {
-    ButtonKeyMapping { button_mask, key_code, modifiers }
+    ButtonKeyMapping::shortcut(button_mask, key_code, modifiers)
 }
 
 #[test]
@@ -278,4 +275,69 @@ fn release_all_lets_go_of_shortcut_modifiers() {
     );
     assert!(keys.release_all().is_empty());
     assert!(keys.update(0, 0.1).is_empty(), "nothing left to release");
+}
+
+const SHIFT: KeyCode = 56;
+
+#[test]
+fn a_hold_modifier_button_is_that_modifier_while_held() {
+    let mappings = vec![ButtonKeyMapping::modifier(A, Modifiers::SHIFT, false), test_mappings()[1]];
+    let mut keys = KeyRepeater::new(mappings, 0.4, 0.06);
+    assert_eq!(keys.update(A, 0.0), [ev(SHIFT, true, false)]);
+    assert!(keys.update(A, 2.0).is_empty(), "a modifier never repeats");
+    assert_eq!(keys.update(A | X, 2.1), [ev(126, true, false)]);
+    // A plain key still repeats under a held modifier, like Shift+arrow on a keyboard.
+    assert_eq!(keys.update(A | X, 2.6), [ev(126, true, true)]);
+    assert_eq!(keys.update(A, 2.7), [ev(126, false, false)]);
+    assert_eq!(keys.update(0, 2.8), [ev(SHIFT, false, false)]);
+    assert_eq!(keys.latched(), Modifiers::NONE, "holding is not latching");
+}
+
+#[test]
+fn a_latch_modifier_button_toggles_on_each_press() {
+    let mut keys =
+        KeyRepeater::new(vec![ButtonKeyMapping::modifier(A, Modifiers::SHIFT, true)], 0.4, 0.06);
+    assert_eq!(keys.update(A, 0.0), [ev(SHIFT, true, false)]);
+    assert!(keys.update(0, 0.1).is_empty(), "letting go keeps it latched");
+    assert_eq!(keys.latched(), Modifiers::SHIFT);
+    assert!(keys.update(0, 5.0).is_empty());
+    assert_eq!(keys.update(A, 5.1), [ev(SHIFT, false, false)]);
+    assert!(keys.update(0, 5.2).is_empty());
+    assert_eq!(keys.latched(), Modifiers::NONE);
+}
+
+#[test]
+fn modifiers_wrap_keys_pressed_in_the_same_report() {
+    // X is listed before the modifier button, yet Shift still goes down first and up last.
+    let mappings = vec![test_mappings()[1], ButtonKeyMapping::modifier(A, Modifiers::SHIFT, false)];
+    let mut keys = KeyRepeater::new(mappings, 0.4, 0.06);
+    assert_eq!(keys.update(A | X, 0.0), [ev(SHIFT, true, false), ev(126, true, false)]);
+    assert_eq!(keys.update(0, 0.1), [ev(126, false, false), ev(SHIFT, false, false)]);
+}
+
+#[test]
+fn a_latched_modifier_and_a_shortcut_share_it() {
+    let mappings = vec![
+        ButtonKeyMapping::modifier(A, Modifiers::CONTROL, true),
+        ButtonKeyMapping::shortcut(X, C, Modifiers::CONTROL),
+    ];
+    let mut keys = KeyRepeater::new(mappings, 0.4, 0.06);
+    assert_eq!(keys.update(A, 0.0), [ev(CONTROL, true, false)]);
+    keys.update(0, 0.1);
+    assert_eq!(keys.update(X, 0.2), [ev(C, true, false)]);
+    assert_eq!(keys.update(0, 0.3), [ev(C, false, false)], "Control stays latched");
+    assert_eq!(keys.update(A, 0.4), [ev(CONTROL, false, false)]);
+}
+
+#[test]
+fn release_all_unlatches() {
+    let mut keys =
+        KeyRepeater::new(vec![ButtonKeyMapping::modifier(A, Modifiers::SHIFT, true)], 0.4, 0.06);
+    keys.update(A, 0.0);
+    keys.update(0, 0.1);
+    assert_eq!(keys.release_all(), [ev(SHIFT, false, false)]);
+    assert_eq!(keys.latched(), Modifiers::NONE);
+    assert!(keys.release_all().is_empty());
+    // The next tap latches afresh rather than unlatching a stale state.
+    assert_eq!(keys.update(A, 0.2), [ev(SHIFT, true, false)]);
 }

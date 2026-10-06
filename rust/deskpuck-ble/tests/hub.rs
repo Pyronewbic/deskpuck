@@ -1,6 +1,7 @@
 use deskpuck_ble::controller::{Hooks, Hub, LinkStatus};
 use deskpuck_ble::receiver::{Input, MANUFACTURER_ID, Output};
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::{Report, encode_report};
 use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::{InputEvent, RecordingSink};
@@ -16,6 +17,7 @@ struct Recorder {
     statuses: Seen<(LinkStatus, Option<String>)>,
     reports: Seen<(u32, Option<String>, u128)>,
     errors: Seen<String>,
+    latched: Seen<Modifiers>,
     /// Holds the pairing file's directory for the test's lifetime.
     dir: tempfile::TempDir,
 }
@@ -39,9 +41,15 @@ fn hub() -> (Hub<u32, RecordingSink>, Recorder) {
 
 /// Uses whatever pairing.json `dir` holds.
 fn hub_in(dir: tempfile::TempDir) -> (Hub<u32, RecordingSink>, Recorder) {
-    let rec =
-        Recorder { statuses: Arc::default(), reports: Arc::default(), errors: Arc::default(), dir };
-    let (s, r, e) = (rec.statuses.clone(), rec.reports.clone(), rec.errors.clone());
+    let rec = Recorder {
+        statuses: Arc::default(),
+        reports: Arc::default(),
+        errors: Arc::default(),
+        latched: Arc::default(),
+        dir,
+    };
+    let (s, r, e, l) =
+        (rec.statuses.clone(), rec.reports.clone(), rec.errors.clone(), rec.latched.clone());
     let hooks = Hooks {
         status: Box::new(move |status, name| {
             s.lock().unwrap().push((status, name.map(str::to_owned)))
@@ -51,6 +59,7 @@ fn hub_in(dir: tempfile::TempDir) -> (Hub<u32, RecordingSink>, Recorder) {
         })),
         log: None,
         error: Box::new(move |m| e.lock().unwrap().push(m.to_owned())),
+        latched: Some(Box::new(move |m| l.lock().unwrap().push(m))),
     };
     let file = Some(rec.pairing_file());
     (Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, file), rec)
@@ -245,6 +254,7 @@ fn without_a_file_pairing_lasts_for_the_hub() {
         report: None,
         log: None,
         error: Box::new(|m| panic!("unexpected error: {m}")),
+        latched: None,
     };
     let mut hub = Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, None);
     pair_new(&mut hub);
@@ -259,4 +269,26 @@ fn cancel_pairing_goes_through_the_hub() {
     assert_eq!(hub.start_pairing(1.0), [Output::StartScan]);
     assert_eq!(hub.cancel_pairing(2.0), [Output::StopScan]);
     assert_eq!(rec.statuses.lock().unwrap().last(), Some(&(LinkStatus::NotPaired, None)));
+}
+
+#[test]
+fn latch_changes_reach_the_hook_once_each() {
+    let (mut hub, rec) = connected();
+    hub.apply_settings(EngineSettings {
+        key_mappings: vec![deskpuck_core::mapping::ButtonKeyMapping::modifier(
+            RS,
+            Modifiers::SHIFT,
+            true,
+        )],
+        ..EngineSettings::default()
+    });
+    hub.input(notification(1, RS), 2.0);
+    hub.input(notification(2, 0), 2.1);
+    hub.input(notification(3, 0), 2.2);
+    assert_eq!(*rec.latched.lock().unwrap(), [Modifiers::SHIFT]);
+    // Pausing releases it, and the hook hears that too.
+    hub.set_paused(true, 3.0);
+    assert_eq!(*rec.latched.lock().unwrap(), [Modifiers::SHIFT, Modifiers::NONE]);
+    hub.shutdown();
+    assert_eq!(rec.latched.lock().unwrap().len(), 2, "no change, no call");
 }

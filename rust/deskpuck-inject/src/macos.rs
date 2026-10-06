@@ -100,6 +100,17 @@ fn cg_button(button: MouseButton) -> CGMouseButton {
     }
 }
 
+impl MacSink {
+    /// Mouse events carry held modifiers too, so a modifier button makes
+    /// Shift-click or Command-click.
+    fn mark(&self, event: &CGEvent) {
+        if !self.held.is_empty() {
+            let existing = CGEvent::flags(Some(event));
+            CGEvent::set_flags(Some(event), key_flags(existing, self.held, None));
+        }
+    }
+}
+
 impl Sink for MacSink {
     fn post(&mut self, event: &InputEvent) -> Result<(), InjectError> {
         match *event {
@@ -144,6 +155,7 @@ impl Sink for MacSink {
                     CGEventField::MouseEventDeltaY,
                     delta(target.y, from.y),
                 );
+                self.mark(&cg_event);
                 post(Some(cg_event), "create a pointer event")
             }
             InputEvent::Button { button, down } => {
@@ -155,15 +167,19 @@ impl Sink for MacSink {
                     (MouseButton::Middle, true) => CGEventType::OtherMouseDown,
                     (MouseButton::Middle, false) => CGEventType::OtherMouseUp,
                 };
-                post(
-                    CGEvent::new_mouse_event(None, event_type, cursor()?, cg_button(button)),
-                    "create a click event",
-                )
+                let cg_event =
+                    CGEvent::new_mouse_event(None, event_type, cursor()?, cg_button(button))
+                        .ok_or_else(|| failed("create a click event"))?;
+                self.mark(&cg_event);
+                post(Some(cg_event), "create a click event")
             }
-            InputEvent::Scroll { up } => post(
-                CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, up, 0, 0),
-                "create a scroll event",
-            ),
+            InputEvent::Scroll { up } => {
+                let cg_event =
+                    CGEvent::new_scroll_wheel_event2(None, CGScrollEventUnit::Pixel, 1, up, 0, 0)
+                        .ok_or_else(|| failed("create a scroll event"))?;
+                self.mark(&cg_event);
+                post(Some(cg_event), "create a scroll event")
+            }
             InputEvent::Key { key_code, down, repeat } => {
                 let cg_event = CGEvent::new_keyboard_event(None, key_code, down)
                     .ok_or_else(|| failed("create a key event"))?;

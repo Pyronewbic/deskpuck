@@ -30,7 +30,7 @@ xattr -dr com.apple.quarantine /Applications/Deskpuck.app
 | Stick click          | Return                          |
 | X / B / Y / A        | Up / Down / Left / Right arrows |
 
-Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. A button can also press a shortcut such as Control+C: pick **Record Shortcut...** for it and press the keys. Shortcuts fire once per press and do not repeat. Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
+Change the key mappings, pointer speed, scrolling and key repeat from the menu bar icon: **Settings...**. A button can also press a shortcut such as Control+C: pick **Record Shortcut...** for it and press the keys. Shortcuts fire once per press and do not repeat. A button can also be a modifier key: **Shift (while held)** acts as Shift while you hold it, so R gives a Shift-click; **Shift (tap to latch)** turns Shift on with one tap and off with the next, and the menu bar shows it while it is on. Settings are saved to `~/Library/Application Support/Deskpuck/config.json`.
 
 To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces the paired one. The pairing is saved beside the settings, in `pairing.json`.
 

@@ -103,7 +103,7 @@ fn untranslatable_keys(settings: &EngineSettings) -> Vec<u16> {
     settings
         .key_mappings
         .iter()
-        .map(|m| m.key_code)
+        .filter_map(|m| m.key_code())
         .filter(|&code| deskpuck_inject::keymap::lookup(code).is_none())
         .collect()
 }

@@ -156,10 +156,11 @@ fn controller_functions_tolerate_null() {
 fn invalid_config_never_starts_a_controller() {
     for bad in [r#"{"version": 2}"#, "{not json", r#"{"version": 1, "pointerSpeed": 0}"#] {
         let config = c(bad);
-        let controller = unsafe { dp_controller_start(config.as_ptr(), None, ptr::null_mut()) };
+        let controller =
+            unsafe { dp_controller_start(config.as_ptr(), None, None, ptr::null_mut()) };
         assert!(controller.is_null(), "{bad}");
     }
-    assert!(unsafe { dp_controller_start(ptr::null(), None, ptr::null_mut()) }.is_null());
+    assert!(unsafe { dp_controller_start(ptr::null(), None, None, ptr::null_mut()) }.is_null());
 }
 
 static CALLS: Mutex<Vec<(usize, i32, Option<String>)>> = Mutex::new(Vec::new());
@@ -200,4 +201,33 @@ fn shortcuts_cross_as_json() {
     let bad =
         problems(r#"{"version": 1, "keyMappings": {"A": {"key": 8, "modifiers": ["meta"]}}}"#);
     assert!(bad.len() == 1 && bad[0].contains("Unknown modifier \"meta\""), "{bad:?}");
+}
+
+#[test]
+fn modifier_bits_match_the_header() {
+    use deskpuck_core::mapping::Modifiers;
+    for (name, modifier, _) in Modifiers::ALL {
+        let define = format!("#define DP_MODIFIER_{} {}\n", name.to_uppercase(), modifier.bits());
+        assert!(HEADER.contains(&define), "header lacks {define}");
+    }
+}
+
+static LATCHES: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
+
+extern "C" fn record_latch(context: *mut c_void, modifiers: u32) {
+    LATCHES.lock().unwrap().push((context as usize, modifiers));
+}
+
+#[test]
+fn latch_changes_reach_the_callback() {
+    use deskpuck_core::mapping::Modifiers;
+    let mut hook = latch_hook(Some(record_latch), 0xBEEF).expect("a hook");
+    std::thread::spawn(move || {
+        hook(Modifiers::SHIFT.with(Modifiers::COMMAND));
+        hook(Modifiers::NONE);
+    })
+    .join()
+    .expect("thread");
+    assert_eq!(*LATCHES.lock().unwrap(), [(0xBEEF, 12), (0xBEEF, 0)]);
+    assert!(latch_hook(None, 0).is_none());
 }
