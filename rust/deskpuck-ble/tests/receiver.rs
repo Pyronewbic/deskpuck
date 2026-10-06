@@ -564,3 +564,54 @@ fn side_comes_from_the_product_id_in_the_advertisement() {
         assert_eq!(name_from_manufacturer_data(data), None, "{why}");
     }
 }
+
+#[test]
+fn a_joycon_held_by_another_program_shows_as_in_use() {
+    let mut r = ready(false);
+    assert!(r.wants_presence_check());
+    assert!(r.handle(Input::SystemConnected(vec![OTHER]), 1.0).is_empty(), "not ours");
+    let out = r.handle(Input::SystemConnected(vec![OTHER, JOYCON]), 2.0);
+    assert_eq!(status(&out), Some(Status::InUseElsewhere));
+    assert!(r.handle(Input::SystemConnected(vec![JOYCON]), 3.0).is_empty(), "no repeat");
+    // Released by the other program: back to searching, and it can connect.
+    assert_eq!(status(&r.handle(Input::SystemConnected(vec![]), 4.0)), Some(Status::Searching));
+    r.handle(Input::SystemConnected(vec![JOYCON]), 5.0);
+    assert!(has(&r.handle(discovered(JOYCON), 6.0), &Output::Connect(JOYCON)));
+    r.handle(Input::Connected(JOYCON), 7.0);
+    // Connecting cleared the stale flag, so a later drop searches again.
+    let out = r.handle(Input::Disconnected(JOYCON), 8.0);
+    assert_eq!(status(&out), Some(Status::Searching));
+}
+
+#[test]
+fn presence_is_only_checked_while_searching_for_the_paired_joycon() {
+    let suspended = ready(true);
+    let mut pairing = ready(false);
+    pairing.start_pairing(0.0);
+    let mut connecting = ready(false);
+    connecting.handle(discovered(JOYCON), 0.0);
+    let mut off = paired();
+    off.start();
+    let mut cases = [
+        ("linked", linked()),
+        ("suspended", suspended),
+        ("pairing", pairing),
+        ("unpaired", unpaired()),
+    ];
+    for (why, r) in cases.iter_mut() {
+        assert!(!r.wants_presence_check(), "{why}");
+        let out = r.handle(Input::SystemConnected(vec![JOYCON]), 1.0);
+        assert_eq!(status(&out), None, "{why}");
+    }
+    assert!(!connecting.wants_presence_check() && !off.wants_presence_check());
+    // Positive control: the same input on a searching receiver changes the status.
+    assert!(ready(false).wants_presence_check());
+}
+
+#[test]
+fn starting_a_window_clears_in_use() {
+    let mut r = ready(false);
+    r.handle(Input::SystemConnected(vec![JOYCON]), 1.0);
+    assert_eq!(status(&r.start_pairing(2.0)), Some(Status::Pairing));
+    assert_eq!(status(&r.cancel_pairing()), Some(Status::Searching));
+}

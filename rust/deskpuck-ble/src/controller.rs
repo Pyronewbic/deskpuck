@@ -5,12 +5,12 @@
 
 use crate::Session;
 use crate::receiver::{
-    Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, Status, WRITE_CHARACTERISTIC,
-    name_from_manufacturer_data,
+    Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, SERVICE, Status,
+    WRITE_CHARACTERISTIC, name_from_manufacturer_data,
 };
 use btleplug::api::{
-    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-    WriteType,
+    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
+    RetrievePeripheralsOptions, ScanFilter, WriteType,
 };
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use deskpuck_core::engine::EngineSettings;
@@ -39,6 +39,7 @@ pub enum LinkStatus {
     NotPaired,
     Pairing,
     Searching,
+    InUseElsewhere,
     Connecting,
     Connected,
 }
@@ -50,6 +51,7 @@ impl From<Status> for LinkStatus {
             Status::NotPaired => LinkStatus::NotPaired,
             Status::Pairing => LinkStatus::Pairing,
             Status::Searching => LinkStatus::Searching,
+            Status::InUseElsewhere => LinkStatus::InUseElsewhere,
             Status::Connecting => LinkStatus::Connecting,
             Status::Connected => LinkStatus::Connected,
         }
@@ -108,6 +110,10 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
 
     pub fn paired(&self) -> Option<&str> {
         self.receiver.paired()
+    }
+
+    pub fn wants_presence_check(&self) -> bool {
+        self.receiver.wants_presence_check()
     }
 
     pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
@@ -373,6 +379,7 @@ async fn run<S: Sink>(
     }
 
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    let mut presence = tokio::time::interval(PRESENCE_POLL);
     loop {
         for command in &commands {
             driver.execute(command, &hub).await;
@@ -394,6 +401,12 @@ async fn run<S: Sink>(
             },
             Some(input) = input_rx.recv() => hub.input(input, now()),
             _ = ticker.tick() => hub.tick(now()),
+            _ = presence.tick() => {
+                if hub.wants_presence_check() {
+                    driver.check_presence();
+                }
+                Vec::new()
+            }
         };
     }
 
@@ -406,6 +419,9 @@ async fn run<S: Sink>(
         let _ = tokio::time::timeout(Duration::from_secs(2), p.disconnect()).await;
     }
 }
+
+/// How often to ask whether another program holds the paired Joy-Con.
+const PRESENCE_POLL: Duration = Duration::from_secs(3);
 
 /// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
@@ -422,6 +438,22 @@ fn uuid(s: &str) -> Uuid {
 }
 
 impl Driver {
+    /// Reports the Joy-Cons connected to this computer by any program. A
+    /// backend that cannot tell (BlueZ, WinRT) reports nothing, so the status
+    /// simply stays Searching.
+    fn check_presence(&self) {
+        let (adapter, tx) = (self.adapter.clone(), self.tx.clone());
+        tokio::spawn(async move {
+            let options = RetrievePeripheralsOptions {
+                identifiers: None,
+                services: Some(vec![uuid(SERVICE)]),
+            };
+            if let Ok(found) = adapter.retrieve_peripherals(options).await {
+                let _ = tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()));
+            }
+        });
+    }
+
     /// Turns a btleplug event into receiver input. Discoveries need the
     /// peripheral's properties, which are fetched off the main loop.
     fn on_event(&mut self, event: CentralEvent) -> Option<Input<PeripheralId>> {

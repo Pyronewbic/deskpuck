@@ -42,7 +42,7 @@ To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces th
   ```sh
   tccutil reset Accessibility com.pyronewbic.deskpuck
   ```
-- **The Joy-Con does not connect:** if the menu says Not paired, pair it first (Install, step 5). Otherwise hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time.
+- **The Joy-Con does not connect:** if the menu says Not paired, pair it first (Install, step 5). Otherwise hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time. If the menu says the Joy-Con is in use by another app, quit that app (for example `deskpuck-cli`).
 
 ## Linux and Windows
 

@@ -114,6 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return controller.isPaused ? "Pairing paused" : "Pairing: hold SYNC on the Joy-Con\(suffix)"
         case .searching:
             return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Searching: hold SYNC on the paired Joy-Con"
+        case .inUseElsewhere:
+            return controller.isPaused ? "Paused: not looking for a Joy-Con" : "Joy-Con is in use by another app"
         case .connecting: return controller.isPaused ? "Connecting to \(name)... (paused)" : "Connecting to \(name)..."
         case .connected: return controller.isPaused ? "Connected to \(name) (paused)" : "Connected to \(name)"
         @unknown default: return "Unknown state"

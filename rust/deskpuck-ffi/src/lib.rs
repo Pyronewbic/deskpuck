@@ -9,7 +9,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
 
-pub const DP_ABI_VERSION: u32 = 2;
+pub const DP_ABI_VERSION: u32 = 3;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -25,6 +25,7 @@ pub fn status_code(status: LinkStatus) -> i32 {
         LinkStatus::Connected => 5,
         LinkStatus::NotPaired => 6,
         LinkStatus::Pairing => 7,
+        LinkStatus::InUseElsewhere => 8,
     }
 }
 

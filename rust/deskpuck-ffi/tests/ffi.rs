@@ -66,6 +66,7 @@ fn header_status_values_match() {
         (LinkStatus::Connected, "DP_STATUS_CONNECTED"),
         (LinkStatus::NotPaired, "DP_STATUS_NOT_PAIRED"),
         (LinkStatus::Pairing, "DP_STATUS_PAIRING"),
+        (LinkStatus::InUseElsewhere, "DP_STATUS_IN_USE_ELSEWHERE"),
     ] {
         let declared = format!("{name} = {},", status_code(status));
         assert!(HEADER.contains(&declared), "header lacks {declared}");

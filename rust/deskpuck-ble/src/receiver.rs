@@ -11,6 +11,8 @@ use std::hash::Hash;
 pub const MANUFACTURER_ID: u16 = 0x0553;
 pub const WRITE_CHARACTERISTIC: &str = "649d4ac9-8eb7-4e6c-af44-1ea54fe5f005";
 pub const NOTIFY_CHARACTERISTIC: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd2";
+/// Holds both characteristics; recorded from real Joy-Con 2s (L and R).
+pub const SERVICE: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd0";
 
 /// Written without response once the characteristics are found: select every
 /// feature (buttons, sticks, IMU, mouse...), then enable them.
@@ -55,6 +57,8 @@ pub enum Status {
     Pairing,
     /// Looking for the paired Joy-Con.
     Searching,
+    /// The paired Joy-Con is connected to this computer, but by another program.
+    InUseElsewhere,
     Connecting,
     Connected,
 }
@@ -63,12 +67,26 @@ pub enum Status {
 pub enum Input<Id> {
     AdapterPoweredOn,
     AdapterPoweredOff,
-    Discovered { id: Id, name: Option<String>, manufacturer_ids: Vec<u16> },
+    Discovered {
+        id: Id,
+        name: Option<String>,
+        manufacturer_ids: Vec<u16>,
+    },
     Connected(Id),
     ConnectFailed(Id),
     Disconnected(Id),
-    CharacteristicsFound { id: Id, write: bool, notify: bool },
-    Notification { id: Id, data: Vec<u8> },
+    CharacteristicsFound {
+        id: Id,
+        write: bool,
+        notify: bool,
+    },
+    Notification {
+        id: Id,
+        data: Vec<u8>,
+    },
+    /// Joy-Cons connected to this computer by any program, polled while
+    /// `wants_presence_check`.
+    SystemConnected(Vec<Id>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,6 +147,8 @@ pub struct Receiver<Id> {
     /// The paired Joy-Con's id, as its `Display` string.
     paired: Option<String>,
     pairing_until: Option<f64>,
+    /// The paired Joy-Con was last seen connected by another program.
+    held_elsewhere: bool,
 }
 
 impl<Id> Default for Receiver<Id> {
@@ -142,6 +162,7 @@ impl<Id> Default for Receiver<Id> {
             rescan_at: None,
             paired: None,
             pairing_until: None,
+            held_elsewhere: false,
         }
     }
 }
@@ -168,6 +189,18 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         self.pairing_until.is_some()
     }
 
+    /// Only while searching for the paired Joy-Con is it worth asking whether
+    /// another program holds it; then it does not advertise, so a scan never finds it.
+    pub fn wants_presence_check(&self) -> bool {
+        self.want_scan
+            && self.powered
+            && !self.suspended
+            && self.paired.is_some()
+            && self.pairing_until.is_none()
+            && self.link.is_none()
+            && self.connecting.is_empty()
+    }
+
     /// Opens a pairing window, letting go of any Joy-Con linked now so a new
     /// one can connect. Ignored while suspended, which never connects.
     pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
@@ -176,6 +209,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             return out;
         }
         self.pairing_until = Some(now + PAIRING_WINDOW);
+        self.held_elsewhere = false;
         let dropped: Vec<Id> = self.connecting.drain().map(|(id, _)| id).collect();
         out.extend(dropped.into_iter().map(Output::Disconnect));
         if let Some(link) = self.link.take() {
@@ -252,6 +286,8 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
     fn idle_status(&self, out: &mut Vec<Output<Id>>) {
         let status = if self.pairing_until.is_some() {
             Status::Pairing
+        } else if self.paired.is_some() && self.held_elsewhere {
+            Status::InUseElsewhere
         } else if self.paired.is_some() {
             Status::Searching
         } else {
@@ -289,6 +325,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 let name = name
                     .map(|n| n.chars().filter(|c| !c.is_control()).collect::<String>())
                     .filter(|n| !n.is_empty());
+                self.held_elsewhere = false;
                 self.connecting.insert(
                     id.clone(),
                     Pending { deadline: now + CONNECT_TIMEOUT, name: name.clone(), pairing },
@@ -351,6 +388,17 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     .map(|(i, cmd)| (now + INIT_DELAY + i as f64 * INIT_SPACING, cmd.to_vec()))
                     .collect();
                 link.resubscribe_at = Some(now + RESUBSCRIBE_DELAY);
+            }
+            Input::SystemConnected(ids) => {
+                if !self.wants_presence_check() {
+                    return out;
+                }
+                let paired = self.paired.as_deref();
+                let held = ids.iter().any(|id| Some(id.to_string().as_str()) == paired);
+                if held != self.held_elsewhere {
+                    self.held_elsewhere = held;
+                    self.idle_status(&mut out);
+                }
             }
             Input::Notification { id, data } => {
                 let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };

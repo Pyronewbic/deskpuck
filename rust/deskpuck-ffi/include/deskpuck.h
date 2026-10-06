@@ -14,7 +14,7 @@ extern "C" {
 
 // Bumped on any change to this header; the app checks it at startup so a
 // stale static library fails loudly instead of misbehaving.
-#define DP_ABI_VERSION 2
+#define DP_ABI_VERSION 3
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -46,6 +46,8 @@ typedef enum {
     DP_STATUS_NOT_PAIRED = 6,
     // A pairing window is open: the first Joy-Con found becomes the paired one.
     DP_STATUS_PAIRING = 7,
+    // The paired Joy-Con is connected to this Mac by another program.
+    DP_STATUS_IN_USE_ELSEWHERE = 8,
 } dp_status;
 
 // How long dp_controller_start_pairing accepts a new Joy-Con.
