@@ -237,3 +237,40 @@ fn every_release_path_unlatches_a_modifier() {
         assert_eq!(session.latched(), Modifiers::NONE, "{why}");
     }
 }
+
+/// Refuses every mouse button event, as an OS that rejects synthetic input might.
+#[derive(Default)]
+struct RefusesClicks(Vec<InputEvent>);
+
+impl deskpuck_inject::Sink for RefusesClicks {
+    fn post(&mut self, event: &InputEvent) -> Result<(), deskpuck_inject::InjectError> {
+        if matches!(event, InputEvent::Button { .. }) {
+            return Err(deskpuck_inject::InjectError::Failed("refused".into()));
+        }
+        self.0.push(*event);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_refused_event_does_not_strand_a_latched_modifier() {
+    const COMMAND: u16 = 55;
+    let latch = EngineSettings {
+        key_mappings: vec![ButtonKeyMapping::modifier(RS, Modifiers::COMMAND, true)],
+        ..EngineSettings::default()
+    };
+    let up = InputEvent::Key { key_code: COMMAND, down: false, repeat: false };
+    for (why, release) in [
+        ("disconnect", (|s| s.status(Status::Searching)) as fn(&mut Session<RefusesClicks>) -> _),
+        ("pause", |s| s.set_paused(true)),
+        ("shutdown", |s| s.shutdown()),
+    ] {
+        let mut session = Session::new(latch.clone(), RefusesClicks::default());
+        session.status(Status::Connected).expect("status");
+        // Latch Command while holding the left click (R); the click's press is refused too.
+        assert!(session.report(&report(RS | R, 0), 0.0).is_err());
+        session.report(&report(R, 0), 0.1).expect("no new events");
+        assert!(release(&mut session).is_err(), "{why}: the click release is refused");
+        assert_eq!(session.sink().0.last(), Some(&up), "{why}: Command still released");
+    }
+}

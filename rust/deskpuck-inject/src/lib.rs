@@ -144,14 +144,23 @@ impl Poster {
         events
     }
 
-    /// Posts every event for `out`; stops at the first sink error.
+    /// Posts every event for `out`; see `post_all`.
     pub fn post(&mut self, out: &EngineOutput, sink: &mut dyn Sink) -> Result<usize, InjectError> {
-        let events = self.events(out);
-        for event in &events {
-            sink.post(event)?;
-        }
-        Ok(events.len())
+        post_all(&self.events(out), sink)
     }
+}
+
+/// Tries every event even after one fails, then returns the first error.
+/// The engine and poster count events as posted when they are made, so
+/// stopping early would lose a key-up that nothing ever re-sends.
+pub fn post_all(events: &[InputEvent], sink: &mut dyn Sink) -> Result<usize, InjectError> {
+    let mut first_error = None;
+    for event in events {
+        if let Err(e) = sink.post(event) {
+            first_error.get_or_insert(e);
+        }
+    }
+    first_error.map_or(Ok(events.len()), Err)
 }
 
 /// Collects events instead of posting them, for tests and dry runs.
@@ -274,22 +283,29 @@ mod tests {
         assert_eq!(wheel_units(i32::MAX), i32::MAX);
     }
 
-    struct FailAfter(usize);
-    impl Sink for FailAfter {
-        fn post(&mut self, _: &InputEvent) -> Result<(), InjectError> {
-            if self.0 == 0 {
-                return Err(InjectError::Failed("refused".into()));
+    /// Refuses the events at the given positions and records the rest.
+    struct Refuses(Vec<usize>, usize, Vec<InputEvent>);
+    impl Sink for Refuses {
+        fn post(&mut self, event: &InputEvent) -> Result<(), InjectError> {
+            self.1 += 1;
+            if self.0.contains(&(self.1 - 1)) {
+                return Err(InjectError::Failed(format!("refused {}", self.1 - 1)));
             }
-            self.0 -= 1;
+            self.2.push(*event);
             Ok(())
         }
     }
 
     #[test]
-    fn post_stops_at_first_sink_error() {
+    fn post_tries_every_event_and_reports_the_first_error() {
         let busy = out(1.0, 1, 5);
-        assert!(Poster::default().post(&busy, &mut FailAfter(1)).is_err());
-        // Positive control: the same output posts all three events to a sink that accepts them.
-        assert_eq!(Poster::default().post(&busy, &mut FailAfter(3)).ok(), Some(3));
+        let mut sink = Refuses(vec![0, 1], 0, Vec::new());
+        let err = Poster::default().post(&busy, &mut sink).expect_err("refused");
+        assert_eq!(err.to_string(), "refused 0");
+        // The scroll after the refused move and click still went out.
+        assert_eq!(sink.2, [InputEvent::Scroll { up: -5 }]);
+        // Positive control: a sink that accepts everything gets all three.
+        let mut ok = Refuses(vec![], 0, Vec::new());
+        assert_eq!(Poster::default().post(&busy, &mut ok).ok(), Some(3));
     }
 }
