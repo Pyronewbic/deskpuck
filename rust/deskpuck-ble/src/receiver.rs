@@ -31,6 +31,21 @@ pub const RESUBSCRIBE_DELAY: f64 = 2.0;
 /// How long a pairing window accepts a Joy-Con that is not the paired one.
 pub const PAIRING_WINDOW: f64 = 60.0;
 
+/// A name for a Joy-Con 2 from its manufacturer data (Nintendo's vendor id,
+/// then the product id), for when the advertised name has not arrived yet:
+/// it comes in a scan response that can follow the first discovery.
+pub fn name_from_manufacturer_data(data: &[u8]) -> Option<&'static str> {
+    let field = |at: usize| Some(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]));
+    if field(3)? != 0x057E {
+        return None;
+    }
+    match field(5)? {
+        0x2066 => Some("Joy-Con 2 (R)"),
+        0x2067 => Some("Joy-Con 2 (L)"),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     BluetoothOff,

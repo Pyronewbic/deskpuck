@@ -539,3 +539,28 @@ fn a_failed_connect_inside_the_window_keeps_pairing() {
     assert_eq!(status(&r.handle(Input::ConnectFailed(OTHER), 2.0)), Some(Status::Pairing));
     assert_eq!(scans(&r.tick(2.0 + RESCAN_AFTER_FAILURE)), 1);
 }
+
+#[test]
+fn side_comes_from_the_product_id_in_the_advertisement() {
+    // Captured from real Joy-Con 2s (deskpuck-cli --verbose).
+    let mut left = vec![0x01, 0x00, 0x03, 0x7E, 0x05, 0x67, 0x20, 0x00, 0x01];
+    left.extend([0; 7]);
+    left.extend([0x0F, 0, 0, 0, 0, 0, 0, 0]);
+    let mut right = left.clone();
+    right[5] = 0x66;
+    assert_eq!(name_from_manufacturer_data(&left), Some("Joy-Con 2 (L)"));
+    assert_eq!(name_from_manufacturer_data(&right), Some("Joy-Con 2 (R)"));
+
+    let mut other_vendor = right.clone();
+    other_vendor[3] = 0x7F;
+    let mut other_product = right.clone();
+    other_product[5] = 0x69;
+    for (data, why) in [
+        (&other_vendor[..], "not Nintendo"),
+        (&other_product[..], "not a Joy-Con 2"),
+        (&right[..6], "too short for the product id"),
+        (&[][..], "empty"),
+    ] {
+        assert_eq!(name_from_manufacturer_data(data), None, "{why}");
+    }
+}

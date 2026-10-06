@@ -5,7 +5,8 @@
 
 use crate::Session;
 use crate::receiver::{
-    Input, NOTIFY_CHARACTERISTIC, Output, Receiver, Status, WRITE_CHARACTERISTIC,
+    Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, Status, WRITE_CHARACTERISTIC,
+    name_from_manufacturer_data,
 };
 use btleplug::api::{
     Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
@@ -433,11 +434,11 @@ impl Driver {
                     let Ok(peripheral) = adapter.peripheral(&id).await else { return };
                     if let Ok(Some(props)) = peripheral.properties().await {
                         let manufacturer_ids = props.manufacturer_data.keys().copied().collect();
-                        let _ = tx.send(Input::Discovered {
-                            id,
-                            name: props.local_name,
-                            manufacturer_ids,
+                        let name = props.local_name.or_else(|| {
+                            let data = props.manufacturer_data.get(&MANUFACTURER_ID)?;
+                            name_from_manufacturer_data(data).map(str::to_owned)
                         });
+                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids });
                     }
                 });
                 None
