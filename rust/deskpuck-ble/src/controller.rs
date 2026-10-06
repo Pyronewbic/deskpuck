@@ -163,6 +163,10 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         (self.hooks.error)(message);
     }
 
+    pub fn logging(&self) -> bool {
+        self.hooks.log.is_some()
+    }
+
     pub fn log(&self, message: impl FnOnce() -> String) {
         if let Some(log) = &self.hooks.log {
             log(&message());
@@ -469,6 +473,12 @@ impl Driver {
             }
             Output::Connect(id) => {
                 hub.log(|| format!("connecting to {id}"));
+                if hub.logging()
+                    && let Ok(p) = self.adapter.peripheral(id).await
+                    && let Ok(Some(props)) = p.properties().await
+                {
+                    hub.log(|| format!("advertised: {:02X?}", props.manufacturer_data));
+                }
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
