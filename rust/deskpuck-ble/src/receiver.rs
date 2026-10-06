@@ -1,7 +1,6 @@
 //! The Joy-Con 2 connection logic as a state machine with no I/O: feed it
 //! inputs and the current time, carry out the outputs it returns. Timers are
 //! deadlines checked by `tick`, so tests can drive every timeout directly.
-//! Ported from Sources/DeskpuckCore/Joycon2BLEReceiver.mm.
 
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
 use std::collections::HashMap;
@@ -28,7 +27,7 @@ pub const DATA_TIMEOUT: f64 = 30.0;
 pub const INIT_DELAY: f64 = 0.5;
 pub const INIT_SPACING: f64 = 0.5;
 /// Notifications are enabled on discovery and again after this delay, as the
-/// C++ receiver does; some connections only start streaming on the second.
+/// Mac app always has; some connections only start streaming on the second.
 pub const RESUBSCRIBE_DELAY: f64 = 2.0;
 /// How long a pairing window accepts a Joy-Con that is not the paired one.
 pub const PAIRING_WINDOW: f64 = 60.0;
@@ -402,7 +401,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             }
             Input::Notification { id, data } => {
                 let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
-                // Short reports are dropped without counting as data, as in the C++.
+                // Short reports are dropped without counting as data.
                 if data.len() < REPORT_MIN_SIZE {
                     return out;
                 }

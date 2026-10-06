@@ -234,31 +234,13 @@ fn missing_characteristics_send_nothing() {
 }
 
 #[test]
-fn init_commands_match_the_cpp_receiver() {
-    // Read the bytes from the shipping receiver so the two cannot drift apart.
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../Sources/DeskpuckCore/Joycon2BLEReceiver.mm"
-    ))
-    .expect("Joycon2BLEReceiver.mm readable");
-    let start = source.find("- (void)sendInitializationCommandsOnce").expect("init method");
-    let body = &source[start..start + source[start..].find("\n}").expect("method end")];
-    let commands: Vec<Vec<u8>> = body
-        .split("(uint8_t[]){")
-        .skip(1)
-        .map(|rest| {
-            rest.split('}')
-                .next()
-                .unwrap_or_default()
-                .split(',')
-                .map(|b| {
-                    u8::from_str_radix(b.trim().trim_start_matches("0x"), 16).expect("hex byte")
-                })
-                .collect()
-        })
-        .collect();
-    assert_eq!(commands.len(), 2, "found {} commands", commands.len());
-    assert_eq!(commands, INIT_COMMANDS.map(|c| c.to_vec()));
+fn init_commands_are_the_ones_the_joycon_accepts() {
+    // As sent to real L and R Joy-Con 2s that then streamed reports (deskpuck-cli --verbose).
+    let accepted: [[u8; 12]; 2] = [
+        [0x0C, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+        [0x0C, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+    ];
+    assert_eq!(INIT_COMMANDS, accepted);
 }
 
 #[test]

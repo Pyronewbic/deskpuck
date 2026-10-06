@@ -25,9 +25,6 @@ done
 (cd rust && cargo deny --log-level error --offline check) || fail "cargo deny (advisories, licenses, sources)"
 
 if [ "$(uname)" = Darwin ]; then
-    if [ -x tests/run.sh ]; then
-        tests/run.sh >/dev/null || fail "tests/run.sh (C++ suites)"
-    fi
     if scripts/build-rust.sh >/dev/null; then
         swift build -c release --quiet || fail "swift build"
     else

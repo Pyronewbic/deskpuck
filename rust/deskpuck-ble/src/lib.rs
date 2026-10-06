@@ -103,7 +103,7 @@ impl<S: Sink> Session<S> {
     }
 }
 
-/// The live readout, laid out like the C++ CLI's `--monitor` screen.
+/// The live readout for `--monitor`.
 #[derive(Debug, Default)]
 pub struct Monitor {
     last_mouse: (i16, i16),

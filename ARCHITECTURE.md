@@ -17,7 +17,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 **`Sources/Deskpuck/`**: the menu bar app (Swift, AppKit and SwiftUI): status menu, Settings window, menu bar glyph. `Core.swift` wraps the C interface; `Sources/DeskpuckFFI/` is its module map.
 
-**`Sources/DeskpuckCore/`**, **`tests/`**: the previous C++ core and its tests. The app no longer uses them, and they will be removed along with `Sources/deskpuck-cli/`, the old C++ command-line tool, which is no longer built. `tests/fixtures/joycon2_r_capture.txt` is a capture from real hardware that the Rust tests also read.
+**`tests/fixtures/`**: `joycon2_r_capture.txt`, reports captured from a real Joy-Con 2 (R), which the Rust parser, session and replay tests read.
 
 **`scripts/`**: build, sign and package the app.
 

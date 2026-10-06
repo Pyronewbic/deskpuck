@@ -4,7 +4,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 
 ## Requirements
 
-- Xcode command line tools with Swift 5.9 or later, for `swift build` and the C++ tests.
+- Xcode command line tools with Swift 5.9 or later, for `swift build`.
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
 - Rust through rustup: the app's core is the [Rust workspace](#rust-workspace), and `rust/rust-toolchain.toml` pins the version, which rustup installs on first use. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
@@ -53,8 +53,7 @@ sudo usermod -aG input "$USER"   # then log out and back in
 
 ## Changes
 
-- `scripts/check.sh` must pass: Rust format, lints and tests, known advisories and licenses of every crate (`rust/deny.toml`), the C++ tests and the app build. Exit 1 means a check failed, 3 that one could not run. CI runs it on pushes to main, on pull requests and weekly.
+- `scripts/check.sh` must pass: Rust format, lints and tests, known advisories and licenses of every crate (`rust/deny.toml`) and, on macOS, the app build. Exit 1 means a check failed, 3 that one could not run. CI runs it on pushes to main, on pull requests and weekly.
 - Turn on the pre-push hook once per clone, which scans the commits being pushed for secrets and then runs `scripts/check.sh`: `git config core.hooksPath .githooks`.
 - A behavior change or bug fix includes a test that fails without it.
-- Changes go to the Rust core. The C++ in `Sources/DeskpuckCore` is frozen until it is removed; `tests/run.sh` still runs its tests.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/), one change per commit.
