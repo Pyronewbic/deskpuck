@@ -6,6 +6,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ### Added
 
+- `deskpuck-tray`, a preview tray app for Linux and Windows, built from source: status, pairing, pause, latched modifiers, and opening or reloading `config.json`.
 - CI builds and tests the Rust workspace on Windows.
 
 ## [0.2.0] - 2026-10-06

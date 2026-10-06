@@ -27,7 +27,7 @@ To debug input, run the same core without the app: `deskpuck-cli --monitor` show
 
 ## Rust workspace
 
-`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-cli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links) and `deskpuck-replay` (a tool that drives the backends without Bluetooth).
+`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-cli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links), `deskpuck-replay` (a tool that drives the backends without Bluetooth) and `deskpuck-tray` (a tray icon app for Linux and Windows).
 
 ```sh
 cd rust
@@ -50,6 +50,8 @@ sudo usermod -aG input "$USER"   # then log out and back in
 ```
 
 `deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS. Bluetooth has not been run on Linux or Windows yet, and the Windows input backend has not been run on Windows.
+
+`cargo run --release -p deskpuck-tray` starts the tray app: the Mac menu's status, pairing, pause and latch lines, plus Open Settings File and Reload Settings in place of a settings window. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
 
 ## Changes
 

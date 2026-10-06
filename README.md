@@ -46,7 +46,7 @@ To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces th
 
 ## Linux and Windows
 
-Deskpuck's core, in [`rust/`](rust), is cross-platform. Its input layer is tested on Linux (X11), but Bluetooth has not been tested on Linux or Windows yet, and there is no app for them. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
+Deskpuck's core, in [`rust/`](rust), is cross-platform. Its input layer is tested on Linux (X11), but Bluetooth has not been tested on Linux or Windows yet. A preview tray app, `deskpuck-tray`, builds from source for both; on GNOME its icon needs the AppIndicator extension. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
 
 ## Build from source
 
