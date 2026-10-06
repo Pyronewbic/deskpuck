@@ -5,6 +5,7 @@ pub mod controller;
 pub mod receiver;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::{Report, button_names};
 use deskpuck_inject::{InjectError, InputEvent, Poster, Sink};
 use receiver::Status;
@@ -78,6 +79,11 @@ impl<S: Sink> Session<S> {
         self.paused
     }
 
+    /// Modifiers latched on by a modifier button; pausing or a disconnect clears them.
+    pub fn latched(&self) -> Modifiers {
+        self.engine.latched()
+    }
+
     /// Takes effect immediately, releasing keys held under the old mapping.
     /// Only keys are posted: a held mouse button stays held, as in the Mac app.
     pub fn apply_settings(&mut self, settings: EngineSettings) -> Result<(), InjectError> {
@@ -103,7 +109,7 @@ impl<S: Sink> Session<S> {
     }
 }
 
-/// The live readout, laid out like the C++ CLI's `--monitor` screen.
+/// The live readout for `--monitor`.
 #[derive(Debug, Default)]
 pub struct Monitor {
     last_mouse: (i16, i16),

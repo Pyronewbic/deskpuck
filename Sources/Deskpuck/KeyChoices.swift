@@ -1,29 +1,134 @@
-import Foundation
+import AppKit
+import Carbon.HIToolbox
+import DeskpuckFFI
+import SwiftUI
 
+/// One entry in a button's menu: no key, a key, a shortcut, a modifier
+/// button, or "record one".
 struct KeyChoice: Hashable {
-    let code: Int
+    let mapping: KeyMapping?
     let name: String
+    private var isRecord = false
 
-    // Matches the "unmapped" picker entry.
-    static let none = KeyChoice(code: -1, name: "None")
+    static let none = KeyChoice(mapping: nil, name: "None")
+    static let record: KeyChoice = {
+        var choice = KeyChoice(mapping: nil, name: "Record Shortcut...")
+        choice.isRecord = true
+        return choice
+    }()
 
-    static let all: [KeyChoice] = [
-        .none,
-        KeyChoice(code: 36, name: "Return"),
-        KeyChoice(code: 53, name: "Escape"),
-        KeyChoice(code: 49, name: "Space"),
-        KeyChoice(code: 48, name: "Tab"),
-        KeyChoice(code: 51, name: "Delete"),
-        KeyChoice(code: 117, name: "Forward Delete"),
-        KeyChoice(code: 126, name: "Up Arrow"),
-        KeyChoice(code: 125, name: "Down Arrow"),
-        KeyChoice(code: 123, name: "Left Arrow"),
-        KeyChoice(code: 124, name: "Right Arrow"),
-        KeyChoice(code: 116, name: "Page Up"),
-        KeyChoice(code: 121, name: "Page Down"),
-        KeyChoice(code: 115, name: "Home"),
-        KeyChoice(code: 119, name: "End"),
+    private init(mapping: KeyMapping?, name: String) {
+        self.mapping = mapping
+        self.name = name
+    }
+
+    init(mapping: KeyMapping?) {
+        self.init(mapping: mapping, name: mapping.map(Self.describe) ?? "None")
+    }
+
+    private static let keys: [(Int, String)] = [
+        (36, "Return"), (53, "Escape"), (49, "Space"), (48, "Tab"), (51, "Delete"),
+        (117, "Forward Delete"), (126, "Up Arrow"), (125, "Down Arrow"), (123, "Left Arrow"),
+        (124, "Right Arrow"), (116, "Page Up"), (121, "Page Down"), (115, "Home"), (119, "End"),
     ]
+
+    // Built through describe() so a saved mapping matches its menu entry.
+    static let all: [KeyChoice] = [.none]
+        + keys.map { KeyChoice(mapping: .key($0.0)) }
+        + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: false)) }
+        + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: true)) }
+
+    /// Modifier names as config.json spells them, in the order the core presses them,
+    /// with their DP_MODIFIER_* bit.
+    static let modifierNames: [(name: String, flag: NSEvent.ModifierFlags, label: String, bit: UInt32)] = [
+        ("control", .control, "Control", UInt32(DP_MODIFIER_CONTROL)),
+        ("option", .option, "Option", UInt32(DP_MODIFIER_OPTION)),
+        ("shift", .shift, "Shift", UInt32(DP_MODIFIER_SHIFT)),
+        ("command", .command, "Command", UInt32(DP_MODIFIER_COMMAND)),
+    ]
+
+    static func label(_ modifier: String) -> String {
+        modifierNames.first { $0.name == modifier }?.label ?? modifier
+    }
+
+    static func describe(_ mapping: KeyMapping) -> String {
+        switch mapping {
+        case .key(let key, let modifiers):
+            let labels = modifierNames.filter { modifiers.contains($0.name) }.map(\.label)
+            return (labels + [keyName(key)]).joined(separator: "+")
+        case .modifier(let modifier, let latch):
+            return latch ? "\(label(modifier)) (tap to latch)" : "\(label(modifier)) (while held)"
+        }
+    }
+
+    static func keyName(_ code: Int) -> String {
+        if let known = keys.first(where: { $0.0 == code }) {
+            return known.1
+        }
+        return character(for: code) ?? "Key code \(code)"
+    }
+
+    /// What the key types on the current keyboard layout, e.g. "C".
+    private static func character(for code: Int) -> String? {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
+            return nil
+        }
+        let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
+        guard let bytes = CFDataGetBytePtr(data) else { return nil }
+        var deadKeys: UInt32 = 0
+        var chars = [UniChar](repeating: 0, count: 4)
+        var length = 0
+        let status = bytes.withMemoryRebound(to: UCKeyboardLayout.self, capacity: 1) { layout in
+            UCKeyTranslate(layout, UInt16(code), UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+                           OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, chars.count, &length, &chars)
+        }
+        guard status == noErr, length > 0 else { return nil }
+        let text = String(utf16CodeUnits: chars, count: length).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+            return nil
+        }
+        return text.uppercased()
+    }
+}
+
+/// Waits for one key press and reports it, with the modifiers held, as a mapping.
+/// Escape without modifiers cancels.
+struct ShortcutRecorder: View {
+    let onRecord: (KeyMapping) -> Void
+    let onCancel: () -> Void
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack {
+            Text("Press a shortcut (Esc cancels)")
+                .foregroundStyle(.secondary)
+            Button("Cancel", action: onCancel)
+        }
+        .onAppear {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                handle(event)
+                return nil
+            }
+        }
+        .onDisappear {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+    }
+
+    private func handle(_ event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let modifiers = KeyChoice.modifierNames.filter { flags.contains($0.flag) }.map(\.name)
+        let code = Int(event.keyCode)
+        if code == kVK_Escape && modifiers.isEmpty {
+            onCancel()
+        } else if code <= 127 {
+            onRecord(.key(code, modifiers: modifiers))
+        }
+    }
 }
 
 // Right Joy-Con buttons shown in Settings, in the order they sit on the controller.

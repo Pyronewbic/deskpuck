@@ -190,18 +190,27 @@ mod tests {
             "/../../Sources/Deskpuck/KeyChoices.swift"
         ))
         .expect("KeyChoices.swift readable");
-        let codes: Vec<KeyCode> = swift
-            .split("KeyChoice(code: ")
+        let table = swift
+            .split("private static let keys: [(Int, String)] = [")
+            .nth(1)
+            .and_then(|rest| rest.split("]").next())
+            .expect("the keys table in KeyChoices.swift");
+        let codes: Vec<KeyCode> = table
+            .split('(')
             .skip(1)
             .filter_map(|rest| rest.split(',').next()?.trim().parse().ok())
             .collect();
-        // Positive control: the 14 offered keys were found (the -1 "None" entry is not a key).
+        // Positive control: the 14 offered keys were found.
         assert_eq!(codes.len(), 14, "{codes:?}");
         for code in codes {
             assert!(
                 lookup(code).is_some(),
                 "key code {code} offered in Settings has no translation"
             );
+        }
+        // Shortcuts press these on every OS.
+        for (name, _, code) in deskpuck_core::mapping::Modifiers::ALL {
+            assert!(lookup(code).is_some(), "modifier {name} ({code}) has no translation");
         }
         assert!(lookup(0x3F).is_none(), "Fn has no PC equivalent");
     }

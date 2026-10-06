@@ -5,19 +5,24 @@
 
 use crate::Session;
 use crate::receiver::{
-    Input, NOTIFY_CHARACTERISTIC, Output, Receiver, Status, WRITE_CHARACTERISTIC,
+    Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, SERVICE, Status,
+    WRITE_CHARACTERISTIC, name_from_manufacturer_data,
 };
 use btleplug::api::{
-    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-    WriteType,
+    Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
+    RetrievePeripheralsOptions, ScanFilter, WriteType,
 };
 use btleplug::platform::{Adapter, Manager, PeripheralId};
 use deskpuck_core::engine::EngineSettings;
+use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::Report;
+use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::Sink;
 use futures::StreamExt;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -32,7 +37,10 @@ pub enum LinkStatus {
     BluetoothOff,
     BluetoothUnauthorized,
     Unavailable,
+    NotPaired,
+    Pairing,
     Searching,
+    InUseElsewhere,
     Connecting,
     Connected,
 }
@@ -41,7 +49,10 @@ impl From<Status> for LinkStatus {
     fn from(status: Status) -> Self {
         match status {
             Status::BluetoothOff => LinkStatus::BluetoothOff,
+            Status::NotPaired => LinkStatus::NotPaired,
+            Status::Pairing => LinkStatus::Pairing,
             Status::Searching => LinkStatus::Searching,
+            Status::InUseElsewhere => LinkStatus::InUseElsewhere,
             Status::Connecting => LinkStatus::Connecting,
             Status::Connected => LinkStatus::Connected,
         }
@@ -52,6 +63,7 @@ pub type StatusHook = Box<dyn FnMut(LinkStatus, Option<&str>) + Send>;
 /// Report, raw bytes, device name, and milliseconds since connecting.
 pub type ReportHook = Box<dyn FnMut(&Report, &[u8], Option<&str>, u128) + Send>;
 pub type MessageHook = Box<dyn Fn(&str) + Send>;
+pub type LatchHook = Box<dyn FnMut(Modifiers) + Send>;
 
 /// Callbacks run on the controller's thread, never on the caller's.
 pub struct Hooks {
@@ -62,6 +74,8 @@ pub struct Hooks {
     pub log: Option<MessageHook>,
     /// Failures worth showing even without --verbose.
     pub error: MessageHook,
+    /// The modifiers latched on by modifier buttons, whenever they change.
+    pub latched: Option<LatchHook>,
 }
 
 /// The receiver plus the session: inputs in, Bluetooth commands out.
@@ -70,16 +84,52 @@ pub struct Hub<Id, S: Sink> {
     session: Session<S>,
     hooks: Hooks,
     connected_at: f64,
+    pairing_file: Option<PathBuf>,
+    last_latched: Modifiers,
 }
 
-impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
-    pub fn new(settings: EngineSettings, sink: S, hooks: Hooks) -> Self {
-        Self {
+impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
+    /// Connects only to the Joy-Con paired in `pairing_file`, and saves a new
+    /// pairing there. Without a file, a pairing lasts until the Hub is dropped.
+    pub fn new(
+        settings: EngineSettings,
+        sink: S,
+        hooks: Hooks,
+        pairing_file: Option<PathBuf>,
+    ) -> Self {
+        let mut hub = Self {
             receiver: Receiver::default(),
             session: Session::new(settings, sink),
             hooks,
             connected_at: 0.0,
+            pairing_file,
+            last_latched: Modifiers::NONE,
+        };
+        if let Some(path) = &hub.pairing_file {
+            match PairedDevice::load(path) {
+                Ok(device) => hub.receiver.set_paired(device.map(|d| d.id)),
+                Err(problem) => (hub.hooks.error)(&format!("{problem}; pair the Joy-Con again.")),
+            }
         }
+        hub
+    }
+
+    pub fn paired(&self) -> Option<&str> {
+        self.receiver.paired()
+    }
+
+    pub fn wants_presence_check(&self) -> bool {
+        self.receiver.wants_presence_check()
+    }
+
+    pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.start_pairing(now);
+        self.route(out, now)
+    }
+
+    pub fn cancel_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+        let out = self.receiver.cancel_pairing();
+        self.route(out, now)
     }
 
     pub fn session(&self) -> &Session<S> {
@@ -115,6 +165,17 @@ impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
         if let Err(e) = self.session.apply_settings(settings) {
             (self.hooks.error)(&e.to_string());
         }
+        self.notify_latched();
+    }
+
+    fn notify_latched(&mut self) {
+        let latched = self.session.latched();
+        if latched != self.last_latched {
+            self.last_latched = latched;
+            if let Some(hook) = self.hooks.latched.as_mut() {
+                hook(latched);
+            }
+        }
     }
 
     /// A status from the Bluetooth stack rather than the receiver.
@@ -124,6 +185,10 @@ impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
 
     pub fn error(&self, message: &str) {
         (self.hooks.error)(message);
+    }
+
+    pub fn logging(&self) -> bool {
+        self.hooks.log.is_some()
     }
 
     pub fn log(&self, message: impl FnOnce() -> String) {
@@ -137,6 +202,7 @@ impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
         if let Err(e) = self.session.shutdown() {
             (self.hooks.error)(&e.to_string());
         }
+        self.notify_latched();
     }
 
     pub fn linked(&self) -> Option<&Id> {
@@ -167,17 +233,41 @@ impl<Id: Clone + Eq + Hash, S: Sink> Hub<Id, S> {
                         (self.hooks.error)(&e.to_string());
                     }
                 }
+                Output::Paired { id, name } => self.remember(&id, name.as_deref()),
                 command => commands.push(command),
             }
         }
+        self.notify_latched();
         commands
+    }
+
+    fn remember(&self, id: &Id, name: Option<&str>) {
+        self.log(|| format!("paired with {id}"));
+        let Some(path) = &self.pairing_file else { return };
+        let Some(device) = PairedDevice::new(&id.to_string(), name) else {
+            (self.hooks.error)("This Joy-Con's id cannot be saved; it stays paired until quit.");
+            return;
+        };
+        if let Err(e) = device.save(path) {
+            (self.hooks.error)(&format!("Could not save the pairing to {}: {e}", path.display()));
+        }
     }
 }
 
 enum Command {
     SetPaused(bool),
     Apply(EngineSettings),
+    StartPairing,
+    CancelPairing,
     Shutdown,
+}
+
+/// Where the paired Joy-Con is remembered, and whether to open a pairing
+/// window as soon as Bluetooth is ready.
+#[derive(Clone, Debug, Default)]
+pub struct PairingSetup {
+    pub file: Option<PathBuf>,
+    pub pair_at_start: bool,
 }
 
 /// A running connection. Dropping it releases held input, disconnects the
@@ -193,12 +283,14 @@ impl Controller {
         settings: EngineSettings,
         sink: S,
         hooks: Hooks,
+        pairing: PairingSetup,
     ) -> std::io::Result<Self> {
         let (tx, rx) = unbounded_channel();
         let runtime =
             tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;
         let thread = std::thread::Builder::new().name("deskpuck-ble".into()).spawn(move || {
-            runtime.block_on(run(Hub::new(settings, sink, hooks), rx));
+            let hub = Hub::new(settings, sink, hooks, pairing.file);
+            runtime.block_on(run(hub, rx, pairing.pair_at_start));
         })?;
         Ok(Self { tx, paused: Arc::default(), thread: Some(thread) })
     }
@@ -214,6 +306,15 @@ impl Controller {
 
     pub fn apply_settings(&self, settings: EngineSettings) {
         let _ = self.tx.send(Command::Apply(settings));
+    }
+
+    /// Opens a pairing window of `PAIRING_WINDOW` seconds.
+    pub fn start_pairing(&self) {
+        let _ = self.tx.send(Command::StartPairing);
+    }
+
+    pub fn cancel_pairing(&self) {
+        let _ = self.tx.send(Command::CancelPairing);
     }
 }
 
@@ -238,13 +339,18 @@ async fn idle<S: Sink>(
                 hub.set_paused(paused, start.elapsed().as_secs_f64());
             }
             Command::Apply(settings) => hub.apply_settings(settings),
+            Command::StartPairing | Command::CancelPairing => {}
             Command::Shutdown => break,
         }
     }
     hub.shutdown();
 }
 
-async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<Command>) {
+async fn run<S: Sink>(
+    mut hub: Hub<PeripheralId, S>,
+    mut rx: UnboundedReceiver<Command>,
+    pair_at_start: bool,
+) {
     let start = Instant::now();
     let now = || start.elapsed().as_secs_f64();
 
@@ -282,7 +388,9 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
         streams: HashMap::new(),
     };
 
-    let mut commands = hub.start(now());
+    // Before the first status, so a pairing run never reports NotPaired first.
+    let mut commands = if pair_at_start { hub.start_pairing(now()) } else { Vec::new() };
+    commands.extend(hub.start(now()));
     match adapter.adapter_state().await {
         Ok(CentralState::PoweredOn) => commands.extend(hub.input(Input::AdapterPoweredOn, now())),
         Ok(CentralState::PoweredOff) => commands.extend(hub.input(Input::AdapterPoweredOff, now())),
@@ -290,6 +398,7 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
     }
 
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    let mut presence = tokio::time::interval(PRESENCE_POLL);
     loop {
         for command in &commands {
             driver.execute(command, &hub).await;
@@ -301,6 +410,8 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
                     hub.apply_settings(settings);
                     Vec::new()
                 }
+                Some(Command::StartPairing) => hub.start_pairing(now()),
+                Some(Command::CancelPairing) => hub.cancel_pairing(now()),
                 Some(Command::Shutdown) | None => break,
             },
             Some(event) = events.next() => match driver.on_event(event) {
@@ -309,6 +420,12 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
             },
             Some(input) = input_rx.recv() => hub.input(input, now()),
             _ = ticker.tick() => hub.tick(now()),
+            _ = presence.tick() => {
+                if hub.wants_presence_check() {
+                    driver.check_presence();
+                }
+                Vec::new()
+            }
         };
     }
 
@@ -321,6 +438,9 @@ async fn run<S: Sink>(mut hub: Hub<PeripheralId, S>, mut rx: UnboundedReceiver<C
         let _ = tokio::time::timeout(Duration::from_secs(2), p.disconnect()).await;
     }
 }
+
+/// How often to ask whether another program holds the paired Joy-Con.
+const PRESENCE_POLL: Duration = Duration::from_secs(3);
 
 /// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
@@ -337,6 +457,22 @@ fn uuid(s: &str) -> Uuid {
 }
 
 impl Driver {
+    /// Reports the Joy-Cons connected to this computer by any program. A
+    /// backend that cannot tell (BlueZ, WinRT) reports nothing, so the status
+    /// simply stays Searching.
+    fn check_presence(&self) {
+        let (adapter, tx) = (self.adapter.clone(), self.tx.clone());
+        tokio::spawn(async move {
+            let options = RetrievePeripheralsOptions {
+                identifiers: None,
+                services: Some(vec![uuid(SERVICE)]),
+            };
+            if let Ok(found) = adapter.retrieve_peripherals(options).await {
+                let _ = tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()));
+            }
+        });
+    }
+
     /// Turns a btleplug event into receiver input. Discoveries need the
     /// peripheral's properties, which are fetched off the main loop.
     fn on_event(&mut self, event: CentralEvent) -> Option<Input<PeripheralId>> {
@@ -349,11 +485,11 @@ impl Driver {
                     let Ok(peripheral) = adapter.peripheral(&id).await else { return };
                     if let Ok(Some(props)) = peripheral.properties().await {
                         let manufacturer_ids = props.manufacturer_data.keys().copied().collect();
-                        let _ = tx.send(Input::Discovered {
-                            id,
-                            name: props.local_name,
-                            manufacturer_ids,
+                        let name = props.local_name.or_else(|| {
+                            let data = props.manufacturer_data.get(&MANUFACTURER_ID)?;
+                            name_from_manufacturer_data(data).map(str::to_owned)
                         });
+                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids });
                     }
                 });
                 None
@@ -389,6 +525,12 @@ impl Driver {
             }
             Output::Connect(id) => {
                 hub.log(|| format!("connecting to {id}"));
+                if hub.logging()
+                    && let Ok(p) = self.adapter.peripheral(id).await
+                    && let Ok(Some(props)) = p.properties().await
+                {
+                    hub.log(|| format!("advertised: {:02X?}", props.manufacturer_data));
+                }
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
@@ -434,11 +576,17 @@ impl Driver {
                 });
             }
             Output::Subscribe(id) => {
-                let Some((_, notify)) =
+                let Some((write, notify)) =
                     self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
                 else {
                     return;
                 };
+                hub.log(|| {
+                    format!(
+                        "services: write {}, notify {}",
+                        write.service_uuid, notify.service_uuid
+                    )
+                });
                 let Ok(peripheral) = self.adapter.peripheral(id).await else { return };
                 if !self.streams.contains_key(id) {
                     // One reader per connection, started before notifications are enabled.
@@ -474,7 +622,7 @@ impl Driver {
                     }
                 });
             }
-            Output::Status { .. } | Output::Report { .. } => {}
+            Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
         }
     }
 }

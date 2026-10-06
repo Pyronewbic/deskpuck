@@ -1,10 +1,49 @@
 import DeskpuckFFI
 import Foundation
 
+/// What a button does, as config.json stores it: a bare key code, a
+/// shortcut {"key", "modifiers"}, or a modifier button {"modifier", "latch"}.
+enum KeyMapping: Codable, Hashable {
+    case key(Int, modifiers: [String] = [])
+    case modifier(String, latch: Bool)
+
+    private enum CodingKeys: String, CodingKey { case key, modifiers, modifier, latch }
+
+    init(from decoder: Decoder) throws {
+        if let key = try? decoder.singleValueContainer().decode(Int.self) {
+            self = .key(key)
+            return
+        }
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        if let modifier = try fields.decodeIfPresent(String.self, forKey: .modifier) {
+            self = .modifier(modifier, latch: try fields.decodeIfPresent(Bool.self, forKey: .latch) ?? false)
+        } else {
+            self = .key(try fields.decode(Int.self, forKey: .key),
+                        modifiers: try fields.decodeIfPresent([String].self, forKey: .modifiers) ?? [])
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .key(let key, let modifiers) where modifiers.isEmpty:
+            var value = encoder.singleValueContainer()
+            try value.encode(key)
+        case .key(let key, let modifiers):
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(key, forKey: .key)
+            try fields.encode(modifiers, forKey: .modifiers)
+        case .modifier(let modifier, let latch):
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(modifier, forKey: .modifier)
+            try fields.encode(latch, forKey: .latch)
+        }
+    }
+}
+
 /// The settings in config.json. The Rust core validates and saves them.
 struct DeskpuckConfig: Codable, Equatable {
     var version = 1
-    var keyMappings: [String: Int]
+    var keyMappings: [String: KeyMapping]
     var pointerSpeed: Double
     var repeatDelay: Double
     var repeatInterval: Double
@@ -80,13 +119,16 @@ enum Core {
 }
 
 enum ConnectionState {
-    case bluetoothOff, bluetoothUnauthorized, unavailable, searching, connecting, connected
+    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, inUseElsewhere, connecting, connected
 
     init(_ status: dp_status) {
         switch status {
         case DP_STATUS_BLUETOOTH_UNAUTHORIZED: self = .bluetoothUnauthorized
         case DP_STATUS_UNAVAILABLE: self = .unavailable
+        case DP_STATUS_NOT_PAIRED: self = .notPaired
+        case DP_STATUS_PAIRING: self = .pairing
         case DP_STATUS_SEARCHING: self = .searching
+        case DP_STATUS_IN_USE_ELSEWHERE: self = .inUseElsewhere
         case DP_STATUS_CONNECTING: self = .connecting
         case DP_STATUS_CONNECTED: self = .connected
         default: self = .bluetoothOff
@@ -99,6 +141,10 @@ enum ConnectionState {
 final class Controller {
     private(set) var connectionState = ConnectionState.bluetoothOff
     private(set) var deviceName: String?
+    /// Config names of the modifiers latched on by modifier buttons.
+    private(set) var latchedModifiers: [String] = []
+    /// When the open pairing window closes; nil when none is open.
+    private(set) var pairingEndsAt: Date?
     var stateDidChange: (() -> Void)?
 
     // Retained for the library's callbacks; it holds the controller weakly, so a
@@ -129,7 +175,15 @@ final class Controller {
                 relay.target?.update(ConnectionState(status), name)
             }
         }
-        handle = Core.json(config).withCString { dp_controller_start($0, callback, context.toOpaque()) }
+        let onLatch: dp_latch_callback = { context, bits in
+            guard let context else { return }
+            let relay = Unmanaged<Relay>.fromOpaque(context).takeUnretainedValue()
+            let names = KeyChoice.modifierNames.filter { bits & $0.bit != 0 }.map(\.name)
+            DispatchQueue.main.async {
+                relay.target?.latched(names)
+            }
+        }
+        handle = Core.json(config).withCString { dp_controller_start($0, callback, onLatch, context.toOpaque()) }
         if handle == nil {
             context.release()
             update(.unavailable, nil)
@@ -155,6 +209,17 @@ final class Controller {
         }
     }
 
+    /// The first Joy-Con that connects in the next DP_PAIRING_SECONDS replaces the paired one.
+    func startPairing() {
+        guard handle != nil, !paused else { return }
+        pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
+        dp_controller_start_pairing(handle)
+    }
+
+    func cancelPairing() {
+        dp_controller_cancel_pairing(handle)
+    }
+
     /// Takes effect immediately. Throws the problems if the settings are invalid.
     func apply(_ config: DeskpuckConfig) throws {
         let problems = Core.problems(config)
@@ -169,9 +234,17 @@ final class Controller {
         }
     }
 
+    private func latched(_ names: [String]) {
+        latchedModifiers = names
+        stateDidChange?()
+    }
+
     private func update(_ state: ConnectionState, _ name: String?) {
         connectionState = state
         deviceName = name
+        if state != .pairing {
+            pairingEndsAt = nil
+        }
         stateDidChange?()
     }
 }

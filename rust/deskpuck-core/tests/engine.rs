@@ -201,7 +201,7 @@ fn apply_settings() {
 
     // Remap RS from Return to Space while it is held: Return must be released.
     let released = engine.apply_settings(EngineSettings {
-        key_mappings: vec![ButtonKeyMapping { button_mask: RS, key_code: 49 }],
+        key_mappings: vec![ButtonKeyMapping::key(RS, 49)],
         pointer_speed: 2.0,
         ..EngineSettings::default()
     });

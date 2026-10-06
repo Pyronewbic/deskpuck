@@ -1,4 +1,6 @@
-use crate::mapping::{ButtonKeyMapping, KeyEvent, KeyRepeater, default_button_key_mappings};
+use crate::mapping::{
+    ButtonKeyMapping, KeyEvent, KeyRepeater, Modifiers, default_button_key_mappings,
+};
 use crate::packet::Report;
 
 /// Raw optical-sensor counts per screen point at pointer speed 1.0.
@@ -121,6 +123,11 @@ impl InputEngine {
             wheel,
             keys: self.keys.update(report.buttons, now),
         }
+    }
+
+    /// Modifiers toggled on by latching modifier buttons.
+    pub fn latched(&self) -> Modifiers {
+        self.keys.latched()
     }
 
     /// Releases every held key. Mouse buttons in the output are all up.

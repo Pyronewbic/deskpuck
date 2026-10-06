@@ -111,7 +111,7 @@ fn demo_follows_the_config_mapping() {
     // Remapped A (Right arrow) to Space: the held-A segment now types spaces.
     let mut settings = EngineSettings::default();
     settings.key_mappings.retain(|m| m.button_mask != 0x0000_0800);
-    settings.key_mappings.push(ButtonKeyMapping { button_mask: 0x0000_0800, key_code: 49 });
+    settings.key_mappings.push(ButtonKeyMapping::key(0x0000_0800, 49));
     let (_, events) = replay(&demo(), settings);
     assert!(events.iter().any(|e| matches!(e, InputEvent::Key { key_code: 49, .. })));
     assert!(events.iter().all(|e| !matches!(e, InputEvent::Key { key_code: 124, .. })));

@@ -2,7 +2,9 @@ import Foundation
 
 @MainActor
 final class SettingsModel: ObservableObject {
-    @Published var mappings: [String: Int] { didSet { commit() } }
+    @Published var mappings: [String: KeyMapping] { didSet { commit() } }
+    /// The button whose shortcut is being recorded, if any.
+    @Published var recordingButton: String?
     @Published var pointerSpeed: Double { didSet { commit() } }
     @Published var scrollEnabled: Bool { didSet { commit() } }
     @Published var repeatEnabled: Bool { didSet { commit() } }
@@ -38,12 +40,12 @@ final class SettingsModel: ObservableObject {
         commit()
     }
 
-    func keyCode(for button: String) -> Int {
-        mappings[button] ?? KeyChoice.none.code
+    func mapping(for button: String) -> KeyMapping? {
+        mappings[button]
     }
 
-    func setKeyCode(_ code: Int, for button: String) {
-        mappings[button] = code == KeyChoice.none.code ? nil : code
+    func setMapping(_ mapping: KeyMapping?, for button: String) {
+        mappings[button] = mapping
     }
 
     var config: DeskpuckConfig {

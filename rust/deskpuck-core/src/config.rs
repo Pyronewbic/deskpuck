@@ -3,13 +3,13 @@
 //! described in the returned warnings.
 
 use crate::engine::{EngineSettings, mouse_buttons_for_joycon_buttons};
-use crate::mapping::{ButtonKeyMapping, KeyCode};
+use crate::files;
+use crate::mapping::{ButtonAction, ButtonKeyMapping, KeyCode, Modifiers};
 use crate::packet::{button_mask, button_name, button_names};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs::OpenOptions;
-use std::io::{self, Read, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 pub const POINTER_SPEED_MIN: f64 = 0.1;
@@ -48,10 +48,66 @@ fn read_number(value: &Value) -> Option<f64> {
     value.as_f64().filter(|n| n.is_finite())
 }
 
+/// What a button presses: a key (macOS virtual key code, 0-127), with any
+/// modifiers held around it. Stored as a bare key code when there are none,
+/// so files without shortcuts are unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    pub key: KeyCode,
+    pub modifiers: Modifiers,
+}
+
+impl From<KeyCode> for Shortcut {
+    fn from(key: KeyCode) -> Self {
+        Self { key, modifiers: Modifiers::NONE }
+    }
+}
+
+impl Shortcut {
+    fn to_value(self) -> Value {
+        if self.modifiers.is_empty() {
+            json!(self.key)
+        } else {
+            json!({ "key": self.key, "modifiers": self.modifiers.names() })
+        }
+    }
+}
+
+/// What a button does: press a key or shortcut, or act as one modifier key
+/// while held (`{"modifier": "shift"}`) or toggled per press (`"latch": true`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mapping {
+    Shortcut(Shortcut),
+    Modifier { modifier: Modifiers, latch: bool },
+}
+
+impl From<KeyCode> for Mapping {
+    fn from(key: KeyCode) -> Self {
+        Mapping::Shortcut(Shortcut::from(key))
+    }
+}
+
+impl From<Shortcut> for Mapping {
+    fn from(shortcut: Shortcut) -> Self {
+        Mapping::Shortcut(shortcut)
+    }
+}
+
+impl Mapping {
+    fn to_value(self) -> Value {
+        match self {
+            Mapping::Shortcut(shortcut) => shortcut.to_value(),
+            Mapping::Modifier { modifier, latch } => {
+                json!({ "modifier": modifier.names().first(), "latch": latch })
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    /// Button name -> macOS virtual key code (0-127).
-    pub key_mappings: BTreeMap<String, KeyCode>,
+    /// Button name -> what it does.
+    pub key_mappings: BTreeMap<String, Mapping>,
     pub pointer_speed: f64,
     pub repeat_delay: f64,
     pub repeat_interval: f64,
@@ -65,7 +121,17 @@ impl Default for Config {
             key_mappings: defaults
                 .key_mappings
                 .iter()
-                .filter_map(|m| button_name(m.button_mask).map(|n| (n.to_owned(), m.key_code)))
+                .filter_map(|m| {
+                    let mapping = match m.action {
+                        ButtonAction::Key { key_code, modifiers } => {
+                            Mapping::Shortcut(Shortcut { key: key_code, modifiers })
+                        }
+                        ButtonAction::Modifier { modifiers, latch } => {
+                            Mapping::Modifier { modifier: modifiers, latch }
+                        }
+                    };
+                    button_name(m.button_mask).map(|n| (n.to_owned(), mapping))
+                })
                 .collect(),
             pointer_speed: defaults.pointer_speed,
             repeat_delay: defaults.repeat_delay,
@@ -176,41 +242,24 @@ impl Config {
     /// A missing file gives the defaults without a warning. Reads at most
     /// `MAX_CONFIG_BYTES` and refuses anything but a regular file.
     pub fn load(path: &Path) -> (Config, Vec<String>) {
-        let mut options = OpenOptions::new();
-        options.read(true);
-        // O_NONBLOCK: opening a FIFO must not hang; it is rejected below.
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
-
-        let fail = |problem: String| {
-            (Config::default(), vec![format!("{} {problem}; using defaults.", path.display())])
-        };
-        let file = match options.open(path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return (Config::default(), Vec::new());
+        match files::read_capped(path, MAX_CONFIG_BYTES) {
+            Ok(Some(bytes)) => Self::from_json(&bytes),
+            Ok(None) => (Config::default(), Vec::new()),
+            Err(problem) => {
+                (Config::default(), vec![format!("{} {problem}; using defaults.", path.display())])
             }
-            Err(e) => return fail(format!("could not be opened ({e})")),
-        };
-        if !file.metadata().is_ok_and(|m| m.is_file()) {
-            return fail("is not a regular file".to_owned());
         }
-        // Read at most one byte past the cap, even if the file grows meanwhile.
-        let mut bytes = Vec::new();
-        if file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes).is_err() {
-            return fail("could not be read".to_owned());
-        }
-        if bytes.len() as u64 > MAX_CONFIG_BYTES {
-            return fail("is larger than 64 KB".to_owned());
-        }
-        Self::from_json(&bytes)
     }
 
     /// The config as a JSON value, valid or not; `validation_problems` says which.
     pub fn to_value(&self) -> Value {
         json!({
             VERSION: CONFIG_VERSION as u8,
-            KEY_MAPPINGS: self.key_mappings,
+            KEY_MAPPINGS: self
+                .key_mappings
+                .iter()
+                .map(|(button, mapping)| (button.clone(), mapping.to_value()))
+                .collect::<Map<String, Value>>(),
             POINTER_SPEED: self.pointer_speed,
             REPEAT_DELAY: self.repeat_delay,
             REPEAT_INTERVAL: self.repeat_interval,
@@ -242,23 +291,7 @@ impl Config {
             return Err(SaveError::Invalid(problems));
         }
         let data = serde_json::to_vec_pretty(&self.to_value()).map_err(io::Error::other)?;
-
-        let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(dir)?;
-
-        let mut temp = tempfile::Builder::new().prefix(".config.json.").tempfile_in(dir)?;
-        temp.write_all(&data)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            temp.as_file().set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        }
-        temp.as_file().sync_all()?;
-        temp.persist(path).map_err(|e| SaveError::Io(e.error))?;
+        files::write_private(path, &data)?;
         Ok(())
     }
 
@@ -268,8 +301,13 @@ impl Config {
         let key_mappings = mappable_buttons()
             .into_iter()
             .filter_map(|name| {
-                let key_code = *self.key_mappings.get(name)?;
-                Some(ButtonKeyMapping { button_mask: button_mask(name)?, key_code })
+                let mask = button_mask(name)?;
+                Some(match *self.key_mappings.get(name)? {
+                    Mapping::Shortcut(s) => ButtonKeyMapping::shortcut(mask, s.key, s.modifiers),
+                    Mapping::Modifier { modifier, latch } => {
+                        ButtonKeyMapping::modifier(mask, modifier, latch)
+                    }
+                })
             })
             .collect();
         EngineSettings {
@@ -282,27 +320,94 @@ impl Config {
     }
 }
 
+fn read_key_code(value: &Value) -> Option<KeyCode> {
+    read_number(value)
+        .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= f64::from(KEY_CODE_MAX))
+        .map(|c| c as KeyCode)
+}
+
+const MODIFIER_NAMES: &str = "control, option, shift or command";
+
+/// `{"modifier": <name>, "latch": <bool>}`, latch optional.
+fn parse_modifier_button(button: &str, fields: &Map<String, Value>) -> Result<Mapping, String> {
+    if let Some(field) = fields.keys().find(|k| !["modifier", "latch"].contains(&k.as_str())) {
+        return Err(format!("Modifier button {button} has an unknown field \"{field}\""));
+    }
+    let name = &fields["modifier"];
+    let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
+        return Err(format!("Unknown modifier {name} for {button} (use {MODIFIER_NAMES})"));
+    };
+    let latch = match fields.get("latch") {
+        None => false,
+        Some(Value::Bool(latch)) => *latch,
+        Some(_) => return Err(format!("latch for {button} must be true or false")),
+    };
+    Ok(Mapping::Modifier { modifier, latch })
+}
+
+/// A key code, `{"key": <code>, "modifiers": [<name>...]}`, or a modifier
+/// button. `Err` says why not, without the "mapping ignored" ending.
+fn parse_mapping(button: &str, value: &Value) -> Result<Mapping, String> {
+    match value {
+        Value::Object(fields) if fields.contains_key("modifier") => {
+            parse_modifier_button(button, fields)
+        }
+        _ => parse_shortcut(button, value).map(Mapping::Shortcut),
+    }
+}
+
+fn parse_shortcut(button: &str, value: &Value) -> Result<Shortcut, String> {
+    let bad_key =
+        || format!("Key code for {button} must be a whole number from 0 to {KEY_CODE_MAX}");
+    let Value::Object(fields) = value else {
+        return read_key_code(value).map(Shortcut::from).ok_or_else(bad_key);
+    };
+    if let Some(field) = fields.keys().find(|k| !["key", "modifiers"].contains(&k.as_str())) {
+        return Err(format!("Shortcut for {button} has an unknown field \"{field}\""));
+    }
+    let key = fields.get("key").and_then(read_key_code).ok_or_else(bad_key)?;
+    let mut modifiers = Modifiers::NONE;
+    match fields.get("modifiers") {
+        None => {}
+        Some(Value::Array(names)) => {
+            for name in names {
+                let shown = name.as_str().map_or_else(|| name.to_string(), str::to_owned);
+                let Some(modifier) = name.as_str().and_then(Modifiers::from_name) else {
+                    return Err(format!(
+                        "Unknown modifier {shown:?} for {button} (use {MODIFIER_NAMES})"
+                    ));
+                };
+                if modifiers.contains(modifier) {
+                    return Err(format!("Modifier {shown:?} is listed twice for {button}"));
+                }
+                modifiers = modifiers.with(modifier);
+            }
+        }
+        Some(_) => return Err(format!("Modifiers for {button} must be a list")),
+    }
+    Ok(Shortcut { key, modifiers })
+}
+
 fn parse_key_mappings(
     mappings: &Map<String, Value>,
     warnings: &mut Vec<String>,
-) -> BTreeMap<String, KeyCode> {
+) -> BTreeMap<String, Mapping> {
     let mappable = mappable_buttons();
     let mut buttons: Vec<&String> = mappings.keys().collect();
     buttons.sort();
     let mut parsed = BTreeMap::new();
     for button in buttons {
-        let code = read_number(&mappings[button])
-            .filter(|c| c.fract() == 0.0 && *c >= 0.0 && *c <= f64::from(KEY_CODE_MAX));
         if is_mouse_button(button) {
             warnings.push(format!("{button} is a mouse button and cannot be mapped to a key."));
         } else if !mappable.contains(&button.as_str()) {
             warnings.push(format!("Unknown button \"{button}\" in keyMappings ignored."));
-        } else if let Some(code) = code {
-            parsed.insert(button.clone(), code as KeyCode);
         } else {
-            warnings.push(format!(
-                "Key code for {button} must be a whole number from 0 to {KEY_CODE_MAX}; mapping ignored."
-            ));
+            match parse_mapping(button, &mappings[button]) {
+                Ok(mapping) => {
+                    parsed.insert(button.clone(), mapping);
+                }
+                Err(problem) => warnings.push(format!("{problem}; mapping ignored.")),
+            }
         }
     }
     parsed

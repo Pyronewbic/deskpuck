@@ -49,7 +49,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 12, "{exported:?}");
+    assert_eq!(exported.len(), 14, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -64,10 +64,16 @@ fn header_status_values_match() {
         (LinkStatus::Searching, "DP_STATUS_SEARCHING"),
         (LinkStatus::Connecting, "DP_STATUS_CONNECTING"),
         (LinkStatus::Connected, "DP_STATUS_CONNECTED"),
+        (LinkStatus::NotPaired, "DP_STATUS_NOT_PAIRED"),
+        (LinkStatus::Pairing, "DP_STATUS_PAIRING"),
+        (LinkStatus::InUseElsewhere, "DP_STATUS_IN_USE_ELSEWHERE"),
     ] {
         let declared = format!("{name} = {},", status_code(status));
         assert!(HEADER.contains(&declared), "header lacks {declared}");
     }
+    let window =
+        format!("#define DP_PAIRING_SECONDS {:.0}\n", deskpuck_ble::receiver::PAIRING_WINDOW);
+    assert!(HEADER.contains(&window), "header lacks {window}");
 }
 
 #[test]
@@ -136,6 +142,8 @@ fn load_falls_back_on_bad_paths() {
 fn controller_functions_tolerate_null() {
     unsafe {
         dp_controller_set_paused(ptr::null_mut(), true);
+        dp_controller_start_pairing(ptr::null_mut());
+        dp_controller_cancel_pairing(ptr::null_mut());
         assert!(!dp_controller_is_paused(ptr::null()));
         let config = c(r#"{"version": 1}"#);
         let err = take(dp_controller_apply_config(ptr::null_mut(), config.as_ptr()));
@@ -148,10 +156,11 @@ fn controller_functions_tolerate_null() {
 fn invalid_config_never_starts_a_controller() {
     for bad in [r#"{"version": 2}"#, "{not json", r#"{"version": 1, "pointerSpeed": 0}"#] {
         let config = c(bad);
-        let controller = unsafe { dp_controller_start(config.as_ptr(), None, ptr::null_mut()) };
+        let controller =
+            unsafe { dp_controller_start(config.as_ptr(), None, None, ptr::null_mut()) };
         assert!(controller.is_null(), "{bad}");
     }
-    assert!(unsafe { dp_controller_start(ptr::null(), None, ptr::null_mut()) }.is_null());
+    assert!(unsafe { dp_controller_start(ptr::null(), None, None, ptr::null_mut()) }.is_null());
 }
 
 static CALLS: Mutex<Vec<(usize, i32, Option<String>)>> = Mutex::new(Vec::new());
@@ -183,4 +192,42 @@ fn status_reaches_the_callback_from_another_thread() {
     );
     // No callback registered: nothing happens, nothing crashes.
     status_hook(None, 0)(LinkStatus::Connected, Some("x"));
+}
+
+#[test]
+fn shortcuts_cross_as_json() {
+    let copy = r#"{"version": 1, "keyMappings": {"A": {"key": 8, "modifiers": ["control"]}}}"#;
+    assert_eq!(problems(copy), Vec::<String>::new());
+    let bad =
+        problems(r#"{"version": 1, "keyMappings": {"A": {"key": 8, "modifiers": ["meta"]}}}"#);
+    assert!(bad.len() == 1 && bad[0].contains("Unknown modifier \"meta\""), "{bad:?}");
+}
+
+#[test]
+fn modifier_bits_match_the_header() {
+    use deskpuck_core::mapping::Modifiers;
+    for (name, modifier, _) in Modifiers::ALL {
+        let define = format!("#define DP_MODIFIER_{} {}\n", name.to_uppercase(), modifier.bits());
+        assert!(HEADER.contains(&define), "header lacks {define}");
+    }
+}
+
+static LATCHES: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
+
+extern "C" fn record_latch(context: *mut c_void, modifiers: u32) {
+    LATCHES.lock().unwrap().push((context as usize, modifiers));
+}
+
+#[test]
+fn latch_changes_reach_the_callback() {
+    use deskpuck_core::mapping::Modifiers;
+    let mut hook = latch_hook(Some(record_latch), 0xBEEF).expect("a hook");
+    std::thread::spawn(move || {
+        hook(Modifiers::SHIFT.with(Modifiers::COMMAND));
+        hook(Modifiers::NONE);
+    })
+    .join()
+    .expect("thread");
+    assert_eq!(*LATCHES.lock().unwrap(), [(0xBEEF, 12), (0xBEEF, 0)]);
+    assert!(latch_hook(None, 0).is_none());
 }
