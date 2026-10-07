@@ -83,7 +83,7 @@ notes=$(awk -v v="$version" '$0 ~ "^## \\[" v "\\]" { on = 1; next } /^## \[/ { 
 [ -n "$(tr -d '[:space:]' <<<"$notes")" ] || fail "CHANGELOG.md has no notes under ## [$version]"
 
 # Before the long build, so a missing CI run fails fast and nothing is tagged.
-assets=("Deskpuck-$version.dmg" "Deskpuck-$version.zip")
+assets=("Deskpuck-$version-macos-arm64.dmg" "Deskpuck-$version-macos-arm64.zip")
 if [ "$mode" = publish ]; then
     github_repo
     fetch_ci_assets

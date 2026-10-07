@@ -12,7 +12,7 @@ It runs as a normal app, with no driver, kernel extension or root access. It run
 
 ### macOS
 
-1. Download `Deskpuck-<version>.dmg` from the [latest release](https://github.com/Pyronewbic/deskpuck/releases/latest), open it, and drag Deskpuck to Applications. `SHA256SUMS` on the same page lists its checksum.
+1. Download `Deskpuck-<version>-macos-arm64.dmg` from the [latest release](https://github.com/Pyronewbic/deskpuck/releases/latest), open it, and drag Deskpuck to Applications. `SHA256SUMS` on the same page lists its checksum.
 2. Open Deskpuck. macOS blocks it the first time because it is not notarized by Apple. Click **Done**.
 3. Open **System Settings > Privacy & Security**, scroll to Security, and click **Open Anyway** next to the Deskpuck message. Confirm with your password or Touch ID.
 4. When asked, allow **Bluetooth** and **Accessibility** access. Accessibility is what lets Deskpuck move the pointer and press keys.
@@ -73,9 +73,15 @@ To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces th
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). How the code is laid out: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Credits
+## Acknowledgements
 
-Based on [seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac) (MIT). Bluetooth protocol details from [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research).
+Deskpuck learned a great deal from the following projects.
+
+[seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac)
+
+[ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research)
+
+We thank the authors for their work on the Joy-Con 2 Bluetooth protocol.
 
 Deskpuck is not affiliated with or endorsed by Nintendo. Nintendo Switch and Joy-Con are trademarks of Nintendo.
 
