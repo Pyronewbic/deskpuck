@@ -48,6 +48,8 @@ struct DeskpuckConfig: Codable, Equatable {
     var repeatDelay: Double
     var repeatInterval: Double
     var scrollEnabled: Bool
+    /// "system", "light" or "dark", for Deskpuck's own windows.
+    var appearance: String
 }
 
 struct CoreError: LocalizedError {
@@ -90,7 +92,7 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true)
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system")
     }
 
     /// Never fails: anything unusable falls back to its default and is described in the warnings.

@@ -55,6 +55,7 @@ fn round_trip() {
         repeat_delay: 0.25,
         repeat_interval: 0.0,
         scroll_enabled: false,
+        appearance: Appearance::Dark,
     };
     let (back, warnings) = Config::from_json(&config.to_json().expect("valid config serializes"));
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -193,6 +194,17 @@ fn other_fields() {
     assert!(!c.scroll_enabled && w.is_empty());
     let (c, w) = parse(r#"{"version": 1, "scrollEnabled": 0}"#);
     assert!(c.scroll_enabled && warned(&w, "scrollEnabled"));
+
+    for appearance in Appearance::ALL {
+        let (c, w) = parse(&format!(r#"{{"version": 1, "appearance": "{}"}}"#, appearance.name()));
+        assert!(c.appearance == appearance && w.is_empty(), "{appearance:?} {w:?}");
+    }
+    assert_eq!(Config::default().appearance, Appearance::System);
+    // Wrong case, wrong type, or unknown: system, with a warning.
+    for bad in [r#""Dark""#, "1", r#""sepia""#, "null"] {
+        let (c, w) = parse(&format!(r#"{{"version": 1, "appearance": {bad}}}"#));
+        assert!(c.appearance == Appearance::System && warned(&w, "appearance"), "{bad}");
+    }
 
     let (c, w) = parse(r#"{"version": 1, "pointerSpeed": 2, "pointerSpeeed": 9}"#);
     assert!(c.pointer_speed == 2.0 && warned(&w, "Unknown setting \"pointerSpeeed\""));

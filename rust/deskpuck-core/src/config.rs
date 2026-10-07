@@ -27,8 +27,42 @@ const POINTER_SPEED: &str = "pointerSpeed";
 const REPEAT_DELAY: &str = "repeatDelay";
 const REPEAT_INTERVAL: &str = "repeatInterval";
 const SCROLL_ENABLED: &str = "scrollEnabled";
-const KNOWN_KEYS: [&str; 6] =
-    [VERSION, KEY_MAPPINGS, POINTER_SPEED, REPEAT_DELAY, REPEAT_INTERVAL, SCROLL_ENABLED];
+const APPEARANCE: &str = "appearance";
+const KNOWN_KEYS: [&str; 7] = [
+    VERSION,
+    KEY_MAPPINGS,
+    POINTER_SPEED,
+    REPEAT_DELAY,
+    REPEAT_INTERVAL,
+    SCROLL_ENABLED,
+    APPEARANCE,
+];
+
+/// Light or dark for Deskpuck's own windows, or whatever the system uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
+
+    /// The value in config.json.
+    pub fn name(self) -> &'static str {
+        match self {
+            Appearance::System => "system",
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Appearance> {
+        Self::ALL.into_iter().find(|a| a.name() == name)
+    }
+}
 
 /// Joy-Con button names that can be mapped to keys, in a fixed order. R, ZR,
 /// ZL, L and LS are mouse buttons and cannot be mapped.
@@ -112,6 +146,7 @@ pub struct Config {
     pub repeat_delay: f64,
     pub repeat_interval: f64,
     pub scroll_enabled: bool,
+    pub appearance: Appearance,
 }
 
 impl Default for Config {
@@ -137,6 +172,7 @@ impl Default for Config {
             repeat_delay: defaults.repeat_delay,
             repeat_interval: defaults.repeat_interval,
             scroll_enabled: defaults.scroll_enabled,
+            appearance: Appearance::default(),
         }
     }
 }
@@ -247,6 +283,17 @@ impl Config {
             Some(Value::Bool(enabled)) => config.scroll_enabled = *enabled,
             Some(_) => warnings.push("scrollEnabled must be true or false; using true.".to_owned()),
         }
+
+        match dict.get(APPEARANCE) {
+            None => {}
+            Some(value) => match value.as_str().and_then(Appearance::from_name) {
+                Some(appearance) => config.appearance = appearance,
+                None => warnings.push(
+                    "appearance must be \"system\", \"light\" or \"dark\"; using system."
+                        .to_owned(),
+                ),
+            },
+        }
         Ok(config)
     }
 
@@ -293,6 +340,7 @@ impl Config {
             REPEAT_DELAY: self.repeat_delay,
             REPEAT_INTERVAL: self.repeat_interval,
             SCROLL_ENABLED: self.scroll_enabled,
+            APPEARANCE: self.appearance.name(),
         })
     }
 

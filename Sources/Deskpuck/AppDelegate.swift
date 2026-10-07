@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Combine
 import SwiftUI
 
 @MainActor
@@ -8,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let settings: SettingsModel
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
+    private var appearanceWatch: AnyCancellable?
     private var accessibilityTimer: Timer?
     // Kept so an open menu follows state changes and the pairing countdown.
     private var statusLine: NSMenuItem?
@@ -195,10 +197,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
+            // Only this window: NSApp.appearance would restyle the menu bar menu too.
+            appearanceWatch = settings.$appearance.sink { [weak window] name in
+                window?.appearance = Self.appearance(named: name)
+            }
         }
         // A menu-bar-only app must activate itself or the window opens behind others.
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private static func appearance(named name: String) -> NSAppearance? {
+        switch name {
+        case "light": NSAppearance(named: .aqua)
+        case "dark": NSAppearance(named: .darkAqua)
+        default: nil
+        }
     }
 
     @objc private func openAccessibilitySettings() {
