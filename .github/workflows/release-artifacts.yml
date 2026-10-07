@@ -1,10 +1,11 @@
 name: Release artifacts
 
 # Builds the Linux and Windows releases (scripts/package.sh) as workflow
-# artifacts. It holds no write token: scripts/release.sh, run on the
-# maintainer's Mac, downloads them for the commit it releases (before it
-# tags it), checks them and attaches them to the draft release beside the
-# Mac app. Start it with: gh workflow run release-artifacts.yml --ref main
+# artifacts and attests where they were built. The build jobs hold no write
+# token; scripts/release.sh, run on the maintainer's Mac, downloads them for
+# the commit it releases (before it tags it), verifies them and attaches them
+# to the draft release beside the Mac app.
+# Start it with: gh workflow run release-artifacts.yml --ref main
 on:
   workflow_dispatch:
 
@@ -64,3 +65,25 @@ jobs:
             dist/Deskpuck-*-setup.exe
             dist/Deskpuck-*-setup.exe.sha256
           if-no-files-found: error
+
+  # Separate from the builds, so no build step can reach the signing token.
+  attest:
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: deskpuck-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/Deskpuck-*-linux-x86_64.tar.gz
+            dist/Deskpuck-*-windows-x86_64.zip
+            dist/Deskpuck-*-setup.exe

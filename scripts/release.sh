@@ -6,7 +6,8 @@
 #   scripts/release.sh --publish    all of it, then push a signed tag and create a
 #                                   draft GitHub release, published by hand after review
 # The Linux and Windows builds come from a passing release-artifacts workflow run
-# for this exact commit (start one with gh workflow run release-artifacts.yml).
+# for this exact commit (start one with gh workflow run release-artifacts.yml),
+# and each must carry that run's build attestation.
 # --artifacts and --publish need GH_TOKEN for an account that can push to the repo.
 # Exit 0 done, 1 a check failed, 2 bad usage, 3 a check could not run.
 set -uo pipefail
@@ -67,9 +68,12 @@ then run this again once it has passed."
         [ "$(printf '%s\n' "$found" | grep -c .)" -eq 1 ] || fail "run $run has no single $file"
         [ -f "$found.sha256" ] || fail "run $run has no $file.sha256"
         (cd "$(dirname "$found")" && shasum -a 256 -c "$file.sha256") || fail "$file does not match its .sha256"
+        gh attestation verify "$found" --repo "$repo" --source-digest "$head" --deny-self-hosted-runners \
+            --signer-workflow "$repo/.github/workflows/release-artifacts.yml" >/dev/null ||
+            fail "$file has no attestation from release-artifacts.yml in $repo for this commit"
         cp "$found" "dist/$file" || fail "could not copy $file to dist/"
     done
-    echo "Fetched the Linux and Windows builds of run $run and checked them."
+    echo "Fetched the Linux and Windows builds of run $run and verified their checksums and attestations."
 }
 
 if [ "$mode" = artifacts ]; then

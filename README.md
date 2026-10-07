@@ -41,6 +41,8 @@ xattr -dr com.apple.quarantine /Applications/Deskpuck.app
    ```
 3. Start Deskpuck from the app menu. On GNOME, its tray icon needs the AppIndicator extension. Right-click the icon, choose **Pair New Joy-Con...**, then hold **SYNC** within 60 seconds. Left-click the icon for Settings.
 
+To check that a Windows or Linux download was built from this repository by its release workflow, run `gh attestation verify <file> --repo Pyronewbic/deskpuck` with the [GitHub CLI](https://cli.github.com).
+
 ## Use
 
 | Joy-Con (R)          | Default                         |

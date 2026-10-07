@@ -12,6 +12,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
   - Windows: install with `Deskpuck-0.3.0-setup.exe` (for you alone, no admin needed) or unzip the portable `.zip`. Deskpuck is not code-signed, so Windows first shows "Windows protected your PC": choose More info, then Run anyway.
   - Linux: unpack the `.tar.gz` and run `./install.sh`, which installs for you alone and adds Deskpuck to the app menu (`./install.sh --uninstall` removes it). No root is needed for Bluetooth; moving the pointer needs write access to `/dev/uinput` (see the README). On GNOME, the tray icon needs the AppIndicator extension.
   - Tested on Windows 11 and on CachyOS with KDE Plasma (Wayland, BlueZ 5.87).
+  - The Windows and Linux downloads carry a GitHub build attestation: `gh attestation verify <file> --repo Pyronewbic/deskpuck` checks that this repository's release workflow built them.
 - **Start at Login** in the menu, on every platform.
 - **Theme** in Settings: System, Light or Dark. In `config.json`: `"appearance": "dark"`.
 - Known limitation: Windows does not let Deskpuck send input to apps running as administrator (such as an admin PowerShell). While one is in front, switch away with the mouse, the keyboard or Alt+Tab.

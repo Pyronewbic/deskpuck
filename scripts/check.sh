@@ -39,6 +39,12 @@ group "Linux installer"
 packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
 endgroup
 
+if [ "$(uname)" = Darwin ]; then
+    group "Release script"
+    scripts/release.test.sh || fail "release.sh self-test"
+    endgroup
+fi
+
 group "Every test file ran"
 scripts/check-tests-ran.test.sh || fail "check-tests-ran.sh self-test"
 if [ $tests_ran -ne 0 ] && [ ! -f "$report" ]; then
