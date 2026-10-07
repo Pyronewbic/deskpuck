@@ -15,11 +15,19 @@ pub const NOTIFY_CHARACTERISTIC: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd2";
 pub const SERVICE: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd0";
 
 /// Written without response once the characteristics are found: select every
-/// feature (buttons, sticks, IMU, mouse...), then enable them.
-pub const INIT_COMMANDS: [[u8; 12]; 2] = [
-    [0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
-    [0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+/// feature (buttons, sticks, IMU, mouse...), enable them, then light the
+/// player 1 LED, as a Switch 2 does on connecting; until a host sets the
+/// LEDs, the Joy-Con keeps the sweep that says it is still searching.
+pub const INIT_COMMANDS: [&[u8]; 3] = [
+    &[0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+    &[0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+    &PLAYER_ONE_LED,
 ];
+
+/// Command 0x09, subcommand 0x07 (set player LEDs) over Bluetooth, with 8
+/// data bytes: the LED bitmask (bit 0 is player 1), then zeros.
+pub const PLAYER_ONE_LED: [u8; 16] =
+    [0x09, 0x91, 0x01, 0x07, 0x00, 0x08, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0];
 
 pub const CONNECT_TIMEOUT: f64 = 60.0;
 pub const RESCAN_AFTER_FAILURE: f64 = 2.0;

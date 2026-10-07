@@ -215,6 +215,8 @@ fn init_sequence_timing() {
     assert_eq!(first, [Output::Write { id: JOYCON, data: INIT_COMMANDS[0].to_vec() }]);
     let second = r.tick(2.0 + INIT_DELAY + INIT_SPACING);
     assert_eq!(second, [Output::Write { id: JOYCON, data: INIT_COMMANDS[1].to_vec() }]);
+    let third = r.tick(2.0 + INIT_DELAY + 2.0 * INIT_SPACING);
+    assert_eq!(third, [Output::Write { id: JOYCON, data: PLAYER_ONE_LED.to_vec() }]);
     assert_eq!(r.tick(2.0 + RESUBSCRIBE_DELAY), [Output::Subscribe(JOYCON)]);
     // Each step happens once.
     assert!(r.tick(10.0).is_empty());
@@ -262,11 +264,19 @@ fn an_unconfirmed_link_injects_nothing_and_times_out() {
 #[test]
 fn init_commands_are_the_ones_the_joycon_accepts() {
     // As sent to real L and R Joy-Con 2s that then streamed reports (deskpuck-cli --verbose).
-    let accepted: [[u8; 12]; 2] = [
-        [0x0C, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
-        [0x0C, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+    let accepted: [&[u8]; 2] = [
+        &[0x0C, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+        &[0x0C, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
     ];
-    assert_eq!(INIT_COMMANDS, accepted);
+    assert_eq!(INIT_COMMANDS[..2], accepted);
+    // As a Switch 2 sends it (ndeadly/switch2_controller_research,
+    // bluetooth_interface.md, "Set player LEDs"); last, after the controls work.
+    let player_one: &[u8] = &[
+        0x09, 0x91, 0x01, 0x07, 0x00, 0x08, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    assert_eq!(INIT_COMMANDS[2], player_one);
+    assert_eq!(INIT_COMMANDS.len(), 3);
 }
 
 #[test]
