@@ -15,8 +15,13 @@ fi
 codesign --verify --strict "$APP"
 
 version=$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")
-dmg="dist/Deskpuck-$version.dmg"
-zip="dist/Deskpuck-$version.zip"
+case "$(lipo -archs "$APP/Contents/MacOS/Deskpuck")" in
+    arm64) arch=arm64 ;;
+    x86_64) arch=x86_64 ;;
+    *) arch=universal ;;
+esac
+dmg="dist/Deskpuck-$version-macos-$arch.dmg"
+zip="dist/Deskpuck-$version-macos-$arch.zip"
 
 if [ ! -x .venv/bin/dmgbuild ] || ! .venv/bin/pip show dmgbuild 2>/dev/null | grep -qx "Version: $DMGBUILD_VERSION"; then
     # --clear: a venv records absolute paths, so one from a moved checkout is broken.

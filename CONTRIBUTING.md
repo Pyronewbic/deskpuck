@@ -16,7 +16,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 scripts/build-rust.sh        # the Rust core as a static library, needed before swift build
 swift build -c release       # the app
 scripts/make-app.sh          # dist/Deskpuck.app
-scripts/make-dmg.sh          # dist/Deskpuck-<version>.dmg and .zip
+scripts/make-dmg.sh          # dist/Deskpuck-<version>-macos-arm64.dmg and .zip
 ```
 
 Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md).

@@ -12,7 +12,7 @@ It runs as a normal app, with no driver, kernel extension or root access. It run
 
 ### macOS
 
-1. Download `Deskpuck-<version>.dmg` from the [latest release](https://github.com/Pyronewbic/deskpuck/releases/latest), open it, and drag Deskpuck to Applications. `SHA256SUMS` on the same page lists its checksum.
+1. Download `Deskpuck-<version>-macos-arm64.dmg` from the [latest release](https://github.com/Pyronewbic/deskpuck/releases/latest), open it, and drag Deskpuck to Applications. `SHA256SUMS` on the same page lists its checksum.
 2. Open Deskpuck. macOS blocks it the first time because it is not notarized by Apple. Click **Done**.
 3. Open **System Settings > Privacy & Security**, scroll to Security, and click **Open Anyway** next to the Deskpuck message. Confirm with your password or Touch ID.
 4. When asked, allow **Bluetooth** and **Accessibility** access. Accessibility is what lets Deskpuck move the pointer and press keys.
