@@ -13,7 +13,8 @@ pub enum Instance {
 
 pub fn claim(path: &Path) -> Result<Instance, String> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        deskpuck_core::files::create_private_dir(dir)
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let file =
         deskpuck_core::files::open_lock(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -57,5 +58,15 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(claim(&link).is_err());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_settings_folder_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("deskpuck");
+        let _lock = claim(&folder.join("deskpuck.lock")).unwrap();
+        assert_eq!(std::fs::metadata(&folder).unwrap().permissions().mode() & 0o777, 0o700);
     }
 }

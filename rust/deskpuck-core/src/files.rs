@@ -55,15 +55,21 @@ pub fn open_lock(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-/// Writes a temp file beside `path` (owner-only) and renames it over the
-/// target, so a symlink at `path` is replaced, never written through.
-pub fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+/// Creates `dir` and any missing parents owner-only (0700 on unix); an
+/// existing folder keeps its permissions.
+pub fn create_private_dir(dir: &Path) -> io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(dir)?;
+    builder.create(dir)
+}
+
+/// Writes a temp file beside `path` (owner-only) and renames it over the
+/// target, so a symlink at `path` is replaced, never written through.
+pub fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    create_private_dir(dir)?;
 
     let prefix = format!(".{}.", path.file_name().and_then(|n| n.to_str()).unwrap_or("state"));
     let mut temp = tempfile::Builder::new().prefix(&prefix).tempfile_in(dir)?;
@@ -81,6 +87,23 @@ pub fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn create_private_dir_makes_new_folders_owner_only_and_leaves_existing_ones() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("a").join("b");
+        create_private_dir(&nested).unwrap();
+        assert_eq!((mode(&nested), mode(&dir.path().join("a"))), (0o700, 0o700));
+
+        let existing = dir.path().join("shared");
+        std::fs::create_dir(&existing).unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_private_dir(&existing).unwrap();
+        assert_eq!(mode(&existing), 0o755);
+    }
 
     #[test]
     fn open_lock_creates_a_missing_file_and_reopens_it() {
