@@ -805,6 +805,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "windows",
 ]
 
 [[package]]

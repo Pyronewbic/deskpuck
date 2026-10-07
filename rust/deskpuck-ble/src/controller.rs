@@ -388,6 +388,8 @@ async fn run<S: Sink>(
         streams: HashMap::new(),
         #[cfg(target_os = "linux")]
         links: HashMap::new(),
+        #[cfg(windows)]
+        fast: FastLinks::default(),
     };
 
     // Before the first status, so a pairing run never reports NotPaired first.
@@ -451,6 +453,10 @@ const PRESENCE_POLL: Duration = Duration::from_secs(3);
 /// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
 
+/// The open connection-parameter request for each linked Joy-Con.
+#[cfg(windows)]
+type FastLinks = Arc<Mutex<HashMap<PeripheralId, crate::winrt::FastLink>>>;
+
 /// What a Driver task sends back: input for the receiver, or a failure for
 /// the verbose log that would otherwise only show as a retry.
 enum Back<Id> {
@@ -485,6 +491,8 @@ struct Driver {
     streams: HashMap<PeripheralId, JoinHandle<()>>,
     #[cfg(target_os = "linux")]
     links: HashMap<PeripheralId, DirectLink>,
+    #[cfg(windows)]
+    fast: FastLinks,
 }
 
 /// A Joy-Con link over a direct ATT socket, and how to reach its task.
@@ -539,6 +547,8 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(&id) {
                     stream.abort();
                 }
+                #[cfg(windows)]
+                self.forget_fast_link(&id);
                 #[cfg(target_os = "linux")]
                 let input = bluez_disconnected(id, &self.links);
                 #[cfg(not(target_os = "linux"))]
@@ -581,19 +591,21 @@ impl Driver {
                     hub.log(|| format!("advertised: {:02X?}", props.manufacturer_data));
                 }
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
+                #[cfg(windows)]
+                let fast = self.fast.clone();
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
                         Ok(p) => p.connect().await,
                         Err(e) => Err(e),
                     };
-                    let input = match connected {
-                        Ok(()) => Input::Connected(id),
-                        Err(e) => {
-                            let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
-                            Input::ConnectFailed(id)
-                        }
+                    let Err(e) = connected else {
+                        let _ = tx.send(Input::Connected(id.clone()).into());
+                        #[cfg(windows)]
+                        prefer_throughput(&id, &fast, &tx).await;
+                        return;
                     };
-                    let _ = tx.send(input.into());
+                    let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
+                    let _ = tx.send(Input::ConnectFailed(id).into());
                 });
             }
             Output::Disconnect(id) => {
@@ -601,6 +613,8 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(id) {
                     stream.abort();
                 }
+                #[cfg(windows)]
+                self.forget_fast_link(id);
                 let (adapter, id) = (self.adapter.clone(), id.clone());
                 tokio::spawn(async move {
                     if let Ok(p) = adapter.peripheral(&id).await {
@@ -660,6 +674,10 @@ impl Driver {
                     self.streams.insert(id.clone(), reader);
                 }
                 hub.log(|| "enabling notifications".into());
+                #[cfg(windows)]
+                if let Some(ms) = self.fast_link_interval(id) {
+                    hub.log(|| format!("connection interval {ms} ms"));
+                }
                 tokio::spawn(async move {
                     let _ = peripheral.subscribe(&notify).await;
                 });
@@ -681,6 +699,40 @@ impl Driver {
             Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
         }
     }
+}
+
+#[cfg(windows)]
+impl Driver {
+    fn forget_fast_link(&self, id: &PeripheralId) {
+        if let Ok(mut fast) = self.fast.lock() {
+            fast.remove(id);
+        }
+    }
+
+    fn fast_link_interval(&self, id: &PeripheralId) -> Option<f64> {
+        self.fast.lock().ok()?.get(id)?.interval_ms()
+    }
+}
+
+/// Asks Windows for its shortest connection interval and keeps the request
+/// open for the link; a refusal only costs report rate, so it is logged.
+#[cfg(windows)]
+async fn prefer_throughput(
+    id: &PeripheralId,
+    fast: &FastLinks,
+    tx: &UnboundedSender<Back<PeripheralId>>,
+) {
+    let message = match crate::winrt::FastLink::request(id).await {
+        Ok(link) => {
+            let message = format!("faster connection requested: {}", link.status());
+            if let Ok(mut fast) = fast.lock() {
+                fast.insert(id.clone(), link);
+            }
+            message
+        }
+        Err(e) => format!("could not request a faster connection: {e}"),
+    };
+    let _ = tx.send(Back::Log(message));
 }
 
 #[cfg(target_os = "linux")]

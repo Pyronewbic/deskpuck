@@ -7,6 +7,7 @@ pub mod controller;
 #[cfg(target_os = "linux")]
 pub mod l2cap;
 pub mod receiver;
+pub mod winrt;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};
 use deskpuck_core::mapping::Modifiers;

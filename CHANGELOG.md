@@ -18,6 +18,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - A Joy-Con is named by its model even when BlueZ reports its address as the name.
 - Linux: a connect the Joy-Con fails to establish is tried again at once, up to three times.
 - Windows: the tests pass in a clone made with Git for Windows' default settings (files now check out with LF line endings).
+- Windows: the Joy-Con sends about 66 reports a second instead of 16, so the pointer moves smoothly: Deskpuck asks Windows for its throughput-optimized connection parameters while connected.
 
 ## [0.2.0] - 2026-10-06
 
