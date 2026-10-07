@@ -1,6 +1,6 @@
 #!/bin/bash
-# Self-test for install.sh, against a throwaway home whose path has a space
-# and a $ in it. Exit 0 when every case behaves, 1 otherwise.
+# Self-test for install.sh, against a throwaway home whose path has a space,
+# $, " and ` in it. Exit 0 when every case behaves, 1 otherwise.
 # Each check is a single-quoted condition that check() evals later.
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
@@ -9,7 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d) || exit 3
 trap 'rm -rf "$work"' EXIT
 pkg="$work/pkg"
-home="$work/home dir \$x"
+home="$work/home dir \$x \"q\" \`c\`"
 mkdir -p "$pkg" "$home"
 for file in deskpuck deskpuck-cli deskpuck.png; do printf '%s' "$file" >"$pkg/$file"; done
 cp "$here/deskpuck.desktop" "$here/install.sh" "$pkg/"
@@ -25,8 +25,8 @@ run; status=$?
 check "install exits 0" '[ $status -eq 0 ]'
 check "programs installed and executable" '[ -x "$home/bin/deskpuck" ] && [ -x "$home/bin/deskpuck-cli" ]'
 check "icon installed" '[ "$(cat "$icon")" = deskpuck.png ]'
-# Desktop entries escape $ inside a quoted argument with a backslash.
-expected="Exec=\"$work/home dir \\\$x/bin/deskpuck\""
+# Quoting backslashes are doubled, as string escapes are undone first.
+expected="Exec=\"$work/home dir \\\\\$x \\\\\"q\\\\\" \\\\\`c\\\\\`/bin/deskpuck\""
 check "menu entry runs the installed program, quoted and escaped" \
     '[ "$(grep ^Exec= "$desktop")" = "$expected" ]'
 check "the rest of the entry is unchanged" \
@@ -48,6 +48,14 @@ if [ "$(uname -s)" = Linux ]; then
     check "an update while Deskpuck runs replaces it" '[ "$(cat "$home/bin/deskpuck")" = deskpuck ]'
 fi
 check "no temporary program is left" '[ -z "$(ls -A "$home/bin" | grep "^\.")" ]'
+
+# Folders a menu entry cannot name: refused before anything is copied.
+for odd in "100%" 'back\slash' "$(printf 'new\nline')"; do
+    share="$work/share-$odd"
+    XDG_BIN_HOME="$work/$odd" XDG_DATA_HOME="$share" sh "$pkg/install.sh" >/dev/null 2>&1; status=$?
+    check "a bin folder with $odd exits 1" '[ $status -eq 1 ]'
+    check "a bin folder with $odd installs nothing" '[ ! -e "$work/$odd" ] && [ ! -e "$share" ]'
+done
 
 run --nope; status=$?
 check "a bad argument exits 2" '[ $status -eq 2 ]'

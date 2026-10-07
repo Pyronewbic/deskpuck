@@ -32,6 +32,9 @@ case "${1:-}" in
     *) echo "Usage: ./install.sh [--uninstall]" >&2; exit 2 ;;
 esac
 
+case "$bin_dir" in
+    *%* | *\\* | *[[:cntrl:]]*) fail "cannot install in $bin_dir: a menu entry cannot name a path with %, \\ or a control character; set XDG_BIN_HOME to another folder" ;;
+esac
 for file in deskpuck deskpuck-cli deskpuck.desktop deskpuck.png; do
     [ -f "$here/$file" ] || fail "$file is missing; run this from the unpacked Deskpuck folder"
 done
@@ -49,8 +52,10 @@ done
 cp "$here/deskpuck.png" "$icon" || fail "could not copy the icon"
 
 # The menu entry runs the program by its full path, since ~/.local/bin is not
-# on every session's PATH. Desktop entries quote with \ before " ` $ and \.
-exec_path=$(printf '%s' "$bin_dir/deskpuck" | sed 's/[\\"`$]/\\&/g')
+# on every session's PATH. Desktop entries quote " ` and $ with a backslash,
+# written \\ since string escapes are undone first; launchers do not read
+# % or \ back the same, so those folders are refused (as Start at Login does).
+exec_path=$(printf '%s' "$bin_dir/deskpuck" | sed 's/["`$]/\\\\&/g')
 tmp="$desktop.tmp.$$"
 sed "s|^Exec=.*|Exec=\"$(printf '%s' "$exec_path" | sed 's/[|&\\]/\\&/g')\"|" "$here/deskpuck.desktop" > "$tmp" ||
     { rm -f "$tmp"; fail "could not write the menu entry"; }

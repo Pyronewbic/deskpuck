@@ -4,28 +4,36 @@
 
 use std::path::Path;
 
-/// Quotes `program` as one argument of a desktop entry's Exec key, which
-/// escapes `"`, `` ` ``, `$` and `\` with a backslash inside the quotes.
-pub fn desktop_exec(program: &Path) -> String {
+/// Quotes `program` as one argument of a desktop entry's Exec key: `"`,
+/// `` ` `` and `$` take a quoting backslash, written `\\` because the
+/// string escapes are undone first. `None` for a path with `%`, `\`, a
+/// control character or invalid UTF-8, which GLib and systemd's autostart
+/// do not read back the same.
+pub fn desktop_exec(program: &Path) -> Option<String> {
+    let path = program.to_str()?;
+    if path.chars().any(|ch| ch == '%' || ch == '\\' || ch.is_control()) {
+        return None;
+    }
     let mut quoted = String::from("\"");
-    for ch in program.to_string_lossy().chars() {
-        if matches!(ch, '"' | '`' | '$' | '\\') {
-            quoted.push('\\');
+    for ch in path.chars() {
+        if matches!(ch, '"' | '`' | '$') {
+            quoted.push_str("\\\\");
         }
         quoted.push(ch);
     }
     quoted.push('"');
-    quoted
+    Some(quoted)
 }
 
-/// The autostart desktop file that starts `program`.
-pub fn desktop_entry(program: &Path) -> String {
-    format!(
+/// The autostart desktop file that starts `program`, if its path can be
+/// written in one.
+pub fn desktop_entry(program: &Path) -> Option<String> {
+    Some(format!(
         "[Desktop Entry]\nType=Application\nName=Deskpuck\n\
          Comment=Use a Switch 2 Joy-Con as a mouse and keyboard\n\
          Exec={}\nIcon=deskpuck\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
-        desktop_exec(program)
-    )
+        desktop_exec(program)?
+    ))
 }
 
 /// The Run value that starts `program`: the path in quotes, as Windows
@@ -38,7 +46,11 @@ pub fn run_value(program: &Path) -> String {
 /// Turns the autostart desktop file at `file` on or off for `program`.
 pub fn set_desktop(file: &Path, program: &Path, on: bool) -> Result<(), String> {
     let result = if on {
-        deskpuck_core::files::write_private(file, desktop_entry(program).as_bytes())
+        let entry = desktop_entry(program).ok_or(
+            "Start at Login cannot use a folder whose path has %, \\, a control character \
+             or text that is not UTF-8; move Deskpuck to another folder",
+        )?;
+        deskpuck_core::files::write_private(file, entry.as_bytes())
     } else {
         match std::fs::remove_file(file) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -55,9 +67,8 @@ pub fn desktop_is_on(file: &Path, program: &Path) -> bool {
         .ok()
         .flatten()
         .and_then(|bytes| String::from_utf8(bytes).ok())
-        .is_some_and(|text| {
-            text.lines().any(|line| line == format!("Exec={}", desktop_exec(program)))
-        })
+        .zip(desktop_exec(program))
+        .is_some_and(|(text, exec)| text.lines().any(|line| line == format!("Exec={exec}")))
 }
 
 #[cfg(target_os = "linux")]
@@ -172,12 +183,52 @@ mod tests {
 
     #[test]
     fn exec_paths_are_quoted_and_escaped_for_desktop_entries() {
-        assert_eq!(desktop_exec(Path::new("/usr/bin/deskpuck")), "\"/usr/bin/deskpuck\"");
+        let exec = |p: &str| desktop_exec(Path::new(p));
+        assert_eq!(exec("/usr/bin/deskpuck").unwrap(), "\"/usr/bin/deskpuck\"");
+        // Read back as /home/a b/$x/"q"/`c`/deskpuck by GLib and systemd's
+        // xdg-autostart generator (checked with systemd 261 and GLib 2.88).
         assert_eq!(
-            desktop_exec(Path::new("/home/a b/$x/\"q\"/`c`/back\\slash/deskpuck")),
-            r#""/home/a b/\$x/\"q\"/\`c\`/back\\slash/deskpuck""#
+            exec("/home/a b/$x/\"q\"/`c`/deskpuck").unwrap(),
+            r#""/home/a b/\\$x/\\"q\\"/\\`c\\`/deskpuck""#
         );
-        assert!(desktop_entry(Path::new("/opt/deskpuck")).contains("\nExec=\"/opt/deskpuck\"\n"));
+        assert!(
+            desktop_entry(Path::new("/opt/deskpuck"))
+                .unwrap()
+                .contains("\nExec=\"/opt/deskpuck\"\n")
+        );
+    }
+
+    #[test]
+    fn paths_no_launcher_reads_back_get_no_exec_line() {
+        for bad in [
+            "/opt/100%/deskpuck",
+            "/opt/back\\slash/deskpuck",
+            "/opt/a\nIcon=x/deskpuck",
+            "/opt/\x7f/deskpuck",
+        ] {
+            assert_eq!(desktop_exec(Path::new(bad)), None, "{bad:?}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let invalid = std::ffi::OsStr::from_bytes(b"/opt/\xff/deskpuck");
+            assert_eq!(desktop_exec(Path::new(invalid)), None);
+        }
+    }
+
+    #[test]
+    fn an_unwritable_path_is_an_error_writes_nothing_and_reads_as_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("deskpuck.desktop");
+        let bad = Path::new("/opt/a\nExec=/bin/evil/deskpuck");
+        assert!(set_desktop(&file, bad, true).unwrap_err().contains("control character"));
+        assert!(!file.exists());
+        // An entry naming a refused path, written by hand, still reads as off.
+        let percent = Path::new("/opt/100%/deskpuck");
+        std::fs::write(&file, "Exec=\"/opt/100%/deskpuck\"\n").unwrap();
+        assert!(!desktop_is_on(&file, percent));
+        set_desktop(&file, percent, false).expect("turning off needs no Exec line");
+        assert!(!file.exists());
     }
 
     #[test]
