@@ -5,9 +5,11 @@
 use crate::hook::release_hook;
 use crate::icon::{self, Look};
 use crate::model::Model;
+use crate::reload::{self, summarize};
 use crate::watch::{POLL_SECONDS, Watch};
 use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup};
 use deskpuck_core::config::Config;
+use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::pairing::PairedDevice;
 use std::cell::RefCell;
@@ -112,6 +114,7 @@ pub fn run() -> ExitCode {
     // Started when a tray host first shows the icon, so it never runs unseen.
     let controller: Rc<RefCell<Option<Controller>>> = Rc::default();
     let mut watch = Watch::default();
+    let mut applied = EngineSettings::default();
     let mut window: Option<Child> = None;
     let mut started = false;
     let mut told_waiting = false;
@@ -126,7 +129,7 @@ pub fn run() -> ExitCode {
         if let (Some(path), Some(controller)) = (&config_path, controller.borrow().as_ref())
             && watch.changed(path)
         {
-            reload(path, &mut model, controller);
+            reload_file(path, &mut model, controller, &mut applied);
         }
         if window.as_mut().is_some_and(|child| child.try_wait().is_ok_and(|done| done.is_some())) {
             window = None;
@@ -146,7 +149,10 @@ pub fn run() -> ExitCode {
                             watch = Watch::new(path);
                         }
                         match connect(config_path.as_deref(), &mut model, &wake) {
-                            Ok(running) => *controller.borrow_mut() = Some(running),
+                            Ok((running, settings)) => {
+                                *controller.borrow_mut() = Some(running);
+                                applied = settings;
+                            }
                             Err(problem) => {
                                 model.fail(problem);
                                 items.reload.set_enabled(false);
@@ -199,7 +205,7 @@ pub fn run() -> ExitCode {
                     } else if id == *items.reload.id()
                         && let Some(path) = &config_path
                     {
-                        reload(path, &mut model, controller);
+                        reload_file(path, &mut model, controller, &mut applied);
                     }
                 }
             }
@@ -217,20 +223,18 @@ fn connect(
     config_path: Option<&Path>,
     model: &mut Model,
     wake: &Wake,
-) -> Result<Controller, String> {
-    let settings = match config_path {
+) -> Result<(Controller, EngineSettings), String> {
+    let settings: EngineSettings = match config_path {
         Some(path) => {
             let (config, warnings) = Config::load(path);
-            if let Some(warning) = summarize(&warnings) {
-                model.note(warning);
-            }
+            model.settings_note(summarize(&warnings));
             config.engine_settings()
         }
         None => Default::default(),
     };
     // Checked before Bluetooth: without it every event would be dropped silently.
     match deskpuck_inject::platform_sink() {
-        Ok(sink) => start_controller(sink, settings, wake),
+        Ok(sink) => Ok((start_controller(sink, settings.clone(), wake)?, settings)),
         Err(e) => Err(format!("Cannot post input: {e}")),
     }
 }
@@ -324,14 +328,6 @@ fn show_line(menu: &Menu, item: &MenuItem, text: Option<&str>, at: usize, shown:
 }
 
 /// The first warning, with a count of the rest.
-fn summarize(warnings: &[String]) -> Option<String> {
-    let first = warnings.first()?;
-    Some(match warnings.len() {
-        1 => format!("Settings: {first}"),
-        n => format!("Settings: {first} (and {} more)", n - 1),
-    })
-}
-
 fn is_left_click(event: &TrayIconEvent) -> bool {
     matches!(
         event,
@@ -339,12 +335,17 @@ fn is_left_click(event: &TrayIconEvent) -> bool {
     )
 }
 
-fn reload(path: &Path, model: &mut Model, controller: &Controller) {
-    let (config, warnings) = Config::load(path);
-    if let Some(warning) = summarize(&warnings) {
-        model.note(warning);
+fn reload_file(
+    path: &Path,
+    model: &mut Model,
+    controller: &Controller,
+    applied: &mut EngineSettings,
+) {
+    let outcome = reload::reload(applied, Config::try_load(path));
+    model.settings_note(outcome.note);
+    if let Some(settings) = outcome.apply {
+        controller.apply_settings(settings);
     }
-    controller.apply_settings(config.engine_settings());
 }
 
 /// Opens the settings window, the `deskpuck-settings` program installed beside
