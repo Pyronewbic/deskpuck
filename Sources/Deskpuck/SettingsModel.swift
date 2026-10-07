@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published var mappings: [String: KeyMapping] { didSet { commit() } }
-    /// The button whose shortcut is being recorded, if any.
     @Published var recordingButton: String?
     @Published var pointerSpeed: Double { didSet { commit() } }
     @Published var scrollEnabled: Bool { didSet { commit() } }

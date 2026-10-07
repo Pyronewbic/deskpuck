@@ -1,12 +1,8 @@
-//! Reading and writing the small per-user state files (config.json,
-//! pairing.json) with the same guards, so neither file can be the weaker one.
-
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::Path;
 
-/// `Ok(None)` if the file does not exist. Reads at most `cap` bytes and
-/// refuses anything but a regular file. `Err` is a phrase to follow the path.
+/// `Err` is a phrase to follow the path.
 pub fn read_capped(path: &Path, cap: u64) -> Result<Option<Vec<u8>>, String> {
     let mut options = OpenOptions::new();
     options.read(true);
@@ -33,9 +29,6 @@ pub fn read_capped(path: &Path, cap: u64) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(bytes))
 }
 
-/// Opens `path` for writing, creating it if missing, for a file lock. Like
-/// `read_capped`, refuses anything but a regular file; a symlink at `path`
-/// is refused, not followed.
 pub fn open_lock(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.create(true).truncate(false).write(true);
@@ -55,8 +48,6 @@ pub fn open_lock(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-/// Creates `dir` and any missing parents owner-only (0700 on unix); an
-/// existing folder keeps its permissions.
 pub fn create_private_dir(dir: &Path) -> io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -65,8 +56,7 @@ pub fn create_private_dir(dir: &Path) -> io::Result<()> {
     builder.create(dir)
 }
 
-/// Writes a temp file beside `path` (owner-only) and renames it over the
-/// target, so a symlink at `path` is replaced, never written through.
+/// Renames a temp file over `path`, so a symlink there is replaced, never written through.
 pub fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     create_private_dir(dir)?;

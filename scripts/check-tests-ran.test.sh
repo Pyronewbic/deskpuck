@@ -50,7 +50,6 @@ report >"$work/empty.xml"
 expect 3 "a report with no suites cannot be checked" Linux "$work/empty.xml"
 expect 3 "an unknown OS cannot be checked" Plan9 "$work/all.xml"
 
-# The summary names the file that did not run.
 : >"$work/summary.md"
 GITHUB_STEP_SUMMARY="$work/summary.md" CHECK_ROOT="$work/repo" CHECK_OS=Darwin "$guard" "$work/no-two.xml" >/dev/null 2>&1
 grep -q '`beta::two` | \*\*did not run\*\*' "$work/summary.md" \

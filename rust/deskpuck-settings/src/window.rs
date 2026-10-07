@@ -1,6 +1,3 @@
-//! The settings window itself: `deskpuck --settings` runs it, and the tray's
-//! Settings... item starts that.
-
 use crate::keys::{choices, describe, modifier_label, modifiers};
 use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
 use crate::recorder::{Recorded, clipboard_key, record};
@@ -15,27 +12,20 @@ use std::time::{Duration, Instant};
 struct App {
     model: Model,
     start: Instant,
-    /// A close was stopped because the last change could not be saved; the
-    /// next close goes through.
     close_stopped: bool,
     next_file_check: f64,
     accent: theme::AccentReader,
     focused: bool,
-    /// The last height asked of the window system, so it is asked once.
     asked_height: Option<f32>,
 }
 
-/// How often the window looks for edits made outside it, in seconds.
 const FILE_CHECK: f64 = 1.0;
-/// How soon to look again for a system accent read still in flight, in seconds.
 const ACCENT_POLL: f64 = 0.1;
 
 fn label(mapping: Option<&Mapping>) -> String {
     mapping.map_or_else(|| "None".to_owned(), describe)
 }
 
-/// A slider that leaves a hand-edited value outside its range alone until
-/// moved; its value is shown beside it, in a fixed width so sliders line up.
 fn slider_row(
     ui: &mut egui::Ui,
     value: &mut f64,
@@ -58,9 +48,7 @@ fn slider_row(
     ui.add(slider).changed()
 }
 
-/// Wide enough for "0.40 s" and "30/s", so every slider ends at the same place.
 const VALUE_WIDTH: f32 = 52.0;
-/// The window's width; the Mac's Settings window is as wide.
 const WIDTH: f32 = 440.0;
 const MARGIN: i8 = 16;
 
@@ -108,9 +96,6 @@ impl App {
         }
     }
 
-    /// A button's menu: the keys and modifier buttons, the modifiers held
-    /// with a key (including Super/Windows, which recording cannot catch),
-    /// and Record Shortcut....
     fn button_picker(&mut self, ui: &mut egui::Ui, id: &'static str, now: f64) {
         let current = self.model.mapping(id);
         // Keeps a recorded shortcut or hand-edited key selectable instead of "None".
@@ -236,8 +221,6 @@ impl App {
         }
     }
 
-    /// Fits the window to its content, as the Mac's Settings window does;
-    /// taller than the screen allows, it scrolls instead.
     fn fit_height(&mut self, ui: &egui::Ui, content: f32) {
         let (inner, outer, monitor) = ui.input(|i| {
             let viewport = i.viewport();
@@ -269,7 +252,6 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = self.start.elapsed().as_secs_f64();
-        // Coming back to the window after changing the system accent picks it up.
         let focused = ui.input(|i| i.focused);
         if focused && !self.focused {
             self.accent.refresh();
@@ -292,7 +274,6 @@ impl eframe::App for App {
                         self.problems(ui);
                         self.buttons(ui, now);
                         self.controls(ui, now);
-                        // Error on the left, Restore Defaults on the right, as on the Mac.
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.button("Restore Defaults").clicked() {
                                 self.model.restore_defaults(now);
@@ -333,8 +314,6 @@ impl eframe::App for App {
     }
 }
 
-/// Shows the window until it is closed. `path` is the settings file, or
-/// `None` where the system has no settings folder.
 pub fn run(path: Option<PathBuf>) -> Result<(), String> {
     let app = App {
         model: Model::load(path),
@@ -345,7 +324,6 @@ pub fn run(path: Option<PathBuf>) -> Result<(), String> {
         focused: false,
         asked_height: None,
     };
-    // The logo the tray and the Mac app show, rendered by scripts/make-icons.sh.
     let icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png")).ok();
     let options = eframe::NativeOptions {

@@ -1,3 +1,2 @@
-# LF everywhere, whatever core.autocrlf says: tests read files byte for byte
-# and check.sh runs under bash on Windows.
+# LF everywhere regardless of core.autocrlf: tests read bytes, check.sh runs under bash on Windows.
 * text=auto eol=lf

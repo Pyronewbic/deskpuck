@@ -1,6 +1,5 @@
-//! The Joy-Con 2 connection logic as a state machine with no I/O: feed it
-//! inputs and the current time, carry out the outputs it returns. Timers are
-//! deadlines checked by `tick`, so tests can drive every timeout directly.
+//! The Joy-Con 2 connection logic as a state machine with no I/O: feed it inputs and the time.
+//! Timers are deadlines checked by `tick`, so tests can drive every timeout directly.
 
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
 use deskpuck_core::pairing::clean_name;
@@ -11,13 +10,10 @@ use std::hash::Hash;
 pub const MANUFACTURER_ID: u16 = 0x0553;
 pub const WRITE_CHARACTERISTIC: &str = "649d4ac9-8eb7-4e6c-af44-1ea54fe5f005";
 pub const NOTIFY_CHARACTERISTIC: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd2";
-/// Holds both characteristics; recorded from real Joy-Con 2s (L and R).
 pub const SERVICE: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd0";
 
-/// Written without response once the characteristics are found: select every
-/// feature (buttons, sticks, IMU, mouse...), enable them, then light the
-/// player 1 LED, as a Switch 2 does on connecting; until a host sets the
-/// LEDs, the Joy-Con keeps the sweep that says it is still searching.
+/// Written without response once the characteristics are found: select every feature, enable
+/// them, then light player 1 as a Switch 2 does; until then the Joy-Con keeps its searching sweep.
 pub const INIT_COMMANDS: [&[u8]; 3] = [
     &[0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
     &[0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
@@ -38,12 +34,10 @@ pub const INIT_SPACING: f64 = 0.5;
 /// Notifications are enabled on discovery and again after this delay, as the
 /// Mac app always has; some connections only start streaming on the second.
 pub const RESUBSCRIBE_DELAY: f64 = 2.0;
-/// How long a pairing window accepts a Joy-Con that is not the paired one.
 pub const PAIRING_WINDOW: f64 = 60.0;
 
-/// A name for a Joy-Con 2 from its manufacturer data (Nintendo's vendor id,
-/// then the product id), for when the advertised name has not arrived yet:
-/// it comes in a scan response that can follow the first discovery.
+/// A name from manufacturer data (Nintendo's vendor id, then the product id), for before the
+/// scan response carrying the advertised name arrives.
 pub fn name_from_manufacturer_data(data: &[u8]) -> Option<&'static str> {
     let field = |at: usize| Some(u16::from_le_bytes([*data.get(at)?, *data.get(at + 1)?]));
     if field(3)? != 0x057E {
@@ -56,9 +50,7 @@ pub fn name_from_manufacturer_data(data: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// The name to show for a discovered device. The model named by the
-/// manufacturer data wins over the advertised name, which BlueZ fills with
-/// the address until the real name arrives.
+/// The manufacturer-data model wins over the advertised name, which BlueZ fills with the address.
 pub fn device_name(advertised: Option<String>, manufacturer_data: Option<&[u8]>) -> Option<String> {
     manufacturer_data.and_then(name_from_manufacturer_data).map(str::to_owned).or(advertised)
 }
@@ -66,13 +58,9 @@ pub fn device_name(advertised: Option<String>, manufacturer_data: Option<&[u8]>)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     BluetoothOff,
-    /// Nothing is paired and no pairing window is open, so nothing connects.
     NotPaired,
-    /// A pairing window is open: the first Joy-Con found becomes the paired one.
     Pairing,
-    /// Looking for the paired Joy-Con.
     Searching,
-    /// The paired Joy-Con is connected to this computer, but by another program.
     InUseElsewhere,
     Connecting,
     Connected,
@@ -82,25 +70,12 @@ pub enum Status {
 pub enum Input<Id> {
     AdapterPoweredOn,
     AdapterPoweredOff,
-    Discovered {
-        id: Id,
-        name: Option<String>,
-        manufacturer_ids: Vec<u16>,
-    },
+    Discovered { id: Id, name: Option<String>, manufacturer_ids: Vec<u16> },
     Connected(Id),
     ConnectFailed(Id),
     Disconnected(Id),
-    CharacteristicsFound {
-        id: Id,
-        write: bool,
-        notify: bool,
-    },
-    Notification {
-        id: Id,
-        data: Vec<u8>,
-    },
-    /// Joy-Cons connected to this computer by any program, polled while
-    /// `wants_presence_check`.
+    CharacteristicsFound { id: Id, write: bool, notify: bool },
+    Notification { id: Id, data: Vec<u8> },
     SystemConnected(Vec<Id>),
 }
 
@@ -112,24 +87,10 @@ pub enum Output<Id> {
     Disconnect(Id),
     DiscoverServices(Id),
     Subscribe(Id),
-    /// Write without response to the write characteristic.
-    Write {
-        id: Id,
-        data: Vec<u8>,
-    },
-    Status {
-        status: Status,
-        name: Option<String>,
-    },
-    Report {
-        report: Report,
-        data: Vec<u8>,
-    },
-    /// A Joy-Con connected during a pairing window is now the paired one.
-    Paired {
-        id: Id,
-        name: Option<String>,
-    },
+    Write { id: Id, data: Vec<u8> },
+    Status { status: Status, name: Option<String> },
+    Report { report: Report, data: Vec<u8> },
+    Paired { id: Id, name: Option<String> },
 }
 
 #[derive(Debug)]
@@ -139,7 +100,6 @@ struct Link<Id> {
     data_deadline: f64,
     pending_writes: Vec<(f64, Vec<u8>)>,
     resubscribe_at: Option<f64>,
-    /// Accepted by a pairing window and not yet confirmed as a Joy-Con.
     pairing: bool,
     /// Both characteristics were found; until then no report becomes input.
     confirmed: bool,
@@ -161,10 +121,8 @@ pub struct Receiver<Id> {
     connecting: HashMap<Id, Pending>,
     link: Option<Link<Id>>,
     rescan_at: Option<f64>,
-    /// The paired Joy-Con's id, as its `Display` string.
     paired: Option<String>,
     pairing_until: Option<f64>,
-    /// The paired Joy-Con was last seen connected by another program.
     held_elsewhere: bool,
 }
 
@@ -185,7 +143,6 @@ impl<Id> Default for Receiver<Id> {
 }
 
 impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
-    /// Starts looking for a Joy-Con, now or as soon as Bluetooth is on.
     pub fn start(&mut self) -> Vec<Output<Id>> {
         self.want_scan = true;
         let mut out = Vec::new();
@@ -193,7 +150,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out
     }
 
-    /// Set before `start`, from the stored pairing.
     pub fn set_paired(&mut self, id: Option<String>) {
         self.paired = id;
     }
@@ -240,9 +196,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out
     }
 
-    /// Closes the pairing window, dropping a Joy-Con it accepted that is not
-    /// confirmed yet, even one still finishing after the window expired. The
-    /// paired Joy-Con, if any, is searched for again.
+    /// Closes the pairing window, dropping an accepted Joy-Con not yet confirmed, even one still finishing.
     pub fn cancel_pairing(&mut self) -> Vec<Output<Id>> {
         let mut out = Vec::new();
         let window_open = self.pairing_until.take().is_some();
@@ -317,7 +271,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out.push(Output::Status { status, name });
     }
 
-    /// The status while nothing is linked or connecting.
     fn idle_status(&self, out: &mut Vec<Output<Id>>) {
         let status = if self.pairing_until.is_some() {
             Status::Pairing
@@ -363,7 +316,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     id.clone(),
                     Pending { deadline: now + CONNECT_TIMEOUT, name: name.clone(), pairing },
                 );
-                // A rescan still pending from an earlier drop is moot now.
                 self.rescan_at = None;
                 Self::status(&mut out, Status::Connecting, name);
                 // BlueZ cannot connect while scanning, and a scan left running
@@ -373,7 +325,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             }
             Input::Connected(id) => {
                 let Some(Pending { name, pairing, .. }) = self.connecting.remove(&id) else {
-                    // Not ours, or it already timed out: let it go.
                     out.push(Output::Disconnect(id));
                     return out;
                 };
@@ -414,7 +365,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     // Without both there is no data, and the data timeout reconnects.
                     return out;
                 }
-                // Both characteristics make it a Joy-Con 2, so a pairing link is confirmed.
                 link.confirmed = true;
                 if link.pairing {
                     link.pairing = false;
@@ -445,7 +395,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 let Some(link) = self.link.as_mut().filter(|l| l.id == id && l.confirmed) else {
                     return out;
                 };
-                // Short reports are dropped without counting as data.
                 if data.len() < REPORT_MIN_SIZE {
                     return out;
                 }
@@ -458,7 +407,6 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out
     }
 
-    /// Fires every timer that is due at `now`.
     pub fn tick(&mut self, now: f64) -> Vec<Output<Id>> {
         let mut out = Vec::new();
 

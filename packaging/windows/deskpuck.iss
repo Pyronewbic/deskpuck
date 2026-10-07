@@ -1,7 +1,4 @@
-; Builds Deskpuck-<version>-setup.exe from a release folder staged by
-; scripts/package.sh windows:
 ;   ISCC.exe /DVersion=0.3.0 /DSource=<staged folder> /DOutput=<folder> deskpuck.iss
-; It installs for the current user only, without admin rights.
 
 #ifndef Version
   #error Pass /DVersion=x.y.z
@@ -36,7 +33,6 @@ UninstallDisplayName=Deskpuck
 WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
-; A running Deskpuck holds its .exe; close it to update or uninstall.
 CloseApplications=yes
 RestartApplications=no
 
@@ -54,7 +50,6 @@ Source: "{#Source}\README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\Deskpuck"; Filename: "{app}\deskpuck.exe"
 
 [Registry]
-; The same value the tray's Start at Login item writes, so the two agree.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
     ValueName: "Deskpuck"; ValueData: """{app}\deskpuck.exe"""; Tasks: startatlogin
 
@@ -62,9 +57,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\deskpuck.exe"; Description: "Start Deskpuck"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// Start at Login may have been turned on from the tray rather than here,
-// so the uninstaller removes the Run value whoever wrote it. Settings in
-// %APPDATA%\Deskpuck stay.
+// The tray can also set Start at Login, so remove the Run value whoever wrote it.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then

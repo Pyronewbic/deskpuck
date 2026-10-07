@@ -128,7 +128,6 @@ struct SettingsView: View {
         )
     }
 
-    // Keeps a recorded shortcut or hand-edited key selectable instead of showing "None".
     private func choices(for button: String) -> [KeyChoice] {
         let current = KeyChoice(mapping: model.mapping(for: button))
         let extra = KeyChoice.all.contains(current) ? [] : [current]

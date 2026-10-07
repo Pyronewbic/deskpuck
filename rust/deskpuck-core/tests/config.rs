@@ -89,7 +89,6 @@ fn whole_file_fallbacks() {
     let (c, w) = Config::from_json(b"");
     assert!(c == Config::default() && w.len() == 1);
 
-    // Missing or future versions ignore otherwise valid settings.
     for json in [
         r#"{"pointerSpeed": 3}"#,
         r#"{"version": 2, "pointerSpeed": 3}"#,
@@ -100,7 +99,6 @@ fn whole_file_fallbacks() {
         assert!(c == Config::default() && warned(&w, "version"), "{json}");
     }
 
-    // Positive control: version 1 applies the same setting.
     let (c, w) = parse(r#"{"version": 1, "pointerSpeed": 3}"#);
     assert!(c.pointer_speed == 3.0 && w.is_empty());
 }
@@ -126,7 +124,6 @@ fn number_bounds() {
     let (c, w) = parse(r#"{"version": 1, "repeatInterval": 3}"#);
     assert!(c.repeat_interval == 0.06 && warned(&w, "repeatInterval"));
 
-    // The warning names the range and the value kept.
     let (_, w) = parse(r#"{"version": 1, "pointerSpeed": 0}"#);
     assert_eq!(w, ["pointerSpeed must be a number from 0.1 to 10; using 1."]);
 }
@@ -150,7 +147,6 @@ fn repeat_off_sentinel() {
     };
     assert_eq!(events_while_held(InputEngine::new(config.engine_settings())), 1);
 
-    // Positive control: the default interval repeats under the same hold.
     assert!(events_while_held(InputEngine::new(Config::default().engine_settings())) > 1);
 }
 
@@ -160,14 +156,12 @@ fn key_mappings() {
     let (cleared, w) = parse(r#"{"version": 1, "keyMappings": {}}"#);
     assert!(cleared.key_mappings.is_empty() && w.is_empty());
 
-    // A malformed section never means "no mappings".
     for bad in ["\"RS\"", "[36]", "36", "null"] {
         let (c, w) = parse(&format!(r#"{{"version": 1, "keyMappings": {bad}}}"#));
         assert_eq!(c.key_mappings, Config::default().key_mappings, "{bad}");
         assert!(warned(&w, "keyMappings must be an object"), "{bad}");
     }
 
-    // Bad entries are dropped one by one; good ones survive.
     let (mixed, w) = parse(
         r#"{"version": 1, "keyMappings": {
             "A": 49, "Q": 36, "rs": 36, "R": 36, "LS": 36,
@@ -200,7 +194,6 @@ fn other_fields() {
         assert!(c.appearance == appearance && w.is_empty(), "{appearance:?} {w:?}");
     }
     assert_eq!(Config::default().appearance, Appearance::System);
-    // Wrong case, wrong type, or unknown: system, with a warning.
     for bad in [r#""Dark""#, "1", r#""sepia""#, "null"] {
         let (c, w) = parse(&format!(r#"{{"version": 1, "appearance": {bad}}}"#));
         assert!(c.appearance == Appearance::System && warned(&w, "appearance"), "{bad}");
@@ -225,7 +218,6 @@ fn validation_problems() {
     config.key_mappings = mappings(&[("A", 200)]);
     assert_eq!(config.validation_problems().len(), 1);
 
-    // Positive control: the same config with a valid mapping has no problems.
     config.key_mappings = mappings(&[("A", 127)]);
     assert!(config.validation_problems().is_empty());
 }
@@ -238,7 +230,6 @@ fn temp_dir() -> tempfile::TempDir {
 fn file_loading() {
     let dir = temp_dir();
 
-    // Missing file: defaults, silently.
     let (c, w) = Config::load(&dir.path().join("none.json"));
     assert!(c == Config::default() && w.is_empty());
 
@@ -248,7 +239,6 @@ fn file_loading() {
     #[cfg(unix)]
     assert!(warned(&w, "not a regular file"), "{w:?}");
 
-    // Oversized, even though it would parse.
     let mut big = String::from(r#"{"version": 1, "pointerSpeed": 3"#);
     while big.len() as u64 <= MAX_CONFIG_BYTES {
         big.push_str("                ");
@@ -259,7 +249,6 @@ fn file_loading() {
     let (c, w) = Config::load(&big_path);
     assert!(c == Config::default() && warned(&w, "larger than 64 KB"), "{w:?}");
 
-    // Positive control: a small valid file loads.
     let good_path = dir.path().join("good.json");
     std::fs::write(&good_path, r#"{"version": 1, "pointerSpeed": 3}"#).expect("write good");
     let (c, w) = Config::load(&good_path);
@@ -274,7 +263,6 @@ fn try_load_tells_an_unusable_file_from_one_with_bad_settings() {
         std::fs::write(&path, json).expect("write");
         path
     };
-    // The whole file cannot be used: an error, never the defaults.
     for (name, json, why) in [
         ("empty.json", "", "not valid JSON"),
         ("broken.json", r#"{"version": 1,"#, "not valid JSON"),
@@ -288,7 +276,6 @@ fn try_load_tells_an_unusable_file_from_one_with_bad_settings() {
     }
     assert!(Config::try_load(dir.path()).is_err(), "a directory");
 
-    // One bad setting is a warning; the rest of the file still applies.
     let (c, w) = Config::try_load(&write(
         "partly.json",
         r#"{"version": 1, "pointerSpeed": 3, "repeatDelay": "x"}"#,
@@ -296,7 +283,6 @@ fn try_load_tells_an_unusable_file_from_one_with_bad_settings() {
     .expect("usable");
     assert!(c.pointer_speed == 3.0 && warned(&w, "repeatDelay"), "{w:?}");
 
-    // A missing file is the defaults, silently, as with load.
     assert_eq!(
         Config::try_load(&dir.path().join("none.json")),
         Ok((Config::default(), Vec::new()))
@@ -342,19 +328,16 @@ fn fifo_refused_without_blocking() {
 fn file_writing() {
     let dir = temp_dir();
 
-    // Creates missing parent directories.
     let path = dir.path().join("Deskpuck").join("config.json");
     let config = Config { pointer_speed: 4.0, ..Config::default() };
     config.save(&path).expect("save");
     let (loaded, w) = Config::load(&path);
     assert!(loaded.pointer_speed == 4.0 && w.is_empty(), "{w:?}");
 
-    // Invalid settings are refused and leave the existing file alone.
     let invalid = Config { pointer_speed: 50.0, ..Config::default() };
     assert!(matches!(invalid.save(&path), Err(SaveError::Invalid(p)) if p.len() == 1));
     assert_eq!(Config::load(&path).0.pointer_speed, 4.0);
 
-    // No temp files left behind.
     let entries = std::fs::read_dir(path.parent().expect("parent")).expect("read dir").count();
     assert_eq!(entries, 1);
 }
@@ -384,20 +367,17 @@ fn symlink_target_replaced_not_followed() {
     Config::default().save(&link).expect("save over symlink");
     assert_eq!(std::fs::read_to_string(&victim).expect("read victim"), "untouched");
     assert!(std::fs::symlink_metadata(&link).expect("lstat").file_type().is_file());
-    // Positive control: the replaced file is the config, not an empty or stale one.
     assert_eq!(Config::load(&link), (Config::default(), Vec::new()));
 }
 
 #[test]
 fn save_failure_reports_io_error() {
     let dir = temp_dir();
-    // The parent "directory" is a regular file, so nothing can be created under it.
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, "file").expect("write blocker");
     let result = Config::default().save(&blocker.join("config.json"));
     assert!(matches!(result, Err(SaveError::Io(_))), "{result:?}");
     assert_eq!(std::fs::read_to_string(&blocker).expect("read blocker"), "file");
-    // Only the blocker remains: no stray temp files beside it.
     assert_eq!(std::fs::read_dir(dir.path()).expect("read dir").count(), 1);
 }
 
@@ -422,7 +402,6 @@ fn shortcuts_load_and_save() {
     assert_eq!(c.key_mappings["B"], Mapping::from(9));
     assert_eq!(c.key_mappings["X"], Mapping::from(7));
 
-    // Plain keys stay bare numbers on disk; shortcuts list modifiers in pressing order.
     let value = c.to_value();
     assert_eq!(value["keyMappings"]["Y"], 36);
     assert_eq!(value["keyMappings"]["B"], 9);
@@ -433,7 +412,6 @@ fn shortcuts_load_and_save() {
     let (back, w) = Config::from_json(&c.to_json().expect("valid"));
     assert!(w.is_empty() && back == c, "{w:?}");
 
-    // The engine gets the modifiers.
     let settings = c.engine_settings();
     let a = settings.key_mappings.iter().find(|m| m.key_code() == Some(8)).expect("A mapped");
     let modifiers = combo(8, &["control", "command"]).modifiers;
@@ -531,7 +509,6 @@ fn unknown_names_are_escaped_in_warnings() {
         assert!(!warning.chars().any(|c| c.is_control() || c == '\u{202E}'), "{warning:?}");
     }
     assert!(warned(&w, "Unknown setting \"\\u{1b}]52;c;x\\u{7}\""), "{w:?}");
-    // Positive control: an ordinary unknown name reads as before.
     assert!(warned(
         &parse(r#"{"version": 1, "pointerSpeeed": 1}"#).1,
         "Unknown setting \"pointerSpeeed\""

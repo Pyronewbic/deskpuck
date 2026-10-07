@@ -1,5 +1,3 @@
-# cargo deny check: known advisories, dependency licenses, and crate sources.
-
 [advisories]
 yanked = "deny"
 
@@ -13,11 +11,8 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-# Each scoped to the crate that needs it rather than allowed everywhere:
-# ksni is the Linux tray backend; the rest come with the settings window's
-# egui: its Windows clipboard (clipboard-win, error-code), library loading
-# for Wayland and OpenGL (libloading) and bundled fonts
-# (epaint_default_fonts, whose font licences ship with any binary release).
+# Scoped to the crate that needs each: ksni (Linux tray), the rest come with
+# the settings window's egui (clipboard, library loading, bundled fonts).
 exceptions = [
     { crate = "ksni", allow = ["Unlicense"] },
     { crate = "clipboard-win", allow = ["BSL-1.0"] },

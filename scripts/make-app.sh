@@ -1,11 +1,6 @@
 #!/bin/bash
-# Build dist/Deskpuck.app, signed with a persistent identity so macOS keeps
-# its Accessibility permission across rebuilds.
-#
-# Usage: scripts/make-app.sh [--adhoc]
-#   --adhoc  sign ad hoc instead (Accessibility must be re-granted after every build)
-# Env: DESKPUCK_SIGN_IDENTITY  signing identity name (default: "Deskpuck Dev")
-# Exit: 0 built, 1 build failed, 2 signing identity missing
+# Usage: scripts/make-app.sh [--adhoc]; env DESKPUCK_SIGN_IDENTITY (default "Deskpuck Dev").
+# Exit 0 built, 1 build failed, 2 signing identity missing.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -52,9 +47,8 @@ fi
 
 # Any Rust build failure is a build failure (1); 2 means a missing signing identity.
 scripts/build-rust.sh || exit 1
-# SwiftPM does not see the Rust library as an input, so after a Rust-only
-# change it would keep a binary linked against the old library. Removing the
-# binary forces the link; the check below proves it happened.
+# SwiftPM does not track the Rust library as an input; removing the binary forces
+# a relink, which the check below proves.
 rust_lib=rust/target/release/libdeskpuck_ffi.a
 rm -f .build/release/Deskpuck
 swift build -c release --product Deskpuck || exit 1
@@ -69,7 +63,7 @@ cp .build/release/Deskpuck "$APP/Contents/MacOS/Deskpuck"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD)" "$APP/Contents/Info.plist"
-# Resources/Deskpuck.icon is the layered macOS 26 icon; actool also derives a .icns for older macOS.
+# actool also derives a .icns for older macOS.
 icon_plist=$(mktemp -t deskpuck-icon)
 xcrun actool Resources/Deskpuck.icon --compile "$APP/Contents/Resources" --app-icon Deskpuck \
     --platform macosx --minimum-deployment-target 13.0 --target-device mac \

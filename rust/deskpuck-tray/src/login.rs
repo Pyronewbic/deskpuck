@@ -1,14 +1,7 @@
-//! Start at Login: an autostart entry for this copy of the program, a
-//! desktop file in the XDG autostart folder on Linux and a Run value in
-//! the registry on Windows. Both are per user and need no admin rights.
-
 use std::path::Path;
 
-/// Quotes `program` as one argument of a desktop entry's Exec key: `"`,
-/// `` ` `` and `$` take a quoting backslash, written `\\` because the
-/// string escapes are undone first. `None` for a path with `%`, `\`, a
-/// control character or invalid UTF-8, which GLib and systemd's autostart
-/// do not read back the same.
+/// `"`, `` ` `` and `$` take a backslash, written `\\` as string escapes are undone first.
+/// `None` for `%`, `\`, control characters or invalid UTF-8, which GLib and systemd misread.
 pub fn desktop_exec(program: &Path) -> Option<String> {
     let path = program.to_str()?;
     if path.chars().any(|ch| ch == '%' || ch == '\\' || ch.is_control()) {
@@ -25,8 +18,6 @@ pub fn desktop_exec(program: &Path) -> Option<String> {
     Some(quoted)
 }
 
-/// The autostart desktop file that starts `program`, if its path can be
-/// written in one.
 pub fn desktop_entry(program: &Path) -> Option<String> {
     Some(format!(
         "[Desktop Entry]\nType=Application\nName=Deskpuck\n\
@@ -36,14 +27,12 @@ pub fn desktop_entry(program: &Path) -> Option<String> {
     ))
 }
 
-/// The Run value that starts `program`: the path in quotes, as Windows
-/// otherwise splits it at the first space.
+/// The path is quoted, as Windows otherwise splits it at the first space.
 #[cfg(any(windows, test))]
 pub fn run_value(program: &Path) -> String {
     format!("\"{}\"", program.display())
 }
 
-/// Turns the autostart desktop file at `file` on or off for `program`.
 pub fn set_desktop(file: &Path, program: &Path, on: bool) -> Result<(), String> {
     let result = if on {
         let entry = desktop_entry(program).ok_or(
@@ -75,7 +64,6 @@ pub fn desktop_is_on(file: &Path, program: &Path) -> bool {
 mod platform {
     use std::path::{Path, PathBuf};
 
-    /// ~/.config/autostart/deskpuck.desktop, or under $XDG_CONFIG_HOME.
     fn file() -> Option<PathBuf> {
         dirs::config_dir().map(|dir| dir.join("autostart").join("deskpuck.desktop"))
     }
@@ -105,7 +93,6 @@ mod platform {
         text.encode_utf16().chain(Some(0)).collect()
     }
 
-    /// The string value `name` under HKEY_CURRENT_USER\`key`, if there is one.
     pub fn read(key: &str, name: &str) -> Option<String> {
         let (key, name) = (wide(key), wide(name));
         let mut buffer = vec![0u16; 4096];
@@ -223,7 +210,6 @@ mod tests {
         let bad = Path::new("/opt/a\nExec=/bin/evil/deskpuck");
         assert!(set_desktop(&file, bad, true).unwrap_err().contains("control character"));
         assert!(!file.exists());
-        // An entry naming a refused path, written by hand, still reads as off.
         let percent = Path::new("/opt/100%/deskpuck");
         std::fs::write(&file, "Exec=\"/opt/100%/deskpuck\"\n").unwrap();
         assert!(!desktop_is_on(&file, percent));

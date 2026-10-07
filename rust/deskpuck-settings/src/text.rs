@@ -1,6 +1,3 @@
-//! Slider value text, spelled as the Mac settings window spells it.
-
-/// "0.25x", "1x", "1.75x": two decimals with trailing zeros trimmed.
 pub fn speed(speed: f64) -> String {
     let mut text = format!("{speed:.2}");
     while text.ends_with('0') {
@@ -17,7 +14,6 @@ pub fn rate(rate: f64) -> String {
     if rate < 1.0 { format!("{rate:.1}/s") } else { format!("{rate:.0}/s") }
 }
 
-/// "0.15 s", "1.00 s".
 pub fn delay(delay: f64) -> String {
     format!("{delay:.2} s")
 }

@@ -1,5 +1,4 @@
-# The toolchain CI and local builds use, so a new stable release cannot turn
-# CI red with new lints. Bump it deliberately.
+# Pinned so a new stable release cannot turn CI red with new lints.
 [toolchain]
 channel = "1.99.0"
 components = ["clippy", "rustfmt"]

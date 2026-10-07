@@ -1,6 +1,5 @@
-//! uinput backend: one virtual device with relative pointer axes, mouse
-//! buttons, and every key in the keymap. Works under Wayland and X11 alike,
-//! since the kernel presents it like a real USB mouse and keyboard.
+//! uinput backend. Works under Wayland and X11 alike, since the kernel presents
+//! it like a real USB mouse and keyboard.
 
 use crate::keymap::{KEYS, lookup};
 use crate::{Accumulator, InjectError, InputEvent, Sink, WHEEL_UNITS_PER_NOTCH, wheel_units};
@@ -117,7 +116,6 @@ impl Sink for LinuxSink {
             // The desktop repeats held keys itself and libinput drops device repeats,
             // so posting ours would at best do nothing.
             InputEvent::Key { repeat: true, .. } => Ok(()),
-            // Keys with no Linux equivalent (Fn, JIS) are skipped; callers warn up front.
             InputEvent::Key { key_code, down, .. } => match lookup(key_code) {
                 Some(row) => self.emit(&[key(row.linux, down)]),
                 None => Ok(()),

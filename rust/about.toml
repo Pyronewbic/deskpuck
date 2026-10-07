@@ -1,5 +1,4 @@
-# cargo-about settings for THIRD-PARTY-NOTICES.txt in the Linux and Windows
-# releases (scripts/package.sh). The accepted licences mirror deny.toml.
+# The accepted licences mirror deny.toml.
 accepted = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",

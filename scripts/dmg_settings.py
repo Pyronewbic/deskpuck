@@ -1,4 +1,3 @@
-# dmgbuild settings for the Deskpuck disk image. See scripts/make-dmg.sh.
 app = defines["app"]  # noqa: F821 (provided by dmgbuild -D app=...)
 
 format = "UDZO"

@@ -1,8 +1,6 @@
 #!/bin/bash
-# Scans commits for secrets with gitleaks; used by the pre-push hook and CI.
-# Arguments are git revisions ("A..B", or "B --not --remotes=origin"); none
-# means the whole history. Exit 0 clean, 1 secrets found, 3 the scan could not
-# run or did not cover every commit: an incomplete scan never counts as clean.
+# Usage: scan-secrets.sh [REV...] (none: whole history). Exit 0 clean, 1 secrets found,
+# 3 scan could not run or cover every commit: an incomplete scan never counts as clean.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 3

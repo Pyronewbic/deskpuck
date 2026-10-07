@@ -9,7 +9,6 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The whole Linux and Windows app: the tray, and with --settings its window.
 [[bin]]
 name = "deskpuck"
 path = "src/main.rs"

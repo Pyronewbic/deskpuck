@@ -1,5 +1,3 @@
-//! Deskpuck for Linux and Windows: the tray icon, or with --settings its
-//! settings window. The Mac app is Sources/Deskpuck.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(any(target_os = "linux", windows))]
@@ -22,7 +20,6 @@ mod watch;
 
 const USAGE: &str = "Usage: deskpuck [--settings [--config PATH]]";
 
-/// What the command line asks for; `None` for anything else.
 #[derive(Debug, PartialEq)]
 enum Mode {
     Tray,

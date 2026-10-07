@@ -1,13 +1,9 @@
-//! Replays Joy-Con 2 reports through the engine and a sink, so injection can be
-//! tested on any machine without Bluetooth.
-
 use deskpuck_core::engine::{EngineSettings, InputEngine};
 use deskpuck_core::packet::{Report, encode_report, parse_report};
 use deskpuck_inject::{InjectError, InputEvent, Poster, Sink};
 
 /// Seconds between reports; the Joy-Con 2 sends roughly 66 per second.
 pub const TICK: f64 = 0.015;
-/// Longest accepted capture line, in bytes of report data.
 pub const MAX_REPORT_BYTES: usize = 512;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,10 +60,8 @@ impl Script {
     }
 }
 
-/// About eight seconds of input that is safe on a live desktop: a 200-point
-/// square, a push into the bottom screen edge (the Dock), a scroll down and
-/// up, and arrow-key taps with one held long enough to auto-repeat. It never
-/// presses a mouse button or Return.
+/// About eight seconds of input that is safe on a live desktop: it never presses
+/// a mouse button or Return.
 pub fn demo() -> Vec<Frame> {
     let report = Report {
         // The counter is absolute; starting away from zero exercises the baseline.
@@ -108,9 +102,8 @@ pub fn demo() -> Vec<Frame> {
     s.frames
 }
 
-/// Reads a capture file: one report per line as hex, optionally followed by
-/// " | " and anything else (the golden fixture's expected values). Blank lines
-/// and lines starting with '#' are skipped. Reports are spaced `TICK` apart.
+/// One report per line as hex, optionally followed by " | " and anything else.
+/// Blank lines and lines starting with '#' are skipped.
 pub fn read_capture(text: &str) -> Result<Vec<Frame>, String> {
     let mut frames = Vec::new();
     for (index, line) in text.lines().enumerate() {
@@ -138,7 +131,6 @@ pub fn read_capture(text: &str) -> Result<Vec<Frame>, String> {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     pub reports: usize,
-    /// Reports too short to parse; the engine never sees them.
     pub skipped: usize,
     pub moves: usize,
     pub buttons: usize,
@@ -174,9 +166,8 @@ impl Sink for Counting<'_> {
     }
 }
 
-/// Feeds every frame through the engine into `sink`, calling `wait_until`
-/// with each frame's time first. Ends as a disconnect would, releasing every
-/// held key and button, including after a sink error.
+/// Ends as a disconnect would, releasing every held key and button, including
+/// after a sink error.
 pub fn run(
     frames: &[Frame],
     settings: EngineSettings,

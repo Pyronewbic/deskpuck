@@ -12,7 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var settingsWindow: NSWindow?
     private var appearanceWatch: AnyCancellable?
     private var accessibilityTimer: Timer?
-    // Kept so an open menu follows state changes and the pairing countdown.
     private var statusLine: NSMenuItem?
     private var pairItem: NSMenuItem?
     private var menuTimer: Timer?
@@ -48,7 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Release any held key or click and let the Joy-Con go.
         controller.stop()
     }
 
@@ -161,7 +159,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func updateIcon() {
-        // A latched modifier changes every click and key, so it shows by the icon.
         let latched = controller.latchedModifiers.map(KeyChoice.label).joined(separator: "+")
         statusItem.length = latched.isEmpty ? NSStatusItem.squareLength : NSStatusItem.variableLength
         statusItem.button?.title = latched.isEmpty ? "" : " " + latched
@@ -174,7 +171,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else {
             statusItem.button?.image = StatusGlyph.image()
         }
-        // Dimmed until a Joy-Con is connected.
         statusItem.button?.appearsDisabled = !connected
     }
 

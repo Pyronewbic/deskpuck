@@ -1,7 +1,3 @@
-//! Connects to a Joy-Con 2 over Bluetooth LE and drives the pointer, like the
-//! Mac app without a menu bar icon. All the work happens in `controller`; this
-//! file only parses options and prints.
-
 use deskpuck_ble::Monitor;
 use deskpuck_ble::controller::{
     Controller, Hooks, LinkStatus, MessageHook, PairingSetup, ReportHook,
@@ -17,7 +13,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
 
-/// Status output that never panics on a closed stream.
 macro_rules! note {
     ($($arg:tt)*) => {{
         let _ = writeln!(std::io::stderr().lock(), $($arg)*);
@@ -87,7 +82,6 @@ fn load_settings(path: Option<PathBuf>) -> Result<EngineSettings, String> {
 const NOT_PAIRED: &str =
     "No Joy-Con is paired. Run deskpuck-cli --pair and hold SYNC on the Joy-Con.";
 
-/// Without --pair there must be a usable pairing, or nothing could connect.
 fn check_paired(pair: bool, file: Option<&std::path::Path>) -> Result<(), String> {
     if pair {
         return Ok(());
@@ -176,14 +170,12 @@ fn main() -> ExitCode {
         }
     };
 
-    // A fatal status ends the run with its exit code; a quit signal ends it with 0.
     let (exit_tx, exit_rx) = mpsc::channel::<u8>();
     let quit_tx = exit_tx.clone();
     let monitor_mode = args.monitor;
     let mut monitor = Monitor::default();
     let hooks = Hooks {
         status: Box::new(move |status, name| {
-            // Unavailable is explained by the error hook just before it.
             if status != LinkStatus::Unavailable
                 && (!monitor_mode || status != LinkStatus::Connected)
             {
@@ -192,7 +184,6 @@ fn main() -> ExitCode {
             match status {
                 LinkStatus::BluetoothUnauthorized => drop(exit_tx.send(3)),
                 LinkStatus::Unavailable => drop(exit_tx.send(1)),
-                // The pairing window closed with nothing paired.
                 LinkStatus::NotPaired => drop(exit_tx.send(2)),
                 _ => {}
             }
@@ -242,7 +233,6 @@ fn main() -> ExitCode {
     let code = runtime
         .block_on(async { tokio::task::spawn_blocking(move || exit_rx.recv().unwrap_or(1)).await })
         .unwrap_or(1);
-    // Dropping the controller releases held input and disconnects.
     drop(controller);
     ExitCode::from(code)
 }

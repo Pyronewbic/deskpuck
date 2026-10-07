@@ -1,8 +1,5 @@
 #!/bin/sh
-# Installs Deskpuck for you alone, no root needed: the programs in
-# ~/.local/bin, a menu entry and the icon. Run it from the unpacked folder:
-#   ./install.sh              install or update
-#   ./install.sh --uninstall  remove exactly what this installed
+# Usage: ./install.sh [--uninstall]  (per-user, no root).
 # Exit 0 done, 1 a step failed, 2 bad usage.
 set -eu
 
@@ -15,7 +12,6 @@ icon="$data_dir/icons/hicolor/128x128/apps/deskpuck.png"
 fail() { echo "install.sh: $1" >&2; exit 1; }
 
 refresh_menu() {
-    # Optional: menus also notice the change on their own.
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database "$data_dir/applications" 2>/dev/null || true
     fi
@@ -51,10 +47,8 @@ for program in deskpuck deskpuck-cli; do
 done
 cp "$here/deskpuck.png" "$icon" || fail "could not copy the icon"
 
-# The menu entry runs the program by its full path, since ~/.local/bin is not
-# on every session's PATH. Desktop entries quote " ` and $ with a backslash,
-# written \\ since string escapes are undone first; launchers do not read
-# % or \ back the same, so those folders are refused (as Start at Login does).
+# Exec quotes " ` and $ with a backslash, written \\ as string escapes are undone first;
+# launchers misread % and \, so those folders are refused.
 exec_path=$(printf '%s' "$bin_dir/deskpuck" | sed 's/["`$]/\\\\&/g')
 tmp="$desktop.tmp.$$"
 sed "s|^Exec=.*|Exec=\"$(printf '%s' "$exec_path" | sed 's/[|&\\]/\\&/g')\"|" "$here/deskpuck.desktop" > "$tmp" ||

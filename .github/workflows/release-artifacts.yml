@@ -1,11 +1,7 @@
 name: Release artifacts
 
-# Builds the Linux and Windows releases (scripts/package.sh) as workflow
-# artifacts and attests where they were built. The build jobs hold no write
-# token; scripts/release.sh, run on the maintainer's Mac, downloads them for
-# the commit it releases (before it tags it), verifies them and attaches them
-# to the draft release beside the Mac app.
-# Start it with: gh workflow run release-artifacts.yml --ref main
+# Build jobs hold no write token; scripts/release.sh downloads and verifies the artifacts.
+# Start: gh workflow run release-artifacts.yml --ref main
 on:
   workflow_dispatch:
 
@@ -52,7 +48,6 @@ jobs:
       - name: Rust toolchain from rust/rust-toolchain.toml
         working-directory: rust
         run: rustup toolchain install
-      # Inno Setup 6 comes with the windows-2025 image.
       - run: scripts/package.sh windows
         env:
           ISCC: C:\Program Files (x86)\Inno Setup 6\ISCC.exe

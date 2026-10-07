@@ -1,14 +1,5 @@
 #!/bin/bash
-# Builds a release on this Mac, so the signing key never leaves it.
-#   scripts/release.sh              check, build the Mac app, write dist/SHA256SUMS
-#   scripts/release.sh --artifacts  fetch and check this commit's Linux and
-#                                   Windows builds from CI into dist/, nothing more
-#   scripts/release.sh --publish    all of it, then push a signed tag and create a
-#                                   draft GitHub release, published by hand after review
-# The Linux and Windows builds come from a passing release-artifacts workflow run
-# for this exact commit (start one with gh workflow run release-artifacts.yml),
-# and each must carry that run's build attestation.
-# --artifacts and --publish need GH_TOKEN for an account that can push to the repo.
+# Usage: scripts/release.sh [--artifacts | --publish]; signing stays on this Mac. --artifacts and --publish need GH_TOKEN.
 # Exit 0 done, 1 a check failed, 2 bad usage, 3 a check could not run.
 set -uo pipefail
 
@@ -38,7 +29,6 @@ github_repo() {
     [ "$(gh api "repos/$repo" --jq .permissions.push)" = true ] || fail "GH_TOKEN cannot push to $repo"
 }
 
-# The Linux and Windows files, from the release-artifacts run for this commit.
 ci_assets=(
     "Deskpuck-$version-linux-x86_64.tar.gz"
     "Deskpuck-$version-windows-x86_64.zip"

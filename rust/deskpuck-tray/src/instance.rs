@@ -1,13 +1,8 @@
-//! One tray at a time: a lock on a file in the settings folder, which the
-//! system releases however the program ends, crash included.
-
 use std::fs::{File, TryLockError};
 use std::path::Path;
 
 pub enum Instance {
-    /// This is the only tray; it holds the lock while the file stays open.
     Only(File),
-    /// Another tray holds the lock.
     Running,
 }
 

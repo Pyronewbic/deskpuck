@@ -1,7 +1,6 @@
 #!/bin/bash
-# Self-test for install.sh, against a throwaway home whose path has a space,
-# $, " and ` in it. Exit 0 when every case behaves, 1 otherwise.
-# Each check is a single-quoted condition that check() evals later.
+# Self-test for install.sh in a throwaway home with a space, $, " and ` in its path.
+# Exit 0 when every case behaves, 1 otherwise. Checks are single-quoted, eval'd by check().
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
 
@@ -49,7 +48,6 @@ if [ "$(uname -s)" = Linux ]; then
 fi
 check "no temporary program is left" '[ -z "$(ls -A "$home/bin" | grep "^\.")" ]'
 
-# Folders a menu entry cannot name: refused before anything is copied.
 for odd in "100%" 'back\slash' "$(printf 'new\nline')"; do
     share="$work/share-$odd"
     XDG_BIN_HOME="$work/$odd" XDG_DATA_HOME="$share" sh "$pkg/install.sh" >/dev/null 2>&1; status=$?

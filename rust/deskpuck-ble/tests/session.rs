@@ -34,7 +34,6 @@ fn disconnect_releases_held_input() {
     session.status(Status::Connected).expect("status");
     session.report(&report(RS, 0), 0.0).expect("post");
     session.status(Status::Searching).expect("status");
-    // A second non-connected status has nothing left to release.
     session.status(Status::BluetoothOff).expect("status");
     assert_eq!(session.sink().events, [key(true), key(false)]);
 }
@@ -45,7 +44,6 @@ fn shutdown_releases_held_input() {
     session.status(Status::Connected).expect("status");
     session.report(&report(RS, 0), 0.0).expect("post");
     session.shutdown().expect("release");
-    // Reports after shutdown are ignored.
     session.report(&report(RS, 0), 0.1).expect("post");
     assert_eq!(session.sink().events, [key(true), key(false)]);
 }
@@ -119,7 +117,6 @@ fn pause_releases_input_and_ignores_reports() {
     session.set_paused(true).expect("pause");
     assert!(session.is_paused());
     session.report(&report(RS, 500), 0.1).expect("post");
-    // Pausing twice releases nothing more.
     session.set_paused(true).expect("pause");
     assert_eq!(session.sink().events, [key(true), key(false)]);
 }
@@ -238,7 +235,6 @@ fn every_release_path_unlatches_a_modifier() {
     }
 }
 
-/// Refuses every mouse button event, as an OS that rejects synthetic input might.
 #[derive(Default)]
 struct RefusesClicks(Vec<InputEvent>);
 

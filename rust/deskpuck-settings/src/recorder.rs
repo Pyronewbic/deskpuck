@@ -1,6 +1,5 @@
-//! Turns a key press in the window into a shortcut. The physical key is
-//! used, as config.json stores key positions (macOS virtual key codes), so a
-//! recorded shortcut types the same thing on any keyboard layout.
+//! Uses the physical key: config.json stores key positions, so a recorded
+//! shortcut types the same thing on any layout.
 
 use crate::keys::code_for;
 use deskpuck_core::config::{Mapping, Shortcut};
@@ -10,13 +9,10 @@ use eframe::egui::{self, Key};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Recorded {
     Shortcut(Mapping),
-    /// Escape alone stops recording.
     Cancel,
-    /// A key with no macOS equivalent; keep waiting.
     Unknown,
 }
 
-/// The macOS key name, as `deskpuck-inject`'s key table spells it, for an egui key.
 pub fn mac_name(key: Key) -> Option<&'static str> {
     Some(match key {
         Key::A => "ANSI_A",
@@ -116,9 +112,8 @@ pub fn modifiers(held: egui::Modifiers) -> Modifiers {
         .fold(Modifiers::NONE, |all, (_, m)| all.with(m))
 }
 
-/// The key behind a copy, cut or paste event. egui turns Ctrl+C, Ctrl+X and
-/// Ctrl+V (and on Windows Ctrl+Insert, Shift+Delete, Shift+Insert, which
-/// come out the same) into these instead of key presses; Ctrl is held.
+/// egui turns Ctrl+C/X/V (and on Windows Ctrl+Insert, Shift+Delete, Shift+Insert)
+/// into these events instead of key presses; Ctrl is held.
 pub fn clipboard_key(event: &egui::Event) -> Option<Key> {
     match event {
         egui::Event::Copy => Some(Key::C),
@@ -128,7 +123,6 @@ pub fn clipboard_key(event: &egui::Event) -> Option<Key> {
     }
 }
 
-/// What one key press means while recording.
 pub fn record(key: Key, physical_key: Option<Key>, held: egui::Modifiers) -> Recorded {
     let key = physical_key.unwrap_or(key);
     let modifiers = modifiers(held);

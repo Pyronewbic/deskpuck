@@ -1,7 +1,3 @@
-//! The tray icon and its menu on Linux (StatusNotifierItem over D-Bus) and
-//! Windows. All state lives in `Model`; this file wires it to the controller
-//! and the tray library, and owns every tray object on the main thread.
-
 use crate::hook::release_hook;
 use crate::icon::{self, Look};
 use crate::model::Model;
@@ -26,15 +22,11 @@ enum Event {
     Latched(Modifiers),
     Note(String),
     Menu(MenuId),
-    /// A left click on the icon.
     Click,
-    /// Whether a tray host is showing the icon.
     Host(bool),
-    /// A quit signal, or a close request on Windows.
     Quit,
 }
 
-/// Sends to the main thread and wakes it, from any thread.
 #[derive(Clone)]
 struct Wake {
     tx: Sender<Event>,
@@ -63,7 +55,6 @@ struct Items {
     quit: MenuItem,
 }
 
-/// The menu as built: which optional lines are in it right now.
 struct Shown {
     latched: bool,
     note: bool,
@@ -130,7 +121,6 @@ pub fn run() -> ExitCode {
     }
     platform::quit_on_signals(wake.clone());
 
-    // Started when a tray host first shows the icon, so it never runs unseen.
     let controller: Rc<RefCell<Option<Controller>>> = Rc::default();
     let mut watch = Watch::default();
     let mut applied = EngineSettings::default();
@@ -141,9 +131,7 @@ pub fn run() -> ExitCode {
     platform::watch_host(wake.clone());
 
     'run: loop {
-        // Before waiting, so the first state shows even if no event ever comes.
         render(&model, start.elapsed().as_secs_f64(), &menu, &items, &tray, &mut shown);
-        // Wakes at least every POLL_SECONDS to look for edits to config.json.
         let mut next = platform::wait(&rx, Some(Duration::from_secs(POLL_SECONDS)));
         if let (Some(path), Some(controller)) = (&config_path, controller.borrow().as_ref())
             && watch.changed(path)
@@ -241,13 +229,11 @@ pub fn run() -> ExitCode {
         }
     }
 
-    // Releases held input and disconnects before the icon goes away.
     controller.borrow_mut().take();
     drop(tray);
     ExitCode::SUCCESS
 }
 
-/// Loads the settings as they are now and starts the connection.
 fn connect(
     config_path: Option<&Path>,
     model: &mut Model,
@@ -323,7 +309,6 @@ fn render(model: &Model, now: f64, menu: &Menu, items: &Items, tray: &TrayIcon, 
     items.pair.set_enabled(model.pair_enabled());
     items.pause.set_checked(model.paused());
 
-    // Optional lines sit under the status line, latched first.
     let latched = model.latched_text();
     show_line(menu, &items.latched, latched.as_deref(), 1, &mut shown.latched);
     let note_at = 1 + usize::from(shown.latched);
@@ -358,7 +343,6 @@ fn show_line(menu: &Menu, item: &MenuItem, text: Option<&str>, at: usize, shown:
     }
 }
 
-/// The first warning, with a count of the rest.
 fn is_left_click(event: &TrayIconEvent) -> bool {
     matches!(
         event,
@@ -379,15 +363,12 @@ fn reload_file(
     }
 }
 
-/// Opens the settings window with this program, which runs it under --settings.
 fn open_own_window(path: Option<&Path>, window: &mut Option<Child>) -> Result<(), String> {
     let program =
         std::env::current_exe().map_err(|e| format!("Could not open the settings window: {e}"))?;
     open_window(&program, path, window)
 }
 
-/// Opens the settings window: `program` (this program) run with --settings,
-/// as its own process; while one is open, another is not started.
 fn open_window(
     program: &Path,
     path: Option<&Path>,
@@ -408,7 +389,6 @@ fn open_window(
     Ok(())
 }
 
-/// Creates config.json with the defaults first, so there is something to edit.
 fn open_settings(path: Option<&Path>, wake: &Wake) -> Result<(), String> {
     let path = path.ok_or("No settings folder on this system")?;
     if !path.exists() {
@@ -437,7 +417,6 @@ mod platform {
     use std::process::Command;
     use std::time::Duration;
 
-    /// The ksni backend serves D-Bus on its own thread, so no GUI loop is needed.
     pub fn wait(rx: &Receiver<Event>, timeout: Option<Duration>) -> Option<Event> {
         match timeout {
             Some(timeout) => rx.recv_timeout(timeout).ok(),
@@ -445,14 +424,12 @@ mod platform {
         }
     }
 
-    /// Logout sends SIGTERM, handled by quit_on_signals.
     pub fn on_session_end(_release: Box<dyn FnOnce()>, _wake: Wake) {}
 
     const HOST_POLL: Duration = Duration::from_secs(2);
 
-    /// Without a StatusNotifier host the icon is registered but shown nowhere
-    /// (GNOME without the AppIndicator extension), and ksni still reports
-    /// success, so ask the watcher directly; hosts come and go with the panel.
+    /// Without a StatusNotifier host the icon shows nowhere (GNOME without AppIndicator),
+    /// yet ksni reports success, so ask the watcher; hosts come and go with the panel.
     pub fn watch_host(wake: Wake) {
         std::thread::spawn(move || {
             let bus = zbus::blocking::Connection::session().ok();
@@ -489,8 +466,6 @@ mod platform {
         command
     }
 
-    /// Ctrl+C, a closed terminal and SIGTERM (logout) quit cleanly, releasing
-    /// held input.
     pub fn quit_on_signals(wake: Wake) {
         std::thread::spawn(move || {
             let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build()
@@ -536,16 +511,12 @@ mod platform {
         static QUIT: RefCell<Option<Wake>> = const { RefCell::new(None) };
     }
 
-    /// The taskbar shows the icon whenever Explorer runs.
     pub fn watch_host(wake: Wake) {
         wake.send(Event::Host(true));
     }
 
-    /// Windows may end the process as soon as WM_ENDSESSION returns, so the
-    /// release runs inside the handler. Only top-level windows get the
-    /// message, and the tray's own hidden window ignores it. A close request
-    /// (taskkill without /F) would otherwise destroy the windows and leave
-    /// the connection running with no menu, so it quits instead.
+    /// Windows may end the process once WM_ENDSESSION returns, so release runs in the handler.
+    /// A close request would otherwise leave the connection running with no menu, so it quits.
     pub fn on_session_end(release: Box<dyn FnOnce()>, wake: Wake) {
         SESSION_END.with(|slot| *slot.borrow_mut() = Some(release));
         QUIT.with(|slot| *slot.borrow_mut() = Some(wake));
@@ -708,7 +679,6 @@ mod tests {
         child.kill().unwrap();
         child.wait().unwrap();
 
-        // Once it has exited, a new one is started (and here not found).
         let mut window = Some(child);
         assert!(open_window(&missing, None, &mut window).is_err());
     }

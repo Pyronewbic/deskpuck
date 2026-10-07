@@ -1,11 +1,5 @@
 #!/bin/bash
-# Builds a Linux or Windows release of Deskpuck on that OS, for CI's
-# release-artifacts workflow (the Mac's comes from release.sh):
-#   scripts/package.sh linux     Deskpuck-<version>-linux-x86_64.tar.gz
-#   scripts/package.sh windows   Deskpuck-<version>-windows-x86_64.zip and
-#                                Deskpuck-<version>-setup.exe (Inno Setup)
-# Each file gets a <file>.sha256 beside it, in dist/. Needs cargo-about, and
-# on Windows Inno Setup 6 (ISCC.exe on PATH, or set ISCC).
+# Usage: scripts/package.sh linux|windows (on that OS); needs cargo-about, on Windows ISCC.exe or $ISCC.
 # Exit 0 done, 1 a step failed, 2 bad usage, 3 a tool is missing.
 set -uo pipefail
 
@@ -37,7 +31,6 @@ stage="$out/$name"
 rm -rf "$stage" || fail "could not clear $stage"
 mkdir -p "$stage" || fail "could not create $stage"
 
-# Release binaries without debug symbols; the Mac build is not affected.
 (cd rust && CARGO_PROFILE_RELEASE_STRIP=symbols cargo build --release --locked \
     -p deskpuck-tray -p deskpuck-ble) || fail "cargo build failed"
 
@@ -56,9 +49,8 @@ for program in deskpuck deskpuck-cli; do
     cp "$target_dir/release/$program$exe" "$stage/" || fail "no $program$exe was built"
 done
 
-# Licences: Deskpuck's own, then every crate's (cargo-about), then the notice
-# files of the fonts the settings window carries, word for word from the
-# exact crate version built (the generic licence texts lack their copyrights).
+# Font notices are copied verbatim from the exact crate version built; the generic
+# licence texts lack their copyrights.
 if [ "$os" = windows ]; then
     target=x86_64-pc-windows-msvc
     license=LICENSE.txt

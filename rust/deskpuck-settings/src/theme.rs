@@ -1,7 +1,3 @@
-//! The accent the window tints its controls with: the desktop's own accent
-//! where it shares one, as the Mac app uses the macOS accent, and Deskpuck's
-//! indigo where it does not.
-
 use eframe::egui::style::{HandleShape, WidgetVisuals};
 use eframe::egui::{
     Color32, Context, CornerRadius, FontFamily, FontId, Stroke, TextStyle, Theme, Vec2,
@@ -29,7 +25,6 @@ impl Accent {
     }
 }
 
-/// Black or white, whichever reads better on `fill` (WCAG relative luminance).
 pub fn text_on(fill: Color32) -> Color32 {
     let linear = |c: u8| {
         let c = f64::from(c) / 255.0;
@@ -41,8 +36,6 @@ pub fn text_on(fill: Color32) -> Color32 {
     if luminance > 0.179 { Color32::BLACK } else { Color32::WHITE }
 }
 
-/// The colors of a grouped settings form, close to the Mac app's and to
-/// Windows 11 Settings in each theme.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Palette {
     pub window: Color32,
@@ -80,11 +73,8 @@ pub fn palette(theme: Theme) -> Palette {
     }
 }
 
-/// Corner radius of buttons, pickers and segments.
 pub const CONTROL_RADIUS: u8 = 5;
-/// Corner radius of section cards and menus.
 pub const CARD_RADIUS: u8 = 8;
-/// Every picker is this wide, so they line up like the Mac's pop-up buttons.
 pub const PICKER_WIDTH: f32 = 190.0;
 
 fn control(fill: Color32, stroke: Stroke, text: Color32) -> WidgetVisuals {
@@ -98,8 +88,6 @@ fn control(fill: Color32, stroke: Stroke, text: Color32) -> WidgetVisuals {
     }
 }
 
-/// The whole look for both themes, tinted with `accent`: slider trails,
-/// selected entries and segments, switches, focus, the text cursor.
 pub fn apply(ctx: &Context, accent: Accent) {
     for theme in [Theme::Dark, Theme::Light] {
         let fill = accent.for_theme(theme);
@@ -164,7 +152,6 @@ pub struct AccentReader {
 }
 
 impl AccentReader {
-    /// Starts a read unless one is already running.
     pub fn refresh(&mut self) {
         if self.pending.is_some() {
             return;
@@ -180,8 +167,6 @@ impl AccentReader {
         self.pending.is_some()
     }
 
-    /// The accent to use once a read has finished: the system's, or the brand
-    /// indigo when there is none.
     pub fn poll(&mut self) -> Option<Accent> {
         let result = match self.pending.as_ref()?.try_recv() {
             Ok(found) => found.unwrap_or(Accent::BRAND),
@@ -258,7 +243,6 @@ mod tests {
             assert_eq!(style.spacing.combo_width, PICKER_WIDTH);
             assert_eq!(style.text_styles[&TextStyle::Body].size, 14.0);
         }
-        // Light pink takes dark text, deep blue takes white.
         assert_eq!(ctx.style_of(Theme::Dark).visuals.selection.stroke.color, Color32::BLACK);
         assert_eq!(ctx.style_of(Theme::Light).visuals.selection.stroke.color, Color32::WHITE);
     }
@@ -276,7 +260,6 @@ mod tests {
         assert_eq!(text_on(Color32::WHITE), Color32::BLACK);
         assert_eq!(text_on(Color32::BLACK), Color32::WHITE);
         assert_eq!(text_on(Accent::BRAND.light), Color32::WHITE);
-        // The two greys either side of the crossover.
         assert_eq!(text_on(Color32::from_gray(0x75)), Color32::WHITE);
         assert_eq!(text_on(Color32::from_gray(0x76)), Color32::BLACK);
     }
@@ -285,7 +268,6 @@ mod tests {
     fn portal_colours_are_read_and_unset_ones_are_not() {
         assert_eq!(from_portal((0.0, 0.5, 1.0)), Some(Color32::from_rgb(0, 128, 255)));
         assert_eq!(from_portal((1.0, 1.0, 1.0)), Some(Color32::WHITE));
-        // The portal's "no accent" value, and anything else out of range.
         assert_eq!(from_portal((-1.0, -1.0, -1.0)), None);
         assert_eq!(from_portal((0.5, 1.5, 0.5)), None);
         assert_eq!(from_portal((f64::NAN, 0.5, 0.5)), None);

@@ -1,8 +1,3 @@
-//! The tray icon: Deskpuck's logo (rust/icons, rendered from the Mac app's
-//! icon by scripts/make-icons.sh), dimmed until a Joy-Con is connected,
-//! with pause bars while paused and an amber dot while a modifier is latched
-//! (a latch changes every click and key, so it shows by the icon).
-
 use std::sync::OnceLock;
 
 pub const SIZE: u32 = 32;
@@ -22,7 +17,6 @@ pub struct Look {
     pub latched: bool,
 }
 
-/// Straight (not premultiplied) RGBA rows, SIZE x SIZE, from a PNG of that size.
 pub fn decode(png_bytes: &[u8]) -> Option<Vec<u8>> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
     decoder.set_transformations(png::Transformations::normalize_to_color8());
@@ -36,13 +30,11 @@ pub fn decode(png_bytes: &[u8]) -> Option<Vec<u8>> {
     })
 }
 
-/// The logo, decoded once; blank if it could not be (a test proves it can).
 fn logo() -> &'static [u8] {
     static LOGO: OnceLock<Vec<u8>> = OnceLock::new();
     LOGO.get_or_init(|| decode(LOGO_PNG).unwrap_or_else(|| vec![0; (SIZE * SIZE * 4) as usize]))
 }
 
-/// Straight (not premultiplied) RGBA rows, SIZE x SIZE.
 pub fn rgba(look: Look) -> Vec<u8> {
     let mut pixels = logo().to_vec();
     let dimmed = !look.connected || look.paused;

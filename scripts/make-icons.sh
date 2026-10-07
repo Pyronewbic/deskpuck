@@ -1,10 +1,6 @@
 #!/bin/bash
-# Renders the Linux and Windows icons from the Mac app's icon, so every
-# platform shows the same logo. Run it after changing Resources/Deskpuck.icon
-# and commit the PNGs with it:   scripts/make-icons.sh
-# Needs Xcode 26's actool, like make-app.sh. Writes rust/icons/deskpuck-N.png
-# and rust/icons/deskpuck.ico (the Windows .exe icon).
-# Exit 0 done, 1 a step failed, 3 a tool is missing.
+# Renders rust/icons from the Mac icon; run after changing Resources/Deskpuck.icon, commit the output.
+# Exit 0 done, 1 a step failed, 3 a tool is missing (needs Xcode 26 actool).
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 3
@@ -24,9 +20,7 @@ xcrun actool Resources/Deskpuck.icon --compile "$tmp" --app-icon Deskpuck \
     --output-partial-info-plist "$tmp/icon.plist" >/dev/null || fail "actool failed"
 iconutil -c iconset "$tmp/Deskpuck.icns" -o "$tmp/Deskpuck.iconset" || fail "iconutil failed"
 
-# The largest render is 256 px, laid out on the macOS icon grid: the rounded
-# square spans 25..230 and the rest is margin and shadow, which would only
-# make the logo smaller in a tray or title bar.
+# Crop to the rounded square (25..230 of 256 px); the margin and shadow would shrink the logo.
 source="$tmp/Deskpuck.iconset/icon_128x128@2x.png"
 [ -f "$source" ] || fail "no 256 px render in the icon"
 sips --cropOffset 24 24 -c 208 208 "$source" --out "$tmp/logo.png" >/dev/null || fail "could not crop the logo"
@@ -36,7 +30,6 @@ for size in 32 64 128; do
     sips -z "$size" "$size" "$tmp/logo.png" --out "rust/icons/deskpuck-$size.png" >/dev/null ||
         fail "could not write the $size px icon"
 done
-# The .ico holds one PNG per size, which Windows Vista and later read.
 ico_sizes="16 24 32 48 64 128 256"
 for size in $ico_sizes; do
     sips -z "$size" "$size" "$tmp/logo.png" --out "$tmp/ico-$size.png" >/dev/null ||

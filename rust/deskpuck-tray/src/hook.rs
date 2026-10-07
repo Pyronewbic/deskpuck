@@ -1,11 +1,8 @@
-//! A callback that drops a value from outside its owner's scope.
-
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Takes the value out of `cell` when called, if it is still there. Holds only
-/// a weak reference, so unwinding out of the owner still drops the value in
-/// place instead of leaving it to process exit.
+/// Holds only a weak reference, so unwinding out of the owner still drops
+/// the value in place.
 pub fn release_hook<T: 'static>(cell: &Rc<RefCell<Option<T>>>) -> Box<dyn FnOnce()> {
     let cell = Rc::downgrade(cell);
     Box::new(move || {

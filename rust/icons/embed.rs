@@ -1,10 +1,5 @@
-// Included by the build scripts of the crates that build a Windows .exe.
-
-/// Puts the Deskpuck logo into a Windows .exe, so Explorer and shortcuts
-/// show it. A build on Windows must embed it. cfg here is the build host,
-/// as is the cfg(windows) that makes embed-resource a build dependency, so
-/// other hosts (checking the Windows target from macOS, say, which has no
-/// resource compiler) embed nothing and never build it.
+// cfg(windows) is the build host, not the target: other hosts (no resource
+// compiler) embed nothing and never build embed-resource.
 #[cfg(windows)]
 fn embed_windows_icon() {
     println!("cargo::rerun-if-changed=../icons/deskpuck.rc");

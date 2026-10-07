@@ -66,7 +66,6 @@ pub fn parse_stick(data: &[u8], offset: usize) -> (u16, u16) {
     ((packed & 0xFFF) as u16, ((packed >> 12) & 0xFFF) as u16)
 }
 
-/// Returns `None` if the report is too short to hold every field.
 pub fn parse_report(data: &[u8]) -> Option<Report> {
     if data.len() < REPORT_MIN_SIZE {
         return None;
@@ -101,8 +100,7 @@ pub fn parse_report(data: &[u8]) -> Option<Report> {
     })
 }
 
-/// Inverse of `parse_report`: a `REPORT_MIN_SIZE`-byte report. Stick values
-/// keep their low 12 bits and the packet id its low 24, as on the wire.
+/// Stick values keep their low 12 bits and the packet id its low 24, as on the wire.
 pub fn encode_report(r: &Report) -> Vec<u8> {
     let mut b = vec![0u8; REPORT_MIN_SIZE];
     let mut put =
@@ -162,12 +160,10 @@ pub fn button_names(buttons: u32) -> Vec<&'static str> {
     BUTTONS.iter().filter(|(mask, _)| buttons & mask != 0).map(|&(_, name)| name).collect()
 }
 
-/// Single-button lookup by one of the names above; `None` if unknown.
 pub fn button_mask(name: &str) -> Option<u32> {
     BUTTONS.iter().find(|&&(_, n)| n == name).map(|&(mask, _)| mask)
 }
 
-/// Name of a single-button mask; `None` for unknown or multi-bit masks.
 pub fn button_name(mask: u32) -> Option<&'static str> {
     BUTTONS.iter().find(|&&(m, _)| m == mask).map(|&(_, name)| name)
 }
@@ -204,7 +200,6 @@ mod tests {
         // Buttons at 0x03: ZL plus noise in the low byte.
         bytes[0x03] = 0xFF;
         bytes[0x06] = 0x80;
-        // Mouse X = -2, Y = 300, distance = 7.
         bytes[0x10] = 0xFE;
         bytes[0x11] = 0xFF;
         bytes[0x12] = 0x2C;

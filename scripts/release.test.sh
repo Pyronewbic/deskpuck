@@ -1,8 +1,6 @@
 #!/bin/bash
-# Self-test for release.sh --artifacts: the CI files are copied to dist/ only
-# when their checksums and attestations verify. Runs against a throwaway repo
-# with a stub gh. Exit 0 when every case behaves, 1 otherwise.
-# Each check is a single-quoted condition that check() evals later.
+# Self-test for release.sh --artifacts, in a throwaway repo with a stub gh. Exit 0 when every case behaves, 1 otherwise.
+# Checks are single-quoted conditions eval'd by check().
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
 

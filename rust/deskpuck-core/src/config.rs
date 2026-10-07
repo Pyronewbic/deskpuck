@@ -1,6 +1,4 @@
-//! User settings stored as JSON, compatible with the Mac app's config.json.
-//! Loading never fails: anything unusable falls back to its default and is
-//! described in the returned warnings.
+//! Compatible with the Mac app's config.json; unusable values fall back to defaults with warnings.
 
 use crate::engine::{EngineSettings, mouse_buttons_for_joycon_buttons};
 use crate::files;
@@ -38,7 +36,6 @@ const KNOWN_KEYS: [&str; 7] = [
     APPEARANCE,
 ];
 
-/// Light or dark for Deskpuck's own windows, or whatever the system uses.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Appearance {
     #[default]
@@ -50,7 +47,6 @@ pub enum Appearance {
 impl Appearance {
     pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
 
-    /// The value in config.json.
     pub fn name(self) -> &'static str {
         match self {
             Appearance::System => "system",
@@ -64,8 +60,7 @@ impl Appearance {
     }
 }
 
-/// Joy-Con button names that can be mapped to keys, in a fixed order. R, ZR,
-/// ZL, L and LS are mouse buttons and cannot be mapped.
+/// R, ZR, ZL, L and LS are mouse buttons and cannot be mapped.
 pub fn mappable_buttons() -> Vec<&'static str> {
     button_names(u32::MAX)
         .into_iter()
@@ -82,9 +77,8 @@ fn read_number(value: &Value) -> Option<f64> {
     value.as_f64().filter(|n| n.is_finite())
 }
 
-/// What a button presses: a key (macOS virtual key code, 0-127), with any
-/// modifiers held around it. Stored as a bare key code when there are none,
-/// so files without shortcuts are unchanged.
+/// Stored as a bare key code when there are no modifiers, so files without
+/// shortcuts are unchanged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shortcut {
     pub key: KeyCode,
@@ -107,8 +101,6 @@ impl Shortcut {
     }
 }
 
-/// What a button does: press a key or shortcut, or act as one modifier key
-/// while held (`{"modifier": "shift"}`) or toggled per press (`"latch": true`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mapping {
     Shortcut(Shortcut),
@@ -140,7 +132,6 @@ impl Mapping {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    /// Button name -> what it does.
     pub key_mappings: BTreeMap<String, Mapping>,
     pub pointer_speed: f64,
     pub repeat_delay: f64,
@@ -212,14 +203,10 @@ impl Config {
         Self::try_from_json(bytes).unwrap_or_else(Self::fallback)
     }
 
-    /// The defaults, with why the whole file was not used.
     fn fallback(problem: String) -> (Config, Vec<String>) {
         (Config::default(), vec![format!("{problem}; using defaults.")])
     }
 
-    /// Like `from_json`, but a file that cannot be used at all (not JSON, not
-    /// an object, wrong version) is an error rather than the defaults.
-    /// Problems with single settings are warnings, as in `from_json`.
     pub fn try_from_json(bytes: &[u8]) -> Result<(Config, Vec<String>), String> {
         let value = serde_json::from_slice::<Value>(bytes)
             .map_err(|e| format!("Config is not valid JSON ({e})"))?;
@@ -297,14 +284,10 @@ impl Config {
         Ok(config)
     }
 
-    /// A missing file gives the defaults without a warning. Reads at most
-    /// `MAX_CONFIG_BYTES` and refuses anything but a regular file.
     pub fn load(path: &Path) -> (Config, Vec<String>) {
         Self::try_load(path).unwrap_or_else(Self::fallback)
     }
 
-    /// Like `load`, but a file that cannot be read or used at all is an
-    /// error, so a caller can keep the settings it has instead of the defaults.
     pub fn try_load(path: &Path) -> Result<(Config, Vec<String>), String> {
         match files::read_capped(path, MAX_CONFIG_BYTES) {
             Ok(Some(bytes)) => Self::try_from_json(&bytes),
@@ -313,8 +296,6 @@ impl Config {
         }
     }
 
-    /// Copies the file at `path` to `path` + ".bak", written like the config
-    /// itself (owner-only, atomically), before something replaces it.
     pub fn back_up(path: &Path) -> Result<PathBuf, String> {
         let mut name = path.as_os_str().to_owned();
         name.push(".bak");
@@ -327,7 +308,6 @@ impl Config {
         Ok(backup)
     }
 
-    /// The config as a JSON value, valid or not; `validation_problems` says which.
     pub fn to_value(&self) -> Value {
         json!({
             VERSION: CONFIG_VERSION as u8,
@@ -344,15 +324,13 @@ impl Config {
         })
     }
 
-    /// Empty when every value is in range. Uses the loading rules, so what can
-    /// be saved is exactly what can be loaded.
+    /// Uses the loading rules, so what can be saved is exactly what can be loaded.
     pub fn validation_problems(&self) -> Vec<String> {
         let mut problems = Vec::new();
         Self::from_value(&self.to_value(), &mut problems);
         problems
     }
 
-    /// Pretty JSON with sorted keys; `None` if `validation_problems` is not empty.
     pub fn to_json(&self) -> Option<Vec<u8>> {
         if !self.validation_problems().is_empty() {
             return None;
@@ -360,8 +338,6 @@ impl Config {
         serde_json::to_vec_pretty(&self.to_value()).ok()
     }
 
-    /// Refuses invalid settings. Writes a temp file beside `path` and renames it
-    /// over the target, so a symlink at `path` is replaced, never written through.
     pub fn save(&self, path: &Path) -> Result<(), SaveError> {
         let problems = self.validation_problems();
         if !problems.is_empty() {
@@ -405,7 +381,6 @@ fn read_key_code(value: &Value) -> Option<KeyCode> {
 
 const MODIFIER_NAMES: &str = "control, option, shift or command";
 
-/// `{"modifier": <name>, "latch": <bool>}`, latch optional.
 fn parse_modifier_button(button: &str, fields: &Map<String, Value>) -> Result<Mapping, String> {
     if let Some(field) = fields.keys().find(|k| !["modifier", "latch"].contains(&k.as_str())) {
         return Err(format!("Modifier button {button} has an unknown field {field:?}"));
@@ -422,8 +397,7 @@ fn parse_modifier_button(button: &str, fields: &Map<String, Value>) -> Result<Ma
     Ok(Mapping::Modifier { modifier, latch })
 }
 
-/// A key code, `{"key": <code>, "modifiers": [<name>...]}`, or a modifier
-/// button. `Err` says why not, without the "mapping ignored" ending.
+/// `Err` says why not, without the "mapping ignored" ending.
 fn parse_mapping(button: &str, value: &Value) -> Result<Mapping, String> {
     match value {
         Value::Object(fields) if fields.contains_key("modifier") => {

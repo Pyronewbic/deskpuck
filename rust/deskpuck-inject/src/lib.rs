@@ -1,6 +1,3 @@
-//! Turns engine output into platform-neutral input events and posts them
-//! through a `Sink`, one backend per OS.
-
 use deskpuck_core::engine::EngineOutput;
 use deskpuck_core::mapping::{KeyCode, MouseButton, MoveKind, mouse_move_kind};
 use std::fmt;
@@ -39,7 +36,6 @@ pub enum InputEvent {
 
 #[derive(Debug)]
 pub enum InjectError {
-    /// The OS refuses synthetic input until the user grants a permission.
     NotPermitted(String),
     Failed(String),
 }
@@ -103,13 +99,10 @@ pub const WHEEL_UNITS_PER_NOTCH: i32 = 120;
 /// Scroll pixels that make one wheel notch where a backend scrolls in notches.
 pub const PIXELS_PER_NOTCH: i32 = 40;
 
-/// Hi-res wheel units for a scroll of `pixels`.
 pub fn wheel_units(pixels: i32) -> i32 {
     pixels.saturating_mul(WHEEL_UNITS_PER_NOTCH / PIXELS_PER_NOTCH)
 }
 
-/// Turns each engine output into events in posting order, remembering which
-/// mouse buttons are down so presses and releases are sent once.
 #[derive(Debug, Default)]
 pub struct Poster {
     posted_buttons: u8,
@@ -144,15 +137,13 @@ impl Poster {
         events
     }
 
-    /// Posts every event for `out`; see `post_all`.
     pub fn post(&mut self, out: &EngineOutput, sink: &mut dyn Sink) -> Result<usize, InjectError> {
         post_all(&self.events(out), sink)
     }
 }
 
-/// Tries every event even after one fails, then returns the first error.
-/// The engine and poster count events as posted when they are made, so
-/// stopping early would lose a key-up that nothing ever re-sends.
+/// Tries every event even after one fails, then returns the first error: stopping
+/// early would lose a key-up that nothing re-sends.
 pub fn post_all(events: &[InputEvent], sink: &mut dyn Sink) -> Result<usize, InjectError> {
     let mut first_error = None;
     for event in events {
@@ -163,7 +154,6 @@ pub fn post_all(events: &[InputEvent], sink: &mut dyn Sink) -> Result<usize, Inj
     first_error.map_or(Ok(events.len()), Err)
 }
 
-/// Collects events instead of posting them, for tests and dry runs.
 #[derive(Debug, Default)]
 pub struct RecordingSink {
     pub events: Vec<InputEvent>,
@@ -260,7 +250,6 @@ mod tests {
         // Reversing direction cancels the carried fraction instead of adding to it.
         let mut acc = Accumulator::default();
         assert_eq!([0.6, -0.6, 0.6].map(|v| acc.take(v)), [0, 0, 0]);
-        // Total over many small steps matches the exact sum.
         let mut acc = Accumulator::default();
         assert_eq!((0..1000).map(|_| acc.take(0.2)).sum::<i32>(), 200);
     }
@@ -283,7 +272,6 @@ mod tests {
         assert_eq!(wheel_units(i32::MAX), i32::MAX);
     }
 
-    /// Refuses the events at the given positions and records the rest.
     struct Refuses(Vec<usize>, usize, Vec<InputEvent>);
     impl Sink for Refuses {
         fn post(&mut self, event: &InputEvent) -> Result<(), InjectError> {
@@ -302,7 +290,6 @@ mod tests {
         let mut sink = Refuses(vec![0, 1], 0, Vec::new());
         let err = Poster::default().post(&busy, &mut sink).expect_err("refused");
         assert_eq!(err.to_string(), "refused 0");
-        // The scroll after the refused move and click still went out.
         assert_eq!(sink.2, [InputEvent::Scroll { up: -5 }]);
         // Positive control: a sink that accepts everything gets all three.
         let mut ok = Refuses(vec![], 0, Vec::new());

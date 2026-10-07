@@ -1,6 +1,3 @@
-//! The pieces of a grouped settings form, as the Mac app's Settings draws
-//! them: titled cards of rows, label on the left and control on the right.
-
 use crate::theme::{CARD_RADIUS, CONTROL_RADIUS, palette, text_on};
 use eframe::egui::{
     Align, CornerRadius, Frame, Id, Layout, Margin, Rect, Response, RichText, Sense, Stroke,
@@ -12,7 +9,6 @@ const ROW_PADDING: i8 = 14;
 const SEGMENT_HEIGHT: f32 = 26.0;
 const SEGMENT_PADDING: f32 = 12.0;
 
-/// A titled card; `add_rows` adds its rows through the `Card`.
 pub fn section(ui: &mut Ui, title: &str, add_rows: impl FnOnce(&mut Card<'_>)) {
     ui.label(RichText::new(title).text_style(TextStyle::Heading).weak());
     ui.add_space(2.0);
@@ -61,7 +57,6 @@ impl Card<'_> {
     }
 }
 
-/// An on/off switch, for what the Mac shows as a toggle.
 pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
     let (rect, mut response) = ui.allocate_exact_size(vec2(38.0, 22.0), Sense::click());
     if response.clicked() {
@@ -97,8 +92,6 @@ pub fn toggle(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
     response
 }
 
-/// Joined buttons in one rounded control; `selected(i)` says which are on.
-/// Returns the index of a segment clicked this frame.
 pub fn segments(
     ui: &mut Ui,
     id: impl std::hash::Hash + std::fmt::Debug,

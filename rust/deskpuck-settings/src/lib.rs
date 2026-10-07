@@ -1,6 +1,3 @@
-//! The Deskpuck settings window for Linux and Windows: the Mac app's
-//! Settings controls, saved to the same config.json.
-
 pub mod fonts;
 pub mod keys;
 pub mod model;
@@ -15,9 +12,6 @@ use eframe::egui::{IconData, ViewportBuilder};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// The settings file from the arguments: none for the default, or
-/// `--config PATH`. Paths are raw OS strings, as they need not be Unicode.
-/// `None` for anything else.
 pub fn config_path(args: &[OsString]) -> Option<Option<PathBuf>> {
     match args {
         [] => Some(Config::default_path()),
@@ -26,9 +20,8 @@ pub fn config_path(args: &[OsString]) -> Option<Option<PathBuf>> {
     }
 }
 
-/// The window as it opens, `width` wide. It sets no maximum size: Wayland
-/// rejects an unbounded one with a protocol error and the window never
-/// opens, and the window fits itself to its content anyway.
+/// No maximum size: Wayland rejects an unbounded one with a protocol error
+/// and the window never opens.
 pub fn viewport(width: f32, icon: Option<IconData>) -> ViewportBuilder {
     let viewport = ViewportBuilder::default()
         .with_title("Deskpuck Settings")

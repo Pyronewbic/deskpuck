@@ -1,7 +1,3 @@
-//! Draws the window in the desktop's own UI font where one can be found:
-//! Segoe UI on Windows, fontconfig's sans-serif on Linux. egui's bundled
-//! fonts stay behind it, for missing glyphs and for when there is none.
-
 use eframe::egui::{Context, FontData, FontDefinitions, FontFamily};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,15 +7,12 @@ pub const MAX_FONT_BYTES: u64 = 32 * 1024 * 1024;
 
 const SYSTEM_FONT: &str = "system-ui";
 
-/// A font file and its face index within it (non-zero only in collections).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FontFile {
     pub path: PathBuf,
     pub index: u32,
 }
 
-/// `fc-match -f '%{file}\n%{index}'` output: an absolute path to a TrueType
-/// or OpenType file, then its face index.
 pub fn parse_fc_match(output: &str) -> Option<FontFile> {
     let (file, index) = output.split_once('\n')?;
     let path = PathBuf::from(file);
@@ -30,7 +23,6 @@ pub fn parse_fc_match(output: &str) -> Option<FontFile> {
     Some(FontFile { path, index: index.trim().parse().ok()? })
 }
 
-/// Reads a font file that is a regular file of a plausible size.
 pub fn read_font(path: &Path) -> Option<Vec<u8>> {
     let meta = std::fs::metadata(path).ok()?;
     if !meta.is_file() || meta.len() > MAX_FONT_BYTES {
@@ -39,7 +31,6 @@ pub fn read_font(path: &Path) -> Option<Vec<u8>> {
     std::fs::read(path).ok()
 }
 
-/// Puts `font` first in the proportional family, ahead of egui's fonts.
 pub fn with_font(font: FontData) -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(SYSTEM_FONT.to_owned(), Arc::new(font));
@@ -47,12 +38,10 @@ pub fn with_font(font: FontData) -> FontDefinitions {
     fonts
 }
 
-/// True if egui can use the face; egui panics on one it cannot parse.
 pub fn usable(bytes: &[u8], index: u32) -> bool {
     skrifa::FontRef::from_index(bytes, index).is_ok()
 }
 
-/// Uses the system UI font if there is one; otherwise egui's stay.
 pub fn install(ctx: &Context) {
     let Some(file) = system_font() else { return };
     let Some(bytes) = read_font(&file.path).filter(|b| usable(b, file.index)) else { return };

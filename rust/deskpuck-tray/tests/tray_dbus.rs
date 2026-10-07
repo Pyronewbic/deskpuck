@@ -1,5 +1,3 @@
-//! Starts the real tray on a private D-Bus session bus and reads its menu,
-//! tooltip and icon back the way a panel would. Needs dbus-daemon, no display.
 #![cfg(target_os = "linux")]
 
 use std::collections::HashMap;
@@ -57,7 +55,6 @@ fn property(bus: &Connection, service: &str, name: &str) -> Option<OwnedValue> {
 
 type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 
-/// Stands in for a panel's StatusNotifierWatcher with a host registered.
 struct Watcher;
 
 #[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
@@ -72,7 +69,6 @@ impl Watcher {
 
 const WAITING: &str = "Deskpuck: Waiting for a system tray";
 
-/// The tooltip's title, and the first line of its text.
 fn tooltip(bus: &Connection, service: &str) -> Option<(String, String)> {
     let value = property(bus, service, "ToolTip")?;
     let (_icon, _pixmaps, title, text) =

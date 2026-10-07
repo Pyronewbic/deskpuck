@@ -1,8 +1,6 @@
-//! Windows asks for a short connection interval while a Joy-Con is linked.
-//! Left alone, Windows settles on 60 ms a second after connecting, about 16
-//! reports a second; the pointer then moves in visible steps.
+//! Windows settles on a 60 ms connection interval (about 16 reports a second) unless asked
+//! for a short one while a Joy-Con is linked; the pointer then moves in visible steps.
 
-/// A connection interval in milliseconds, from the 1.25 ms units Bluetooth uses.
 pub fn interval_ms(units: u16) -> f64 {
     f64::from(units) * 1.25
 }
@@ -20,9 +18,8 @@ mod imp {
         BluetoothLEPreferredConnectionParametersRequestStatus as RequestStatus,
     };
 
-    /// An open request for Windows' throughput-optimized connection
-    /// parameters. Windows honors it only while it stays open, so it lives as
-    /// long as the link; dropping it hands the choice back to Windows.
+    /// Windows honors this request only while it stays open, so it lives as long
+    /// as the link.
     pub struct FastLink {
         device: BluetoothLEDevice,
         request: BluetoothLEPreferredConnectionParametersRequest,
@@ -47,7 +44,6 @@ mod imp {
             }
         }
 
-        /// The interval Windows is using now, which can lag the request.
         pub fn interval_ms(&self) -> Option<f64> {
             let parameters = self.device.GetConnectionParameters().ok()?;
             parameters.ConnectionInterval().ok().map(super::interval_ms)

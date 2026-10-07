@@ -8,14 +8,12 @@ let package = Package(
         .executable(name: "Deskpuck", targets: ["Deskpuck"]),
     ],
     targets: [
-        // The Rust core's static library, built by scripts/build-rust.sh.
         .systemLibrary(name: "DeskpuckFFI", path: "Sources/DeskpuckFFI"),
         .executableTarget(
             name: "Deskpuck",
             dependencies: ["DeskpuckFFI"],
             linkerSettings: [
                 .unsafeFlags(["-L", Context.packageDirectory + "/rust/target/release"]),
-                // What the Rust static library needs (cargo --print native-static-libs).
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("CoreBluetooth"),

@@ -18,7 +18,6 @@ struct Recorder {
     reports: Seen<(u32, Option<String>, u128)>,
     errors: Seen<String>,
     latched: Seen<Modifiers>,
-    /// Holds the pairing file's directory for the test's lifetime.
     dir: tempfile::TempDir,
 }
 
@@ -32,14 +31,12 @@ fn save_pairing(path: &Path, id: u32) {
     PairedDevice::new(&id.to_string(), Some("Joy-Con 2 (R)")).unwrap().save(path).unwrap();
 }
 
-/// Paired with JOYCON.
 fn hub() -> (Hub<u32, RecordingSink>, Recorder) {
     let dir = tempfile::tempdir().unwrap();
     save_pairing(&dir.path().join("pairing.json"), JOYCON);
     hub_in(dir)
 }
 
-/// Uses whatever pairing.json `dir` holds.
 fn hub_in(dir: tempfile::TempDir) -> (Hub<u32, RecordingSink>, Recorder) {
     let rec = Recorder {
         statuses: Arc::default(),
@@ -79,7 +76,6 @@ fn notification(packet_id: u32, buttons: u32) -> Input<u32> {
     Input::Notification { id: JOYCON, data: encode_report(&report) }
 }
 
-/// Powered on, connected at t=1, characteristics found.
 fn connected() -> (Hub<u32, RecordingSink>, Recorder) {
     let (mut hub, rec) = hub();
     hub.start(0.0);
@@ -129,7 +125,6 @@ fn pause_stops_scanning_and_input_but_not_the_readout() {
     // The monitor still sees reports while paused; the pointer and keys do not.
     assert_eq!(rec.reports.lock().unwrap().len(), 2);
     assert_eq!(hub.session().sink().events, [key(true), key(false)]);
-    // Connected, so resuming does not need a scan.
     assert!(hub.set_paused(false, 3.0).is_empty());
     assert!(rec.errors.lock().unwrap().is_empty());
 }
@@ -140,7 +135,6 @@ fn resume_while_searching_scans_again() {
     hub.start(0.0);
     hub.input(Input::AdapterPoweredOn, 0.0);
     assert_eq!(hub.set_paused(true, 1.0), [Output::StopScan]);
-    // A Joy-Con seen while paused is not connected.
     assert!(hub.input(discovered(), 1.5).is_empty());
     assert_eq!(hub.set_paused(false, 2.0), [Output::StartScan]);
 }
@@ -286,7 +280,6 @@ fn latch_changes_reach_the_hook_once_each() {
     hub.input(notification(2, 0), 2.1);
     hub.input(notification(3, 0), 2.2);
     assert_eq!(*rec.latched.lock().unwrap(), [Modifiers::SHIFT]);
-    // Pausing releases it, and the hook hears that too.
     hub.set_paused(true, 3.0);
     assert_eq!(*rec.latched.lock().unwrap(), [Modifiers::SHIFT, Modifiers::NONE]);
     hub.shutdown();
