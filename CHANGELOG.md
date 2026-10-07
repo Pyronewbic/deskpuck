@@ -4,29 +4,28 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
 ### Added
 
-- `deskpuck`, the app for Linux and Windows: a tray icon with status, pairing, pause, latched modifiers, and opening or reloading `config.json`.
-- A settings window for Linux and Windows with the Mac app's controls, opened from the tray's Settings... item or a left click (`deskpuck --settings`); the tray applies changes to `config.json` as soon as the file changes.
-- CI builds and tests the Rust workspace on Windows.
-- Linux and Windows downloads: a Linux `.tar.gz` with a per-user `install.sh` and app-menu entry, and for Windows an installer (`Deskpuck-<version>-setup.exe`, no admin needed, optional start at login) or a portable `.zip`. Each comes with the licences of the code it includes.
-- Linux: a Joy-Con 2 connects over a direct ATT link, since BlueZ cannot resolve its services. No root needed.
-- **Start at Login** in the menu on every platform: a login item on macOS, an autostart entry on Linux and a per-user Run entry on Windows.
-- A Theme setting (System, Light or Dark) for the settings window, on every platform; `appearance` in `config.json`.
-- The Linux and Windows settings window is laid out like the Mac's, in titled cards with switches and a fixed-width value beside each slider, sized to fit its content. It uses the system UI font (Segoe UI on Windows, fontconfig's sans-serif on Linux) and the system accent colour, on Linux where the desktop portal shares one.
-- Settings uses the system accent colour on the Mac too.
-- The Linux and Windows tray icon and settings window show the Deskpuck logo, the Mac app's icon, instead of a plain indigo dot; on Windows the .exe files carry it too.
+- **Linux and Windows.** Deskpuck now runs on Linux and Windows too. It is a tray icon with the Mac menu's status, pairing, pause and latched-modifier lines, and a settings window with the Mac app's controls: left-click the icon or choose **Settings...**. Pair as on the Mac with **Pair New Joy-Con...**; do not pair the Joy-Con in the system's Bluetooth settings.
+  - Windows: install with `Deskpuck-0.3.0-setup.exe` (for you alone, no admin needed) or unzip the portable `.zip`. Deskpuck is not code-signed, so Windows first shows "Windows protected your PC": choose More info, then Run anyway.
+  - Linux: unpack the `.tar.gz` and run `./install.sh`, which installs for you alone and adds Deskpuck to the app menu (`./install.sh --uninstall` removes it). No root is needed for Bluetooth; moving the pointer needs write access to `/dev/uinput` (see the README). On GNOME, the tray icon needs the AppIndicator extension.
+  - Tested on Windows 11 and on CachyOS with KDE Plasma (Wayland, BlueZ 5.87).
+- **Start at Login** in the menu, on every platform.
+- **Theme** in Settings: System, Light or Dark. In `config.json`: `"appearance": "dark"`.
+- Known limitation: Windows does not let Deskpuck send input to apps running as administrator (such as an admin PowerShell). While one is in front, switch away with the mouse, the keyboard or Alt+Tab.
+
+### Changed
+
+- Settings uses the system accent colour instead of Deskpuck's indigo.
 
 ### Fixed
 
-- Scanning stops before connecting, and a failed connect is cancelled so the Joy-Con is not left linked.
-- `--verbose` logs why a connect or service discovery failed.
-- A Joy-Con is named by its model even when BlueZ reports its address as the name.
-- Linux: a connect the Joy-Con fails to establish is tried again at once, up to three times.
-- Linux and Windows: starting Deskpuck while it is already running leaves the running copy alone instead of starting a second tray.
-- The Joy-Con's lights stop the searching sweep once it is connected and show player 1, as on a Switch 2.
-- Windows: the tests pass in a clone made with Git for Windows' default settings (files now check out with LF line endings).
-- Windows: the Joy-Con sends about 66 reports a second instead of 16, so the pointer moves smoothly: Deskpuck asks Windows for its throughput-optimized connection parameters while connected.
+- The Joy-Con's lights settle on player 1 once it is connected, as on a Switch 2. Before, they kept sweeping as if it were still searching.
+- Settings shows pointer speeds such as 1.75x exactly; it rounded them (1.8x).
+- Scanning stops before Deskpuck connects, and a connect that fails is cancelled, so the Joy-Con is not left linked.
+- `deskpuck-cli --verbose` says why a connect or service discovery failed.
 
 ## [0.2.0] - 2026-10-06
 
@@ -64,6 +63,7 @@ First release. Apple Silicon Macs only, macOS 13 or later (tested on macOS 26).
 - Signed with the hardened runtime and a stable certificate, so the Accessibility permission carries over to later versions.
 - Known limitation: Deskpuck connects to any nearby device that advertises as a Joy-Con 2. See [SECURITY.md](https://github.com/Pyronewbic/deskpuck/blob/main/SECURITY.md).
 
-[Unreleased]: https://github.com/Pyronewbic/deskpuck/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Pyronewbic/deskpuck/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Pyronewbic/deskpuck/releases/tag/v0.1.0

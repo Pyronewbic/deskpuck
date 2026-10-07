@@ -795,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-ble"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "btleplug",
  "deskpuck-core",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs",
  "libc",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-ble",
  "deskpuck-core",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-inject"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "evdev",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-replay"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-settings"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-tray"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-ble",
  "deskpuck-core",
