@@ -54,7 +54,7 @@ struct SettingsView: View {
                 LabeledContent("Pointer speed") {
                     HStack {
                         Slider(value: $model.pointerSpeed, in: 0.25...4, step: 0.25)
-                        Text(String(format: "%.2gx", model.pointerSpeed))
+                        Text(Self.speedText(model.pointerSpeed))
                             .monospacedDigit()
                             .frame(width: 40, alignment: .trailing)
                     }
@@ -103,6 +103,15 @@ struct SettingsView: View {
         .tint(Color.deskpuckAccent)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // Trimmed decimals so 1.75 shows as "1.75x", not "1.8x"; the
+    // Linux/Windows window spells it the same way.
+    static func speedText(_ speed: Double) -> String {
+        var text = String(format: "%.2f", speed)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text + "x"
     }
 
     private func binding(for button: String) -> Binding<KeyChoice> {

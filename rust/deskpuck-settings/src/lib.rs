@@ -4,6 +4,8 @@
 pub mod keys;
 pub mod model;
 pub mod recorder;
+pub mod text;
+pub mod theme;
 
 use deskpuck_core::config::Config;
 use std::ffi::OsString;
