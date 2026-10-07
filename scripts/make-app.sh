@@ -52,7 +52,16 @@ fi
 
 # Any Rust build failure is a build failure (1); 2 means a missing signing identity.
 scripts/build-rust.sh || exit 1
-swift build -c release --product Deskpuck
+# SwiftPM does not see the Rust library as an input, so after a Rust-only
+# change it would keep a binary linked against the old library. Removing the
+# binary forces the link; the check below proves it happened.
+rust_lib=rust/target/release/libdeskpuck_ffi.a
+rm -f .build/release/Deskpuck
+swift build -c release --product Deskpuck || exit 1
+if [ ! .build/release/Deskpuck -nt "$rust_lib" ]; then
+    echo "the app was not linked after $rust_lib was built; it would ship an old Rust core" >&2
+    exit 1
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
