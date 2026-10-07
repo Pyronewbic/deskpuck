@@ -103,6 +103,8 @@ fn system_font() -> Option<FontFile> {
 mod tests {
     use super::*;
 
+    // fontconfig paths are Unix paths; on Windows "/usr/..." is not absolute.
+    #[cfg(unix)]
     #[test]
     fn fc_match_output_is_read_and_anything_odd_is_refused() {
         let found = parse_fc_match("/usr/share/fonts/noto/NotoSans-Regular.ttf\n0");
