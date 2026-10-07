@@ -17,6 +17,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - `--verbose` logs why a connect or service discovery failed.
 - A Joy-Con is named by its model even when BlueZ reports its address as the name.
 - Linux: a connect the Joy-Con fails to establish is tried again at once, up to three times.
+- Windows: the tests pass in a clone made with Git for Windows' default settings (files now check out with LF line endings).
 
 ## [0.2.0] - 2026-10-06
 
