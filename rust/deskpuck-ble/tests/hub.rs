@@ -99,7 +99,7 @@ fn statuses_go_to_the_hook_and_commands_come_back() {
     let (mut hub, rec) = hub();
     assert!(hub.start(0.0).is_empty(), "no scan before Bluetooth is on");
     assert_eq!(hub.input(Input::AdapterPoweredOn, 0.0), [Output::StartScan]);
-    assert_eq!(hub.input(discovered(), 0.5), [Output::Connect(JOYCON)]);
+    assert_eq!(hub.input(discovered(), 0.5), [Output::StopScan, Output::Connect(JOYCON)]);
     assert_eq!(hub.input(Input::Connected(JOYCON), 1.0), [Output::DiscoverServices(JOYCON)]);
     let name = Some("Joy-Con 2 (R)".to_owned());
     assert_eq!(
@@ -216,7 +216,7 @@ fn pairing_is_saved_and_survives_a_restart() {
     assert_eq!(again.input(Input::AdapterPoweredOn, 0.0), [Output::StartScan]);
     assert!(again.input(discovered(), 1.0).is_empty(), "the old Joy-Con is not paired");
     let new = Input::Discovered { id: NEW, name: None, manufacturer_ids: vec![MANUFACTURER_ID] };
-    assert_eq!(again.input(new, 1.0), [Output::Connect(NEW)]);
+    assert_eq!(again.input(new, 1.0), [Output::StopScan, Output::Connect(NEW)]);
     assert_eq!(rec2.statuses.lock().unwrap()[0], (LinkStatus::Searching, None));
 }
 

@@ -661,3 +661,12 @@ fn advertised_names_are_cleaned_and_capped() {
     assert!(shown.starts_with("JoyConx"), "{shown:?}");
     assert_eq!(shown.chars().count(), deskpuck_core::pairing::MAX_NAME_CHARS);
 }
+
+#[test]
+fn scanning_stops_before_a_connect() {
+    let mut r = ready(false);
+    let out = r.handle(discovered(JOYCON), 0.0);
+    let stop = out.iter().position(|o| *o == Output::StopScan).expect("the scan is stopped");
+    let connect = out.iter().position(|o| *o == Output::Connect(JOYCON)).expect("a connect");
+    assert!(stop < connect, "{out:?}");
+}

@@ -349,6 +349,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 // A rescan still pending from an earlier drop is moot now.
                 self.rescan_at = None;
                 Self::status(&mut out, Status::Connecting, name);
+                // BlueZ cannot connect while scanning, and a scan left running
+                // makes the next start fail; scans resume through rescan_at.
+                out.push(Output::StopScan);
                 out.push(Output::Connect(id));
             }
             Input::Connected(id) => {
