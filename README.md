@@ -46,7 +46,9 @@ To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces th
 
 ## Linux and Windows
 
-Deskpuck's core, in [`rust/`](rust), is cross-platform. Its input layer is tested on Linux (X11), and a Joy-Con 2 connects and streams on Linux (tested on CachyOS with BlueZ 5.87, no root needed); Bluetooth has not been tested on Windows yet. A preview tray app, `deskpuck-tray`, with a settings window like the Mac one, builds from source for both; on GNOME its icon needs the AppIndicator extension. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
+Deskpuck's core, in [`rust/`](rust), is cross-platform. A Joy-Con 2 connects and streams on Linux (tested on CachyOS with BlueZ 5.87, no root needed) and Windows 11 (no pairing in Windows Settings needed). A preview tray app, `deskpuck-tray`, with a settings window like the Mac one, builds from source for both; on GNOME its icon needs the AppIndicator extension. See [CONTRIBUTING.md](CONTRIBUTING.md#rust-workspace).
+
+- **Windows: the Joy-Con stops working in an admin window:** Windows does not let ordinary apps send input to apps running as administrator (such as an admin PowerShell). Switch away with the mouse, the keyboard or Alt+Tab, and the Joy-Con works again.
 
 ## Build from source
 
