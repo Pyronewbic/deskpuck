@@ -30,6 +30,7 @@ pub fn desktop_entry(program: &Path) -> String {
 
 /// The Run value that starts `program`: the path in quotes, as Windows
 /// otherwise splits it at the first space.
+#[cfg(any(windows, test))]
 pub fn run_value(program: &Path) -> String {
     format!("\"{}\"", program.display())
 }
@@ -145,8 +146,10 @@ mod platform {
         }
     }
 
+    /// The installer writes this value too; Windows paths ignore case.
     pub fn is_on(program: &Path) -> bool {
-        read(RUN_KEY, VALUE).is_some_and(|value| value == super::run_value(program))
+        read(RUN_KEY, VALUE)
+            .is_some_and(|value| value.eq_ignore_ascii_case(&super::run_value(program)))
     }
 
     pub fn set(program: &Path, on: bool) -> Result<(), String> {
