@@ -1,0 +1,14 @@
+Third-party software in Deskpuck
+
+Deskpuck itself is MIT licensed (see LICENSE). It is built from the open
+source crates below, each under the licence shown. Every licence text that
+applies is given once, followed by the crates it covers.
+{{#each licenses}}
+
+========================================================================
+{{name}} ({{id}})
+Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}
+========================================================================
+
+{{{text}}}
+{{/each}}
