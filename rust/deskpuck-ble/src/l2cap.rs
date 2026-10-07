@@ -117,6 +117,40 @@ pub async fn connect(device: [u8; 6], random: bool) -> io::Result<AsyncFd<OwnedF
     Ok(fd)
 }
 
+/// How many times to try a connection the Joy-Con failed to establish.
+pub const CONNECT_ATTEMPTS: u32 = 3;
+
+/// The kernel has no errno for HCI status 0x3E (Connection Failed to be
+/// Established) and reports ENOSYS. A Joy-Con can miss the first
+/// connection events, more often at short connection intervals; trying
+/// again at once catches it while it is still advertising.
+fn not_established(e: &io::Error) -> bool {
+    e.raw_os_error() == Some(libc::ENOSYS)
+}
+
+/// Runs `attempt` until it succeeds, fails another way, or has failed to
+/// establish `CONNECT_ATTEMPTS` times; each retry is logged.
+pub async fn connect_retrying<T, F: Future<Output = io::Result<T>>>(
+    mut attempt: impl FnMut() -> F,
+    mut log: impl FnMut(String),
+) -> io::Result<T> {
+    let mut tries = 1;
+    loop {
+        match attempt().await {
+            Err(e) if not_established(&e) && tries < CONNECT_ATTEMPTS => {
+                log(format!("the link was not established (try {tries}); trying again"));
+                tries += 1;
+            }
+            Err(e) if not_established(&e) => {
+                return Err(io::Error::other(format!(
+                    "the link was not established after {tries} tries"
+                )));
+            }
+            result => return result,
+        }
+    }
+}
+
 /// What the controller asks of a running link.
 #[derive(Debug)]
 pub enum Command {
@@ -322,6 +356,54 @@ mod tests {
         assert_eq!(run(link, client(), rx, |_| {}).await, "closed by Deskpuck");
         let mut buf = [0u8; 16];
         assert_eq!(joycon.read(&mut buf).unwrap(), 0, "the socket was closed");
+    }
+
+    /// Fails with each error in turn, then succeeds with the attempt number.
+    async fn retry_with(errors: &[i32]) -> (io::Result<u32>, u32, Vec<String>) {
+        let mut calls = 0;
+        let mut logged = Vec::new();
+        let result = connect_retrying(
+            || {
+                calls += 1;
+                let outcome = match errors.get(calls as usize - 1) {
+                    Some(&errno) => Err(io::Error::from_raw_os_error(errno)),
+                    None => Ok(calls),
+                };
+                std::future::ready(outcome)
+            },
+            |m| logged.push(m),
+        )
+        .await;
+        (result, calls, logged)
+    }
+
+    #[tokio::test]
+    async fn a_link_not_established_is_tried_again() {
+        let (result, calls, logged) = retry_with(&[libc::ENOSYS, libc::ENOSYS]).await;
+        assert_eq!(result.unwrap(), 3);
+        assert_eq!(calls, 3);
+        assert_eq!(logged.len(), 2);
+
+        let (result, calls, _) = retry_with(&[]).await;
+        assert_eq!((result.unwrap(), calls), (1, 1), "control: success is not retried");
+    }
+
+    #[tokio::test]
+    async fn retries_stop_after_the_limit_with_a_readable_reason() {
+        let (result, calls, logged) = retry_with(&[libc::ENOSYS; 5]).await;
+        assert_eq!(calls, CONNECT_ATTEMPTS);
+        assert_eq!(logged.len(), CONNECT_ATTEMPTS as usize - 1);
+        let e = result.unwrap_err();
+        assert_eq!(e.to_string(), "the link was not established after 3 tries");
+    }
+
+    #[tokio::test]
+    async fn other_failures_are_not_retried() {
+        for errno in [libc::ECONNREFUSED, libc::ETIMEDOUT, libc::EHOSTDOWN] {
+            let (result, calls, logged) = retry_with(&[errno, libc::ENOSYS]).await;
+            assert_eq!(result.unwrap_err().raw_os_error(), Some(errno));
+            assert_eq!((calls, logged.len()), (1, 0));
+        }
     }
 
     #[test]

@@ -753,7 +753,11 @@ async fn direct_link(
         let props = peripheral.properties().await.map_err(|e| e.to_string())?;
         let props = props.ok_or("its address is unknown")?;
         let random = props.address_type == Some(AddressType::Random);
-        crate::l2cap::connect(props.address.into_inner(), random).await.map_err(|e| e.to_string())
+        let address = props.address.into_inner();
+        let log = |m| drop(tx.send(Back::Log(format!("{id}: {m}"))));
+        crate::l2cap::connect_retrying(|| crate::l2cap::connect(address, random), log)
+            .await
+            .map_err(|e| e.to_string())
     };
     let socket = match socket.await {
         Ok(socket) => socket,

@@ -15,6 +15,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - Scanning stops before connecting, and a failed connect is cancelled so the Joy-Con is not left linked.
 - `--verbose` logs why a connect or service discovery failed.
 - A Joy-Con is named by its model even when BlueZ reports its address as the name.
+- Linux: a connect the Joy-Con fails to establish is tried again at once, up to three times.
 
 ## [0.2.0] - 2026-10-06
 
