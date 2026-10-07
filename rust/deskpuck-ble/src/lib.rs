@@ -4,6 +4,8 @@
 
 pub mod att;
 pub mod controller;
+#[cfg(target_os = "linux")]
+pub mod l2cap;
 pub mod receiver;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};

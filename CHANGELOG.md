@@ -8,6 +8,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 - `deskpuck-tray`, a preview tray app for Linux and Windows, built from source: status, pairing, pause, latched modifiers, and opening or reloading `config.json`.
 - CI builds and tests the Rust workspace on Windows.
+- Linux: a Joy-Con 2 connects over a direct ATT link, since BlueZ cannot resolve its services. No root needed.
 
 ## [0.2.0] - 2026-10-06
 

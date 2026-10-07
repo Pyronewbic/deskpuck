@@ -10,7 +10,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 **`rust/`**: the core, cross-platform.
 - `deskpuck-core`: parses a report into fields (buttons, sticks, optical sensor, IMU), turns reports into output (pointer deltas, mouse buttons, wheel, key events with repeat), keeps the pointer on screen, and reads and writes `config.json` and `pairing.json`.
-- `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. Shared by the app and the `deskpuck-cli` command-line tool.
+- `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. On Linux the link itself is a direct ATT socket (`l2cap.rs`) run by `att.rs`, an ATT client with no I/O that finds the characteristics by UUID. Shared by the app and the `deskpuck-cli` command-line tool.
 - `deskpuck-inject`: turns engine output into events and posts them through a backend per OS: CGEvent, uinput, or SendInput.
 - `deskpuck-ffi`: the C interface the app calls (`include/deskpuck.h`), built as a static library by `scripts/build-rust.sh`. Settings cross it as JSON.
 - `deskpuck-replay`: feeds a built-in demo or a capture file through engine and backend, so the input layer can be tested without Bluetooth.

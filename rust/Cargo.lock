@@ -375,6 +375,7 @@ dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
  "futures",
+ "libc",
  "tempfile",
  "tokio",
  "uuid",
