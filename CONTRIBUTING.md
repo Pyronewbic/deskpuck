@@ -52,11 +52,14 @@ sudo usermod -aG input "$USER"   # then log out and back in
 `deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS and Linux. On Linux, BlueZ never finishes resolving a Joy-Con 2's services, so Deskpuck talks ATT over its own L2CAP socket instead (no root needed). At BlueZ's default connection interval a Joy-Con sends about 21 reports a second; for a smoother pointer, set a shorter default once as root (this applies to every Bluetooth LE device on the machine), then reconnect, since the first connection after the change can still use the old interval. With 15-30 ms the Joy-Con sent about 45 a second:
 
 ```sh
-sudo sed -i.deskpuck-bak -e 's/^#MinConnectionInterval=$/MinConnectionInterval=12/' -e 's/^#MaxConnectionInterval=$/MaxConnectionInterval=24/' /etc/bluetooth/main.conf
+sudo sed -i -e 's/^#MinConnectionInterval=$/MinConnectionInterval=12/' -e 's/^#MaxConnectionInterval=$/MaxConnectionInterval=24/' /etc/bluetooth/main.conf
+grep -E '^(Min|Max)ConnectionInterval=' /etc/bluetooth/main.conf
 sudo systemctl restart bluetooth
 # To undo:
-sudo mv /etc/bluetooth/main.conf.deskpuck-bak /etc/bluetooth/main.conf && sudo systemctl restart bluetooth
+sudo sed -i -e 's/^MinConnectionInterval=12$/#MinConnectionInterval=/' -e 's/^MaxConnectionInterval=24$/#MaxConnectionInterval=/' /etc/bluetooth/main.conf && sudo systemctl restart bluetooth
 ```
+
+The `grep` should print both lines; if it does not, your `main.conf` lacks the commented defaults, so set them by hand under `[LE]`. Running the commands twice changes nothing, and the undo touches only those two lines.
 
 Shorter intervals (7.5-15 ms, about 89 a second) failed to establish a connection several times in testing. Bluetooth has not been run on Windows yet, and the Windows input backend has not been run on Windows.
 
