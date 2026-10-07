@@ -856,7 +856,10 @@ dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
  "eframe",
+ "skrifa",
  "tempfile",
+ "windows",
+ "zbus",
 ]
 
 [[package]]

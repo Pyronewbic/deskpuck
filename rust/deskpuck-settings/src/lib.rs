@@ -1,11 +1,13 @@
 //! The Deskpuck settings window for Linux and Windows: the Mac app's
 //! Settings controls, saved to the same config.json.
 
+pub mod fonts;
 pub mod keys;
 pub mod model;
 pub mod recorder;
 pub mod text;
 pub mod theme;
+pub mod widgets;
 
 use deskpuck_core::config::Config;
 use std::ffi::OsString;

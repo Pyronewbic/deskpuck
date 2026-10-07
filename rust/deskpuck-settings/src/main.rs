@@ -1,12 +1,13 @@
 //! Deskpuck's settings window for Linux and Windows; the tray app opens it.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use deskpuck_core::config::Mapping;
+use deskpuck_core::config::{Appearance, Mapping};
 use deskpuck_settings::config_path;
 use deskpuck_settings::keys::{choices, describe, modifier_label, modifiers};
 use deskpuck_settings::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
 use deskpuck_settings::recorder::{Recorded, clipboard_key, record};
-use deskpuck_settings::{text, theme};
+use deskpuck_settings::widgets::{section, segments, toggle};
+use deskpuck_settings::{fonts, text, theme};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
 use std::ffi::OsString;
 use std::process::ExitCode;
@@ -21,25 +22,57 @@ struct App {
     /// next close goes through.
     close_stopped: bool,
     next_file_check: f64,
+    accent: theme::AccentReader,
+    focused: bool,
+    /// The last height asked of the window system, so it is asked once.
+    asked_height: Option<f32>,
 }
 
 /// How often the window looks for edits made outside it, in seconds.
 const FILE_CHECK: f64 = 1.0;
+/// How soon to look again for a system accent read still in flight, in seconds.
+const ACCENT_POLL: f64 = 0.1;
 
 fn label(mapping: Option<&Mapping>) -> String {
     mapping.map_or_else(|| "None".to_owned(), describe)
 }
 
-/// A slider that leaves a hand-edited value outside its range alone until moved.
-fn slider(
+/// A slider that leaves a hand-edited value outside its range alone until
+/// moved; its value is shown beside it, in a fixed width so sliders line up.
+fn slider_row(
+    ui: &mut egui::Ui,
     value: &mut f64,
     (min, max, step): (f64, f64, f64),
     format: fn(f64) -> String,
-) -> Slider<'_> {
-    Slider::new(value, min..=max)
+) -> bool {
+    let text = format(*value);
+    ui.allocate_ui_with_layout(
+        egui::vec2(VALUE_WIDTH, ui.spacing().interact_size.y),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.set_min_width(VALUE_WIDTH);
+            ui.label(text)
+        },
+    );
+    let slider = Slider::new(value, min..=max)
         .step_by(step)
         .clamping(SliderClamping::Edits)
-        .custom_formatter(move |n, _| format(n))
+        .show_value(false);
+    ui.add(slider).changed()
+}
+
+/// Wide enough for "0.40 s" and "30/s", so every slider ends at the same place.
+const VALUE_WIDTH: f32 = 52.0;
+/// The window's width; the Mac's Settings window is as wide.
+const WIDTH: f32 = 440.0;
+const MARGIN: i8 = 16;
+
+fn to_preference(appearance: Appearance) -> egui::ThemePreference {
+    match appearance {
+        Appearance::System => egui::ThemePreference::System,
+        Appearance::Light => egui::ThemePreference::Light,
+        Appearance::Dark => egui::ThemePreference::Dark,
+    }
 }
 
 impl App {
@@ -78,105 +111,160 @@ impl App {
         }
     }
 
+    /// A button's menu: the keys and modifier buttons, the modifiers held
+    /// with a key (including Super/Windows, which recording cannot catch),
+    /// and Record Shortcut....
+    fn button_picker(&mut self, ui: &mut egui::Ui, id: &'static str, now: f64) {
+        let current = self.model.mapping(id);
+        // Keeps a recorded shortcut or hand-edited key selectable instead of "None".
+        let mut options = choices();
+        if !options.contains(&current) {
+            options.push(current);
+        }
+        let (mut picked, mut start_recording, mut toggled) = (None, false, None);
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(label(current.as_ref()))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show_ui(ui, |ui| {
+                for option in &options {
+                    if ui.selectable_label(*option == current, label(option.as_ref())).clicked() {
+                        picked = Some(*option);
+                        ui.close();
+                    }
+                }
+                if let Some(Mapping::Shortcut(shortcut)) = current {
+                    ui.separator();
+                    ui.label(RichText::new("Hold with the key").small().weak());
+                    let all: Vec<_> = modifiers().collect();
+                    let names: Vec<_> = all.iter().map(|m| modifier_label(*m)).collect();
+                    let on = |i: usize| shortcut.modifiers.contains(all[i]);
+                    toggled = segments(ui, (id, "modifiers"), &names, on).map(|i| all[i]);
+                }
+                ui.separator();
+                if ui.selectable_label(false, "Record Shortcut...").clicked() {
+                    start_recording = true;
+                    ui.close();
+                }
+            });
+        if let Some(modifier) = toggled {
+            self.model.toggle_modifier(id, modifier, now);
+        }
+        if let Some(mapping) = picked.filter(|m| *m != current) {
+            self.model.set_mapping(id, mapping, now);
+        }
+        if start_recording {
+            self.model.recording = Some(id);
+        }
+    }
+
     fn buttons(&mut self, ui: &mut egui::Ui, now: f64) {
-        ui.heading("Buttons");
-        egui::Grid::new("buttons").num_columns(2).spacing([16.0, 6.0]).show(ui, |ui| {
+        section(ui, "Buttons", |card| {
             for row in RIGHT_JOYCON {
-                ui.label(row.label);
-                if self.model.recording == Some(row.id) {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new("Press a shortcut (Esc cancels; add Super after)").weak(),
-                        );
+                card.row(row.label, |ui| {
+                    if self.model.recording == Some(row.id) {
                         if ui.button("Cancel").clicked() {
                             self.model.recording = None;
                         }
-                    });
-                } else {
-                    let current = self.model.mapping(row.id);
-                    // Keeps a recorded shortcut or hand-edited key selectable instead of "None".
-                    let mut options = choices();
-                    if !options.contains(&current) {
-                        options.push(current);
+                        ui.label(RichText::new("Press a shortcut (Esc cancels)").weak());
+                    } else {
+                        self.button_picker(ui, row.id, now);
                     }
-                    let (mut picked, mut start_recording, mut toggled) = (None, false, None);
-                    ui.horizontal(|ui| {
-                        egui::ComboBox::from_id_salt(row.id)
-                            .selected_text(label(current.as_ref()))
-                            .width(200.0)
-                            .show_ui(ui, |ui| {
-                                for option in &options {
-                                    let text = label(option.as_ref());
-                                    if ui.selectable_label(*option == current, text).clicked() {
-                                        picked = Some(*option);
-                                    }
-                                }
-                                ui.separator();
-                                start_recording =
-                                    ui.selectable_label(false, "Record Shortcut...").clicked();
-                            });
-                        // The modifiers held with a key, including Super, which
-                        // the recorder cannot see.
-                        if let Some(Mapping::Shortcut(shortcut)) = current {
-                            for modifier in modifiers() {
-                                let on = shortcut.modifiers.contains(modifier);
-                                let text = RichText::new(modifier_label(modifier)).small();
-                                if ui.selectable_label(on, text).clicked() {
-                                    toggled = Some(modifier);
-                                }
-                            }
-                        }
-                    });
-                    if let Some(modifier) = toggled {
-                        self.model.toggle_modifier(row.id, modifier, now);
-                    }
-                    if let Some(mapping) = picked.filter(|m| *m != current) {
-                        self.model.set_mapping(row.id, mapping, now);
-                    }
-                    if start_recording {
-                        self.model.recording = Some(row.id);
-                    }
-                }
-                ui.end_row();
+                });
             }
             for (button, action) in [("R", "Left click"), ("ZR", "Right click")] {
-                ui.label(button);
-                ui.label(RichText::new(action).weak());
-                ui.end_row();
+                card.row(button, |ui| ui.label(RichText::new(action).weak()));
             }
         });
     }
 
-    fn sliders(&mut self, ui: &mut egui::Ui, now: f64) {
+    fn controls(&mut self, ui: &mut egui::Ui, now: f64) {
         let values = &mut self.model.values;
         let mut changed = false;
-        ui.heading("Mouse");
-        egui::Grid::new("mouse").num_columns(2).spacing([16.0, 6.0]).show(ui, |ui| {
-            ui.label("Pointer speed");
-            let speed = slider(&mut values.config.pointer_speed, SPEED_RANGE, text::speed);
-            changed |= ui.add(speed).changed();
-            ui.end_row();
-        });
-        changed |=
-            ui.checkbox(&mut values.config.scroll_enabled, "Scroll with the stick").changed();
-
-        ui.add_space(12.0);
-        ui.heading("Key repeat");
-        changed |= ui.checkbox(&mut values.repeat_enabled, "Repeat keys while held").changed();
-        if values.repeat_enabled {
-            egui::Grid::new("repeat").num_columns(2).spacing([16.0, 6.0]).show(ui, |ui| {
-                ui.label("Delay before repeating");
-                let delay = slider(&mut values.config.repeat_delay, DELAY_RANGE, text::delay);
-                changed |= ui.add(delay).changed();
-                ui.end_row();
-                ui.label("Repeat speed");
-                let rate = slider(&mut values.repeat_rate, RATE_RANGE, text::rate);
-                changed |= ui.add(rate).changed();
-                ui.end_row();
+        section(ui, "Mouse", |card| {
+            changed |= card.row("Pointer speed", |ui| {
+                slider_row(ui, &mut values.config.pointer_speed, SPEED_RANGE, text::speed)
             });
-        }
+            changed |= card.row("Scroll with the stick", |ui| {
+                toggle(ui, &mut values.config.scroll_enabled, "Scroll with the stick").changed()
+            });
+        });
+        section(ui, "Key repeat", |card| {
+            changed |= card.row("Repeat keys while held", |ui| {
+                toggle(ui, &mut values.repeat_enabled, "Repeat keys while held").changed()
+            });
+            if values.repeat_enabled {
+                changed |= card.row("Delay before repeating", |ui| {
+                    slider_row(ui, &mut values.config.repeat_delay, DELAY_RANGE, text::delay)
+                });
+                changed |= card.row("Repeat speed", |ui| {
+                    slider_row(ui, &mut values.repeat_rate, RATE_RANGE, text::rate)
+                });
+            }
+        });
+        section(ui, "Appearance", |card| {
+            card.row("Theme", |ui| {
+                let all = Appearance::ALL;
+                let current = values.config.appearance;
+                if let Some(i) =
+                    segments(ui, "appearance", &["System", "Light", "Dark"], |i| all[i] == current)
+                    && all[i] != current
+                {
+                    values.config.appearance = all[i];
+                    changed = true;
+                }
+            });
+        });
         if changed {
             self.model.edited(now);
+        }
+    }
+
+    fn problems(&self, ui: &mut egui::Ui) {
+        if !self.model.load_warnings.is_empty() {
+            ui.label(
+                RichText::new("Your settings file had problems; defaults were used for these")
+                    .strong(),
+            );
+            for warning in &self.model.load_warnings {
+                ui.colored_label(ui.visuals().warn_fg_color, warning);
+            }
+            if self.model.backs_up() {
+                ui.label("Your first change keeps a copy of the file as config.json.bak.");
+            }
+            ui.add_space(12.0);
+        }
+        if let Some(notice) = &self.model.notice {
+            ui.colored_label(ui.visuals().warn_fg_color, notice);
+            ui.add_space(12.0);
+        }
+    }
+
+    /// Fits the window to its content, as the Mac's Settings window does;
+    /// taller than the screen allows, it scrolls instead.
+    fn fit_height(&mut self, ui: &egui::Ui, content: f32) {
+        let (inner, outer, monitor) = ui.input(|i| {
+            let viewport = i.viewport();
+            (viewport.inner_rect, viewport.outer_rect, viewport.monitor_size)
+        });
+        // Leaves room for a taskbar or panel, which the monitor size includes.
+        let limit = monitor.map_or(f32::INFINITY, |m| m.y * 0.85);
+        let wanted = (content + 2.0 * f32::from(MARGIN)).min(limit).round();
+        let current = inner.map(|r| r.height().round());
+        if current == Some(wanted) || self.asked_height == Some(wanted) {
+            return;
+        }
+        let first = self.asked_height.is_none();
+        self.asked_height = Some(wanted);
+        let ctx = ui.ctx();
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
+        // The window opened centred at its first guess; centre it again at its real height.
+        if first && let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
+            let frame = outer.height() - inner.height();
+            let top = ((monitor.y - wanted - frame) / 2.0).max(0.0);
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                outer.min.x,
+                top,
+            )));
         }
     }
 }
@@ -184,43 +272,44 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = self.start.elapsed().as_secs_f64();
+        // Coming back to the window after changing the system accent picks it up.
+        let focused = ui.input(|i| i.focused);
+        if focused && !self.focused {
+            self.accent.refresh();
+        }
+        self.focused = focused;
+        if let Some(accent) = self.accent.poll() {
+            theme::apply(ui.ctx(), accent);
+        }
+        let preference = to_preference(self.model.values.config.appearance);
+        if ui.ctx().options(|o| o.theme_preference) != preference {
+            ui.ctx().set_theme(preference);
+        }
         self.record_keys(ui, now);
-        egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                if !self.model.load_warnings.is_empty() {
-                    ui.label(
-                        RichText::new(
-                            "Your settings file had problems; defaults were used for these",
-                        )
-                        .strong(),
-                    );
-                    for warning in &self.model.load_warnings {
-                        ui.colored_label(ui.visuals().warn_fg_color, warning);
-                    }
-                    if self.model.backs_up() {
-                        ui.label("Your first change keeps a copy of the file as config.json.bak.");
-                    }
-                    ui.add_space(12.0);
-                }
-                if let Some(notice) = &self.model.notice {
-                    ui.colored_label(ui.visuals().warn_fg_color, notice);
-                    ui.add_space(12.0);
-                }
-                self.buttons(ui, now);
-                ui.add_space(12.0);
-                self.sliders(ui, now);
-                ui.add_space(16.0);
-                // Error on the left, Restore Defaults on the right, as on the Mac.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Restore Defaults").clicked() {
-                        self.model.restore_defaults(now);
-                    }
-                    if let Some(error) = &self.model.save_error {
-                        ui.colored_label(ui.visuals().error_fg_color, error);
-                    }
-                });
-            });
-        });
+        let frame = egui::Frame::central_panel(ui.style()).inner_margin(MARGIN);
+        let content = egui::CentralPanel::default()
+            .frame(frame)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .show(ui, |ui| {
+                        self.problems(ui);
+                        self.buttons(ui, now);
+                        self.controls(ui, now);
+                        // Error on the left, Restore Defaults on the right, as on the Mac.
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Restore Defaults").clicked() {
+                                self.model.restore_defaults(now);
+                            }
+                            if let Some(error) = &self.model.save_error {
+                                ui.colored_label(ui.visuals().error_fg_color, error);
+                            }
+                        });
+                    })
+                    .content_size
+                    .y
+            })
+            .inner;
+        self.fit_height(ui, content);
         if now >= self.next_file_check {
             self.next_file_check = now + FILE_CHECK;
             self.model.check_file();
@@ -235,7 +324,10 @@ impl eframe::App for App {
             self.close_stopped = true;
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
-        let wait = self.model.save_due_in(now).unwrap_or(FILE_CHECK).min(FILE_CHECK);
+        let mut wait = self.model.save_due_in(now).unwrap_or(FILE_CHECK).min(FILE_CHECK);
+        if self.accent.reading() {
+            wait = wait.min(ACCENT_POLL);
+        }
         ui.ctx().request_repaint_after(Duration::from_secs_f64(wait));
     }
 
@@ -255,17 +347,24 @@ fn main() -> ExitCode {
         start: Instant::now(),
         close_stopped: false,
         next_file_check: FILE_CHECK,
+        accent: theme::AccentReader::default(),
+        focused: false,
+        asked_height: None,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Deskpuck Settings")
             .with_app_id("deskpuck-settings")
-            .with_inner_size([470.0, 680.0])
-            .with_min_inner_size([380.0, 320.0]),
+            .with_inner_size([WIDTH, 720.0])
+            .with_min_inner_size([WIDTH, 240.0])
+            .with_max_inner_size([WIDTH, f32::INFINITY]),
+        // Fitted to its content, it is tall; centred, it clears taskbars and panels.
+        centered: true,
         ..Default::default()
     };
     let creator = Box::new(|cc: &eframe::CreationContext| {
-        theme::apply(&cc.egui_ctx);
+        fonts::install(&cc.egui_ctx);
+        theme::apply(&cc.egui_ctx, theme::Accent::BRAND);
         Ok(Box::new(app) as Box<dyn eframe::App>)
     });
     match eframe::run_native("Deskpuck Settings", options, creator) {
