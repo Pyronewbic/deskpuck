@@ -1,7 +1,7 @@
 //! One tray at a time: a lock on a file in the settings folder, which the
 //! system releases however the program ends, crash included.
 
-use std::fs::{File, OpenOptions, TryLockError};
+use std::fs::{File, TryLockError};
 use std::path::Path;
 
 pub enum Instance {
@@ -15,12 +15,8 @@ pub fn claim(path: &Path) -> Result<Instance, String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(path)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let file =
+        deskpuck_core::files::open_lock(path).map_err(|e| format!("{}: {e}", path.display()))?;
     match file.try_lock() {
         Ok(()) => Ok(Instance::Only(file)),
         Err(TryLockError::WouldBlock) => Ok(Instance::Running),
@@ -49,5 +45,17 @@ mod tests {
         let blocker = dir.path().join("file");
         std::fs::write(&blocker, "").unwrap();
         assert!(claim(&blocker.join("deskpuck.lock")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_at_the_lock_path_is_an_error_and_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("elsewhere");
+        std::fs::write(&target, "keep").unwrap();
+        let link = dir.path().join("deskpuck.lock");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(claim(&link).is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
     }
 }
