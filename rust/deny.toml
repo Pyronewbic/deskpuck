@@ -13,9 +13,18 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-# Public-domain dedication; scoped to the one crate that needs it (the
-# Linux tray backend) rather than allowed everywhere.
-exceptions = [{ crate = "ksni", allow = ["Unlicense"] }]
+# Each scoped to the crate that needs it rather than allowed everywhere:
+# ksni is the Linux tray backend; the rest come with the settings window's
+# egui: its Windows clipboard (clipboard-win, error-code), library loading
+# for Wayland and OpenGL (libloading) and bundled fonts
+# (epaint_default_fonts, whose font licences ship with any binary release).
+exceptions = [
+    { crate = "ksni", allow = ["Unlicense"] },
+    { crate = "clipboard-win", allow = ["BSL-1.0"] },
+    { crate = "error-code", allow = ["BSL-1.0"] },
+    { crate = "libloading", allow = ["ISC"] },
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
 
 [bans]
 multiple-versions = "allow"
