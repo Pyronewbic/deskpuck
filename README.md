@@ -73,9 +73,15 @@ To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces th
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). How the code is laid out: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Credits
+## Acknowledgements
 
-Based on [seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac) (MIT). Bluetooth protocol details from [ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research).
+Deskpuck learned a great deal from the following projects.
+
+[seitanmen/Joycon2forMac](https://github.com/seitanmen/Joycon2forMac)
+
+[ndeadly/switch2_controller_research](https://github.com/ndeadly/switch2_controller_research)
+
+We thank the authors for their work on the Joy-Con 2 Bluetooth protocol.
 
 Deskpuck is not affiliated with or endorsed by Nintendo. Nintendo Switch and Joy-Con are trademarks of Nintendo.
 
