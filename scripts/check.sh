@@ -35,6 +35,10 @@ tests_ran=$?
 (cd rust && cargo test --doc --locked --quiet) || fail "doctests"
 endgroup
 
+group "Linux installer"
+packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
+endgroup
+
 group "Every test file ran"
 scripts/check-tests-ran.test.sh || fail "check-tests-ran.sh self-test"
 if [ $tests_ran -ne 0 ] && [ ! -f "$report" ]; then
