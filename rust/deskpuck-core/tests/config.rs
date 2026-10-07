@@ -254,6 +254,61 @@ fn file_loading() {
     assert!(c.pointer_speed == 3.0 && w.is_empty(), "{w:?}");
 }
 
+#[test]
+fn try_load_tells_an_unusable_file_from_one_with_bad_settings() {
+    let dir = temp_dir();
+    let write = |name: &str, json: &str| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, json).expect("write");
+        path
+    };
+    // The whole file cannot be used: an error, never the defaults.
+    for (name, json, why) in [
+        ("empty.json", "", "not valid JSON"),
+        ("broken.json", r#"{"version": 1,"#, "not valid JSON"),
+        ("list.json", "[1]", "not a JSON object"),
+        ("future.json", r#"{"version": 2}"#, "version"),
+    ] {
+        let problem = Config::try_load(&write(name, json)).unwrap_err();
+        assert!(problem.contains(why), "{name}: {problem}");
+        let (c, w) = Config::load(&dir.path().join(name));
+        assert!(c == Config::default() && w == [format!("{problem}; using defaults.")], "{w:?}");
+    }
+    assert!(Config::try_load(dir.path()).is_err(), "a directory");
+
+    // One bad setting is a warning; the rest of the file still applies.
+    let (c, w) = Config::try_load(&write(
+        "partly.json",
+        r#"{"version": 1, "pointerSpeed": 3, "repeatDelay": "x"}"#,
+    ))
+    .expect("usable");
+    assert!(c.pointer_speed == 3.0 && warned(&w, "repeatDelay"), "{w:?}");
+
+    // A missing file is the defaults, silently, as with load.
+    assert_eq!(
+        Config::try_load(&dir.path().join("none.json")),
+        Ok((Config::default(), Vec::new()))
+    );
+}
+
+#[test]
+fn back_up_copies_the_file_beside_it() {
+    let dir = temp_dir();
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, b"{not json").expect("write");
+    let backup = Config::back_up(&path).expect("backed up");
+    assert_eq!(backup, dir.path().join("config.json.bak"));
+    assert_eq!(std::fs::read(&backup).expect("read"), b"{not json");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&backup).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "owner-only, like the config");
+    }
+    let missing = Config::back_up(&dir.path().join("none.json")).unwrap_err();
+    assert!(missing.contains("does not exist"), "{missing}");
+}
+
 #[cfg(unix)]
 #[test]
 fn fifo_refused_without_blocking() {
