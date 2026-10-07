@@ -356,6 +356,8 @@ fn only_the_notify_value_becomes_a_report() {
     let mut client = client();
     client.discover(0.0);
     exchange(&mut client, &mut server, 0.0);
+    client.subscribe(0.5);
+    exchange(&mut client, &mut server, 0.5);
     let report: Vec<u8> = (0..63).collect();
     let notification = [vec![0x1B, 0x0A, 0x00], report.clone()].concat();
     assert_eq!(client.receive(&notification, 1.0), [Event::Notification(report.clone())]);
@@ -574,4 +576,33 @@ fn a_value_handle_must_follow_its_declaration() {
         assert_eq!(discovered(&events), [(false, false)], "value 0x{value:04X}");
         assert_eq!(client.handles().notify, None, "value 0x{value:04X}");
     }
+}
+
+#[test]
+fn nothing_is_reported_until_notifications_are_enabled() {
+    let mut server = FakeJoyCon::real();
+    let mut client = client();
+    client.discover(0.0);
+    exchange(&mut client, &mut server, 0.0);
+    let notification = [0x1B, 0x0A, 0x00, 1, 2, 3];
+    assert!(client.receive(&notification, 1.0).is_empty());
+    assert!(client.receive(&[0x1D, 0x0A, 0x00, 1, 2, 3], 1.0).is_empty());
+    assert_eq!(client.take_outgoing(), [vec![0x1E]], "an indication is still confirmed");
+    client.subscribe(1.5);
+    assert_eq!(client.receive(&notification, 2.0), [Event::Notification(vec![1, 2, 3])]);
+}
+
+#[test]
+fn a_device_without_the_descriptor_never_streams() {
+    // Only the notify characteristic, no descriptor and no write characteristic.
+    let mut server = FakeJoyCon::real();
+    server.attrs.retain(|(h, _)| !matches!(*h, 0x000B | 0x0013 | 0x0014));
+    let mut client = client();
+    client.discover(0.0);
+    let events = exchange(&mut client, &mut server, 0.0);
+    assert_eq!(discovered(&events), [(false, false)]);
+    assert_eq!(client.handles().notify, Some(0x000A), "control: the value handle is known");
+    assert_eq!(client.subscribe(1.0).len(), 1, "refused and logged");
+    assert!(client.receive(&[0x1B, 0x0A, 0x00, 1, 2, 3], 2.0).is_empty());
+    assert!(client.receive(&[0x1D, 0x0A, 0x00, 1, 2, 3], 2.0).is_empty());
 }

@@ -133,6 +133,8 @@ struct Link<Id> {
     resubscribe_at: Option<f64>,
     /// Accepted by a pairing window and not yet confirmed as a Joy-Con.
     pairing: bool,
+    /// Both characteristics were found; until then no report becomes input.
+    confirmed: bool,
 }
 
 #[derive(Debug)]
@@ -374,6 +376,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     pending_writes: Vec::new(),
                     resubscribe_at: None,
                     pairing,
+                    confirmed: false,
                 });
                 Self::status(&mut out, Status::Connected, name);
                 out.push(Output::DiscoverServices(id));
@@ -404,6 +407,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     return out;
                 }
                 // Both characteristics make it a Joy-Con 2, so a pairing link is confirmed.
+                link.confirmed = true;
                 if link.pairing {
                     link.pairing = false;
                     self.pairing_until = None;
@@ -430,7 +434,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 }
             }
             Input::Notification { id, data } => {
-                let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
+                let Some(link) = self.link.as_mut().filter(|l| l.id == id && l.confirmed) else {
+                    return out;
+                };
                 // Short reports are dropped without counting as data.
                 if data.len() < REPORT_MIN_SIZE {
                     return out;

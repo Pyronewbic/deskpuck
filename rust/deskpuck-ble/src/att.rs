@@ -93,6 +93,9 @@ pub struct Client {
     notify_declaration: Option<Declaration>,
     next_declaration: Option<u16>,
     failed: Option<String>,
+    /// Values are passed on only once notifications were asked for, as a
+    /// GATT stack would, so a device that never passed discovery sends nothing.
+    subscribed: bool,
 }
 
 impl Client {
@@ -110,6 +113,7 @@ impl Client {
             notify_declaration: None,
             next_declaration: None,
             failed: None,
+            subscribed: false,
         }
     }
 
@@ -157,6 +161,7 @@ impl Client {
         pdu.extend(cccd.to_le_bytes());
         pdu.extend(1u16.to_le_bytes());
         self.request(pdu, now);
+        self.subscribed = true;
         Vec::new()
     }
 
@@ -198,7 +203,7 @@ impl Client {
                 if opcode == HANDLE_VALUE_INDICATION {
                     self.outgoing.push(vec![HANDLE_VALUE_CONFIRMATION]);
                 }
-                if pdu.len() >= 3 && Some(le16(pdu, 1)) == self.handles.notify {
+                if self.subscribed && pdu.len() >= 3 && Some(le16(pdu, 1)) == self.handles.notify {
                     events.push(Event::Notification(pdu[3..].to_vec()));
                 }
             }
