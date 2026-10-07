@@ -10,7 +10,9 @@ mod hook;
 mod icon;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod instance;
-
+// The autostart file is Linux's; Windows uses only the registry half.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod login;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod model;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]

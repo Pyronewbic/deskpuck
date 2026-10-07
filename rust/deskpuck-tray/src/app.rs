@@ -59,6 +59,7 @@ struct Items {
     settings: MenuItem,
     open_settings: MenuItem,
     reload: MenuItem,
+    login: CheckMenuItem,
     quit: MenuItem,
 }
 
@@ -87,6 +88,7 @@ pub fn run() -> ExitCode {
         },
         None => None,
     };
+    let program = std::env::current_exe().ok();
     let (tx, rx) = mpsc::channel();
     let wake = Wake {
         tx,
@@ -97,6 +99,7 @@ pub fn run() -> ExitCode {
     let mut model = Model::default();
 
     let (menu, items) = build_menu();
+    items.login.set_checked(program.as_deref().is_some_and(crate::login::is_on));
     let tray = match TrayIconBuilder::new()
         .with_title("Deskpuck")
         .with_menu(Box::new(menu.clone()))
@@ -195,6 +198,16 @@ pub fn run() -> ExitCode {
                     if id == *items.quit.id() {
                         break 'run;
                     }
+                    if id == *items.login.id() {
+                        if let Some(program) = program.as_deref() {
+                            let want = !crate::login::is_on(program);
+                            if let Err(problem) = crate::login::set(program, want) {
+                                model.note(problem);
+                            }
+                            items.login.set_checked(crate::login::is_on(program));
+                        }
+                        continue;
+                    }
                     if id == *items.settings.id() {
                         if let Err(problem) = open_own_window(config_path.as_deref(), &mut window) {
                             model.note(problem);
@@ -283,6 +296,7 @@ fn build_menu() -> (Menu, Items) {
         settings: MenuItem::new("Settings...", true, None),
         open_settings: MenuItem::new("Open Settings File", true, None),
         reload: MenuItem::new("Reload Settings", true, None),
+        login: CheckMenuItem::new("Start at Login", true, false, None),
         quit: MenuItem::new("Quit Deskpuck", true, None),
     };
     let version = disabled(&format!("Deskpuck {}", env!("CARGO_PKG_VERSION")));
@@ -295,6 +309,7 @@ fn build_menu() -> (Menu, Items) {
         &items.settings,
         &items.open_settings,
         &items.reload,
+        &items.login,
         &PredefinedMenuItem::separator(),
         &version,
         &items.quit,

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Combine
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -81,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         menu.addItem(.separator())
         menu.addItem(item("Settings...", action: #selector(showSettings), key: ","))
+        let login = item("Start at Login", action: #selector(toggleStartAtLogin))
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
         menu.addItem(.separator())
         let version = NSMenuItem(title: versionText(), action: nil, keyEquivalent: "")
         version.isEnabled = false
@@ -187,6 +191,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func togglePause() {
         controller.isPaused.toggle()
         updateIcon()
+    }
+
+    @objc private func toggleStartAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not change Start at Login"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        // macOS can hold a new login item until it is allowed in System Settings.
+        if service.status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+        }
     }
 
     @objc private func showSettings() {

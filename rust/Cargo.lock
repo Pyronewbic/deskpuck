@@ -871,6 +871,7 @@ dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
  "deskpuck-settings",
+ "dirs",
  "embed-resource",
  "png",
  "tempfile",

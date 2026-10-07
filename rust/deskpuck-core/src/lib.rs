@@ -3,7 +3,7 @@
 
 pub mod config;
 pub mod engine;
-mod files;
+pub mod files;
 pub mod mapping;
 pub mod packet;
 pub mod pairing;

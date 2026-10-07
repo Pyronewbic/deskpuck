@@ -7,7 +7,7 @@ use std::path::Path;
 
 /// `Ok(None)` if the file does not exist. Reads at most `cap` bytes and
 /// refuses anything but a regular file. `Err` is a phrase to follow the path.
-pub(crate) fn read_capped(path: &Path, cap: u64) -> Result<Option<Vec<u8>>, String> {
+pub fn read_capped(path: &Path, cap: u64) -> Result<Option<Vec<u8>>, String> {
     let mut options = OpenOptions::new();
     options.read(true);
     // O_NONBLOCK: opening a FIFO must not hang; it is rejected below.
@@ -35,7 +35,7 @@ pub(crate) fn read_capped(path: &Path, cap: u64) -> Result<Option<Vec<u8>>, Stri
 
 /// Writes a temp file beside `path` (owner-only) and renames it over the
 /// target, so a symlink at `path` is replaced, never written through.
-pub(crate) fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
+pub fn write_private(path: &Path, data: &[u8]) -> io::Result<()> {
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);

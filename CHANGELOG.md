@@ -10,6 +10,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - A settings window for Linux and Windows with the Mac app's controls, opened from the tray's Settings... item or a left click (`deskpuck --settings`); the tray applies changes to `config.json` as soon as the file changes.
 - CI builds and tests the Rust workspace on Windows.
 - Linux: a Joy-Con 2 connects over a direct ATT link, since BlueZ cannot resolve its services. No root needed.
+- **Start at Login** in the menu on every platform: a login item on macOS, an autostart entry on Linux and a per-user Run entry on Windows.
 - A Theme setting (System, Light or Dark) for the settings window, on every platform; `appearance` in `config.json`.
 - The Linux and Windows settings window is laid out like the Mac's, in titled cards with switches and a fixed-width value beside each slider, sized to fit its content. It uses the system UI font (Segoe UI on Windows, fontconfig's sans-serif on Linux) and the system accent colour, on Linux where the desktop portal shares one.
 - Settings uses the system accent colour on the Mac too.
