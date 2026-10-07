@@ -1,0 +1,18 @@
+[package]
+name = "deskpuck-settings"
+description = "Settings window for Deskpuck on Linux and Windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+deskpuck-core = { path = "../deskpuck-core" }
+deskpuck-inject = { path = "../deskpuck-inject" }
+eframe = { version = "0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

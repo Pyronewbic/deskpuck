@@ -13,6 +13,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 - `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. On Linux the link itself is a direct ATT socket (`l2cap.rs`) run by `att.rs`, an ATT client with no I/O that finds the characteristics by UUID. Shared by the app and the `deskpuck-cli` command-line tool.
 - `deskpuck-inject`: turns engine output into events and posts them through a backend per OS: CGEvent, uinput, or SendInput.
 - `deskpuck-ffi`: the C interface the app calls (`include/deskpuck.h`), built as a static library by `scripts/build-rust.sh`. Settings cross it as JSON.
+- `deskpuck-settings`: the settings window for Linux and Windows (egui), opened by `deskpuck-tray`. Its state lives in `model.rs`, with no UI types, and is saved through `deskpuck-core`; the tray reloads `config.json` when the file changes.
 - `deskpuck-replay`: feeds a built-in demo or a capture file through engine and backend, so the input layer can be tested without Bluetooth.
 
 **`Sources/Deskpuck/`**: the menu bar app (Swift, AppKit and SwiftUI): status menu, Settings window, menu bar glyph. `Core.swift` wraps the C interface; `Sources/DeskpuckFFI/` is its module map.

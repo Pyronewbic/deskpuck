@@ -19,6 +19,8 @@ pub struct Model {
     pairing_ends: Option<f64>,
     latched: Modifiers,
     note: Option<String>,
+    /// The note came from loading config.json, so a clean load clears it.
+    note_from_settings: bool,
     failure: Option<String>,
     host: bool,
 }
@@ -33,6 +35,7 @@ impl Default for Model {
             pairing_ends: None,
             latched: Modifiers::NONE,
             note: None,
+            note_from_settings: false,
             failure: None,
             host: false,
         }
@@ -52,6 +55,7 @@ impl Model {
         }
         if status == LinkStatus::Connected {
             self.note = None;
+            self.note_from_settings = false;
         }
     }
 
@@ -90,6 +94,23 @@ impl Model {
     /// event, a settings warning.
     pub fn note(&mut self, message: impl Into<String>) {
         self.note = Some(message.into());
+        self.note_from_settings = false;
+    }
+
+    /// The settings file's state after a load: a problem replaces the note,
+    /// and a clean load clears a note that came from the file, nothing else.
+    pub fn settings_note(&mut self, note: Option<String>) {
+        match note {
+            Some(note) => {
+                self.note = Some(note);
+                self.note_from_settings = true;
+            }
+            None if self.note_from_settings => {
+                self.note = None;
+                self.note_from_settings = false;
+            }
+            None => {}
+        }
     }
 
     /// Whether something is showing the icon. Without it nobody could see the
@@ -110,11 +131,6 @@ impl Model {
 
     pub fn failed(&self) -> bool {
         self.failure.is_some()
-    }
-
-    /// Only a running countdown needs the menu redrawn every second.
-    pub fn needs_tick(&self) -> bool {
-        self.pairing_ends.is_some() && self.status == LinkStatus::Pairing && !self.paused
     }
 
     pub fn connected(&self) -> bool {
@@ -216,6 +232,28 @@ mod tests {
     }
 
     #[test]
+    fn a_clean_settings_load_clears_only_its_own_note() {
+        let mut model = shown();
+        model.settings_note(Some("Settings: not valid JSON".into()));
+        assert_eq!(model.note_text(), Some("Settings: not valid JSON"));
+        model.settings_note(None);
+        assert_eq!(model.note_text(), None, "fixed file, note gone");
+
+        model.note("Cannot post input: denied");
+        model.settings_note(None);
+        assert_eq!(model.note_text(), Some("Cannot post input: denied"), "not a settings note");
+
+        model.settings_note(Some("Settings: bad".into()));
+        model.note("Cannot post input: denied");
+        model.settings_note(None);
+        assert_eq!(
+            model.note_text(),
+            Some("Cannot post input: denied"),
+            "replaced by another note"
+        );
+    }
+
+    #[test]
     fn nothing_is_offered_until_a_tray_shows_the_icon() {
         let mut model = Model::default();
         assert_eq!(model.status_text(0.0), WAITING);
@@ -235,7 +273,6 @@ mod tests {
         assert_eq!(model.status_text(10.0), "Pairing: hold SYNC on the Joy-Con (60 s left)");
         assert_eq!(model.status_text(69.6), "Pairing: hold SYNC on the Joy-Con (0 s left)");
         assert_eq!(model.status_text(500.0), "Pairing: hold SYNC on the Joy-Con (0 s left)");
-        assert!(model.needs_tick());
     }
 
     #[test]
@@ -246,7 +283,6 @@ mod tests {
         model.status(LinkStatus::Connecting, Some("Joy-Con 2 (R)".into()));
         assert!(model.pairing(), "a pairing Joy-Con connects before it is paired");
         assert_eq!(model.pair_label(), CANCEL_PAIRING);
-        assert!(!model.needs_tick(), "no countdown once a Joy-Con is connecting");
 
         model.status(LinkStatus::Connected, Some("Joy-Con 2 (R)".into()));
         assert!(!model.pairing());
@@ -272,7 +308,6 @@ mod tests {
         model.set_paused(true);
         assert!(model.pair_enabled(), "cancel stays available while paused");
         assert_eq!(model.status_text(0.0), "Pairing paused");
-        assert!(!model.needs_tick());
         model.cancel_pairing();
         assert_eq!(model.pair_label(), PAIR);
     }

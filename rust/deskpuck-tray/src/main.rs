@@ -9,6 +9,10 @@ mod hook;
 mod icon;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod model;
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+mod reload;
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+mod watch;
 
 #[cfg(any(target_os = "linux", windows))]
 fn main() -> std::process::ExitCode {

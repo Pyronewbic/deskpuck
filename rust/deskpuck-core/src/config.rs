@@ -173,29 +173,40 @@ impl Config {
     }
 
     pub fn from_json(bytes: &[u8]) -> (Config, Vec<String>) {
+        Self::try_from_json(bytes).unwrap_or_else(Self::fallback)
+    }
+
+    /// The defaults, with why the whole file was not used.
+    fn fallback(problem: String) -> (Config, Vec<String>) {
+        (Config::default(), vec![format!("{problem}; using defaults.")])
+    }
+
+    /// Like `from_json`, but a file that cannot be used at all (not JSON, not
+    /// an object, wrong version) is an error rather than the defaults.
+    /// Problems with single settings are warnings, as in `from_json`.
+    pub fn try_from_json(bytes: &[u8]) -> Result<(Config, Vec<String>), String> {
+        let value = serde_json::from_slice::<Value>(bytes)
+            .map_err(|e| format!("Config is not valid JSON ({e})"))?;
         let mut warnings = Vec::new();
-        let config = match serde_json::from_slice::<Value>(bytes) {
-            Ok(value) => Self::from_value(&value, &mut warnings),
-            Err(e) => {
-                warnings.push(format!("Config is not valid JSON ({e}); using defaults."));
-                Config::default()
-            }
-        };
-        (config, warnings)
+        let config = Self::try_from_value(&value, &mut warnings)?;
+        Ok((config, warnings))
     }
 
     fn from_value(value: &Value, warnings: &mut Vec<String>) -> Config {
+        Self::try_from_value(value, warnings).unwrap_or_else(|problem| {
+            warnings.push(format!("{problem}; using defaults."));
+            Config::default()
+        })
+    }
+
+    fn try_from_value(value: &Value, warnings: &mut Vec<String>) -> Result<Config, String> {
         let mut config = Config::default();
         let Some(dict) = value.as_object() else {
-            warnings.push("Config is not a JSON object; using defaults.".to_owned());
-            return config;
+            return Err("Config is not a JSON object".to_owned());
         };
 
         if dict.get(VERSION).and_then(read_number) != Some(CONFIG_VERSION) {
-            warnings.push(
-                "Config version is missing or unsupported (expected 1); using defaults.".to_owned(),
-            );
-            return config;
+            return Err("Config version is missing or unsupported (expected 1)".to_owned());
         }
 
         let mut keys: Vec<&String> = dict.keys().collect();
@@ -236,19 +247,37 @@ impl Config {
             Some(Value::Bool(enabled)) => config.scroll_enabled = *enabled,
             Some(_) => warnings.push("scrollEnabled must be true or false; using true.".to_owned()),
         }
-        config
+        Ok(config)
     }
 
     /// A missing file gives the defaults without a warning. Reads at most
     /// `MAX_CONFIG_BYTES` and refuses anything but a regular file.
     pub fn load(path: &Path) -> (Config, Vec<String>) {
+        Self::try_load(path).unwrap_or_else(Self::fallback)
+    }
+
+    /// Like `load`, but a file that cannot be read or used at all is an
+    /// error, so a caller can keep the settings it has instead of the defaults.
+    pub fn try_load(path: &Path) -> Result<(Config, Vec<String>), String> {
         match files::read_capped(path, MAX_CONFIG_BYTES) {
-            Ok(Some(bytes)) => Self::from_json(&bytes),
-            Ok(None) => (Config::default(), Vec::new()),
-            Err(problem) => {
-                (Config::default(), vec![format!("{} {problem}; using defaults.", path.display())])
-            }
+            Ok(Some(bytes)) => Self::try_from_json(&bytes),
+            Ok(None) => Ok((Config::default(), Vec::new())),
+            Err(problem) => Err(format!("{} {problem}", path.display())),
         }
+    }
+
+    /// Copies the file at `path` to `path` + ".bak", written like the config
+    /// itself (owner-only, atomically), before something replaces it.
+    pub fn back_up(path: &Path) -> Result<PathBuf, String> {
+        let mut name = path.as_os_str().to_owned();
+        name.push(".bak");
+        let backup = PathBuf::from(name);
+        let bytes = files::read_capped(path, MAX_CONFIG_BYTES)
+            .map_err(|problem| format!("{} {problem}", path.display()))?
+            .ok_or_else(|| format!("{} does not exist", path.display()))?;
+        files::write_private(&backup, &bytes)
+            .map_err(|e| format!("Could not write {}: {e}", backup.display()))?;
+        Ok(backup)
     }
 
     /// The config as a JSON value, valid or not; `validation_problems` says which.
