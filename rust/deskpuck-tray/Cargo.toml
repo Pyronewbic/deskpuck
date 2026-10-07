@@ -13,6 +13,7 @@ workspace = true
 deskpuck-ble = { path = "../deskpuck-ble" }
 deskpuck-core = { path = "../deskpuck-core" }
 deskpuck-inject = { path = "../deskpuck-inject" }
+png = "0.18.1"
 
 # ksni (StatusNotifierItem over D-Bus) instead of the default GTK backend,
 # whose gtk3-rs crates are unmaintained and fail cargo deny.

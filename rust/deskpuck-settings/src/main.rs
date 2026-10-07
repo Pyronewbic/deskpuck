@@ -351,8 +351,15 @@ fn main() -> ExitCode {
         focused: false,
         asked_height: None,
     };
+    let mut viewport = egui::ViewportBuilder::default();
+    // The logo the tray and the Mac app show, rendered by scripts/make-icons.sh.
+    if let Ok(icon) =
+        eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png"))
+    {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+        viewport: viewport
             .with_title("Deskpuck Settings")
             .with_app_id("deskpuck-settings")
             .with_inner_size([WIDTH, 720.0])

@@ -13,6 +13,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - A Theme setting (System, Light or Dark) for the settings window, on every platform; `appearance` in `config.json`.
 - The Linux and Windows settings window is laid out like the Mac's, in titled cards with switches and a fixed-width value beside each slider, sized to fit its content. It uses the system UI font (Segoe UI on Windows, fontconfig's sans-serif on Linux) and the system accent colour, on Linux where the desktop portal shares one.
 - Settings uses the system accent colour on the Mac too.
+- The Linux and Windows tray icon and settings window show the Deskpuck logo, the Mac app's icon, instead of a plain indigo dot.
 
 ### Fixed
 
