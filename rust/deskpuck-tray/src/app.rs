@@ -5,24 +5,27 @@
 use crate::hook::release_hook;
 use crate::icon::{self, Look};
 use crate::model::Model;
+use crate::watch::{POLL_SECONDS, Watch};
 use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup};
 use deskpuck_core::config::Config;
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::pairing::PairedDevice;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Child, Command, ExitCode};
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 enum Event {
     Status(LinkStatus, Option<String>),
     Latched(Modifiers),
     Note(String),
     Menu(MenuId),
+    /// A left click on the icon.
+    Click,
     /// Whether a tray host is showing the icon.
     Host(bool),
     /// A quit signal, or a close request on Windows.
@@ -51,6 +54,7 @@ struct Items {
     note: MenuItem,
     pair: MenuItem,
     pause: CheckMenuItem,
+    settings: MenuItem,
     open_settings: MenuItem,
     reload: MenuItem,
     quit: MenuItem,
@@ -78,6 +82,8 @@ pub fn run() -> ExitCode {
     let tray = match TrayIconBuilder::new()
         .with_title("Deskpuck")
         .with_menu(Box::new(menu.clone()))
+        // A left click opens the settings window; the menu is on the right button.
+        .with_menu_on_left_click(false)
         .build()
     {
         Ok(tray) => tray,
@@ -93,10 +99,20 @@ pub fn run() -> ExitCode {
             wake.send(Event::Menu(event.id))
         }));
     }
+    {
+        let wake = wake.clone();
+        TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+            if is_left_click(&event) {
+                wake.send(Event::Click);
+            }
+        }));
+    }
     platform::quit_on_signals(wake.clone());
 
     // Started when a tray host first shows the icon, so it never runs unseen.
     let controller: Rc<RefCell<Option<Controller>>> = Rc::default();
+    let mut watch = Watch::default();
+    let mut window: Option<Child> = None;
     let mut started = false;
     let mut told_waiting = false;
     platform::on_session_end(release_hook(&controller), wake.clone());
@@ -105,7 +121,16 @@ pub fn run() -> ExitCode {
     'run: loop {
         // Before waiting, so the first state shows even if no event ever comes.
         render(&model, start.elapsed().as_secs_f64(), &menu, &items, &tray, &mut shown);
-        let mut next = platform::wait(&rx, model.needs_tick().then(|| Duration::from_secs(1)));
+        // Wakes at least every POLL_SECONDS to look for edits to config.json.
+        let mut next = platform::wait(&rx, Some(Duration::from_secs(POLL_SECONDS)));
+        if let (Some(path), Some(controller)) = (&config_path, controller.borrow().as_ref())
+            && watch.changed(path)
+        {
+            reload(path, &mut model, controller);
+        }
+        if window.as_mut().is_some_and(|child| child.try_wait().is_ok_and(|done| done.is_some())) {
+            window = None;
+        }
         while let Some(event) = next.take().or_else(|| rx.try_recv().ok()) {
             let now = start.elapsed().as_secs_f64();
             match event {
@@ -117,6 +142,9 @@ pub fn run() -> ExitCode {
                     model.set_host(present);
                     if present && !started {
                         started = true;
+                        if let Some(path) = &config_path {
+                            watch = Watch::new(path);
+                        }
                         match connect(config_path.as_deref(), &mut model, &wake) {
                             Ok(running) => *controller.borrow_mut() = Some(running),
                             Err(problem) => {
@@ -136,9 +164,20 @@ pub fn run() -> ExitCode {
                         );
                     }
                 }
+                Event::Click => {
+                    if let Err(problem) = open_window(config_path.as_deref(), &mut window) {
+                        model.note(problem);
+                    }
+                }
                 Event::Menu(id) => {
                     if id == *items.quit.id() {
                         break 'run;
+                    }
+                    if id == *items.settings.id() {
+                        if let Err(problem) = open_window(config_path.as_deref(), &mut window) {
+                            model.note(problem);
+                        }
+                        continue;
                     }
                     let controller = controller.borrow();
                     let Some(controller) = controller.as_ref() else { continue };
@@ -160,11 +199,7 @@ pub fn run() -> ExitCode {
                     } else if id == *items.reload.id()
                         && let Some(path) = &config_path
                     {
-                        let (config, warnings) = Config::load(path);
-                        if let Some(warning) = summarize(&warnings) {
-                            model.note(warning);
-                        }
-                        controller.apply_settings(config.engine_settings());
+                        reload(path, &mut model, controller);
                     }
                 }
             }
@@ -225,6 +260,7 @@ fn build_menu() -> (Menu, Items) {
         note: disabled(""),
         pair: MenuItem::new(crate::model::PAIR, true, None),
         pause: CheckMenuItem::new("Pause Mouse Control", true, false, None),
+        settings: MenuItem::new("Settings...", true, None),
         open_settings: MenuItem::new("Open Settings File", true, None),
         reload: MenuItem::new("Reload Settings", true, None),
         quit: MenuItem::new("Quit Deskpuck", true, None),
@@ -236,6 +272,7 @@ fn build_menu() -> (Menu, Items) {
         &items.pair,
         &items.pause,
         &PredefinedMenuItem::separator(),
+        &items.settings,
         &items.open_settings,
         &items.reload,
         &PredefinedMenuItem::separator(),
@@ -293,6 +330,40 @@ fn summarize(warnings: &[String]) -> Option<String> {
         1 => format!("Settings: {first}"),
         n => format!("Settings: {first} (and {} more)", n - 1),
     })
+}
+
+fn is_left_click(event: &TrayIconEvent) -> bool {
+    matches!(
+        event,
+        TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }
+    )
+}
+
+fn reload(path: &Path, model: &mut Model, controller: &Controller) {
+    let (config, warnings) = Config::load(path);
+    if let Some(warning) = summarize(&warnings) {
+        model.note(warning);
+    }
+    controller.apply_settings(config.engine_settings());
+}
+
+/// Opens the settings window, the `deskpuck-settings` program installed beside
+/// this one; while one is open, another is not started.
+fn open_window(path: Option<&Path>, window: &mut Option<Child>) -> Result<(), String> {
+    if window.as_mut().is_some_and(|child| child.try_wait().is_ok_and(|done| done.is_none())) {
+        return Ok(());
+    }
+    let program = format!("deskpuck-settings{}", std::env::consts::EXE_SUFFIX);
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("Could not find the settings window: {e}"))?
+        .with_file_name(program);
+    let mut command = Command::new(&exe);
+    if let Some(path) = path {
+        command.arg("--config").arg(path);
+    }
+    let child = command.spawn().map_err(|e| format!("Could not open {}: {e}", exe.display()))?;
+    *window = Some(child);
+    Ok(())
 }
 
 /// Creates config.json with the defaults first, so there is something to edit.
@@ -526,4 +597,57 @@ mod platform {
 
     /// A windowless process gets no console signals; Quit is the clean exit.
     pub fn quit_on_signals(_wake: Wake) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tray_icon::dpi::PhysicalPosition;
+    use tray_icon::{Rect, TrayIconId};
+
+    fn click(button: MouseButton, button_state: MouseButtonState) -> TrayIconEvent {
+        TrayIconEvent::Click {
+            id: TrayIconId::new("deskpuck"),
+            position: PhysicalPosition::new(0.0, 0.0),
+            rect: Rect::default(),
+            button,
+            button_state,
+        }
+    }
+
+    #[test]
+    fn only_a_left_click_opens_the_settings_window() {
+        assert!(is_left_click(&click(MouseButton::Left, MouseButtonState::Up)));
+        // Windows sends the press too; one click must open one window.
+        assert!(!is_left_click(&click(MouseButton::Left, MouseButtonState::Down)));
+        assert!(!is_left_click(&click(MouseButton::Right, MouseButtonState::Up)));
+        assert!(!is_left_click(&click(MouseButton::Middle, MouseButtonState::Up)));
+    }
+
+    #[test]
+    fn the_window_is_looked_for_beside_the_tray() {
+        // Tests run from target/*/deps, where no deskpuck-settings is built.
+        let mut window = None;
+        let problem = open_window(None, &mut window).unwrap_err();
+        let beside = std::env::current_exe().unwrap().with_file_name("deskpuck-settings");
+        assert!(problem.contains(&beside.display().to_string()), "{problem}");
+        assert!(window.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_second_open_while_one_is_running_starts_nothing() {
+        let running = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = running.id();
+        let mut window = Some(running);
+        assert_eq!(open_window(None, &mut window), Ok(()));
+        let mut child = window.take().unwrap();
+        assert_eq!(child.id(), pid, "the open window is kept");
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        // Once it has exited, a new one is looked for (and here not found).
+        let mut window = Some(child);
+        assert!(open_window(None, &mut window).is_err());
+    }
 }

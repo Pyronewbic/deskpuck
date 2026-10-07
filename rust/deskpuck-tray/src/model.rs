@@ -112,11 +112,6 @@ impl Model {
         self.failure.is_some()
     }
 
-    /// Only a running countdown needs the menu redrawn every second.
-    pub fn needs_tick(&self) -> bool {
-        self.pairing_ends.is_some() && self.status == LinkStatus::Pairing && !self.paused
-    }
-
     pub fn connected(&self) -> bool {
         self.status == LinkStatus::Connected
     }
@@ -235,7 +230,6 @@ mod tests {
         assert_eq!(model.status_text(10.0), "Pairing: hold SYNC on the Joy-Con (60 s left)");
         assert_eq!(model.status_text(69.6), "Pairing: hold SYNC on the Joy-Con (0 s left)");
         assert_eq!(model.status_text(500.0), "Pairing: hold SYNC on the Joy-Con (0 s left)");
-        assert!(model.needs_tick());
     }
 
     #[test]
@@ -246,7 +240,6 @@ mod tests {
         model.status(LinkStatus::Connecting, Some("Joy-Con 2 (R)".into()));
         assert!(model.pairing(), "a pairing Joy-Con connects before it is paired");
         assert_eq!(model.pair_label(), CANCEL_PAIRING);
-        assert!(!model.needs_tick(), "no countdown once a Joy-Con is connecting");
 
         model.status(LinkStatus::Connected, Some("Joy-Con 2 (R)".into()));
         assert!(!model.pairing());
@@ -272,7 +265,6 @@ mod tests {
         model.set_paused(true);
         assert!(model.pair_enabled(), "cancel stays available while paused");
         assert_eq!(model.status_text(0.0), "Pairing paused");
-        assert!(!model.needs_tick());
         model.cancel_pairing();
         assert_eq!(model.pair_label(), PAIR);
     }
