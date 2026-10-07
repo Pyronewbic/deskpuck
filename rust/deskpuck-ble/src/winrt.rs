@@ -5,6 +5,23 @@ pub fn interval_ms(units: u16) -> f64 {
     f64::from(units) * 1.25
 }
 
+/// Keeps a finished request only if its slot, made at connect, survived: a disconnect while
+/// it was pending removed the slot, so the link is dropped (closing the request) instead.
+#[cfg(any(windows, test))]
+pub fn settle<K: Eq + std::hash::Hash, V>(
+    slots: &mut std::collections::HashMap<K, Option<V>>,
+    id: &K,
+    link: V,
+) -> bool {
+    match slots.get_mut(id) {
+        Some(slot) => {
+            *slot = Some(link);
+            true
+        }
+        None => false,
+    }
+}
+
 #[cfg(windows)]
 pub use imp::FastLink;
 
@@ -66,5 +83,20 @@ mod tests {
         assert_eq!(interval_ms(6), 7.5);
         assert_eq!(interval_ms(12), 15.0);
         assert_eq!(interval_ms(48), 60.0);
+    }
+
+    #[test]
+    fn a_request_that_outlives_its_link_is_dropped() {
+        use std::collections::HashMap;
+        use std::rc::Rc;
+        let link = Rc::new(());
+        let mut slots = HashMap::from([("joy-con", None)]);
+        assert!(settle(&mut slots, &"joy-con", Rc::clone(&link)));
+        assert_eq!(Rc::strong_count(&link), 2, "kept while linked");
+
+        slots.remove("joy-con");
+        assert!(!settle(&mut slots, &"joy-con", Rc::clone(&link)));
+        assert!(slots.is_empty());
+        assert_eq!(Rc::strong_count(&link), 1, "dropped, so the request closes");
     }
 }

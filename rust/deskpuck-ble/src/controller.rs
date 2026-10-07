@@ -433,7 +433,7 @@ const PRESENCE_POLL: Duration = Duration::from_secs(3);
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
 
 #[cfg(windows)]
-type FastLinks = Arc<Mutex<HashMap<PeripheralId, crate::winrt::FastLink>>>;
+type FastLinks = Arc<Mutex<HashMap<PeripheralId, Option<crate::winrt::FastLink>>>>;
 
 enum Back<Id> {
     Input(Input<Id>),
@@ -563,6 +563,10 @@ impl Driver {
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
                 #[cfg(windows)]
                 let fast = self.fast.clone();
+                #[cfg(windows)]
+                if let Ok(mut slots) = fast.lock() {
+                    slots.insert(id.clone(), None);
+                }
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
                         Ok(p) => p.connect().await,
@@ -680,7 +684,7 @@ impl Driver {
     }
 
     fn fast_link_interval(&self, id: &PeripheralId) -> Option<f64> {
-        self.fast.lock().ok()?.get(id)?.interval_ms()
+        self.fast.lock().ok()?.get(id)?.as_ref()?.interval_ms()
     }
 }
 
@@ -695,10 +699,11 @@ async fn prefer_throughput(
     let message = match crate::winrt::FastLink::request(id).await {
         Ok(link) => {
             let message = format!("faster connection requested: {}", link.status());
-            if let Ok(mut fast) = fast.lock() {
-                fast.insert(id.clone(), link);
+            if fast.lock().is_ok_and(|mut slots| crate::winrt::settle(&mut slots, id, link)) {
+                message
+            } else {
+                format!("{message}, but the link ended first; request closed")
             }
-            message
         }
         Err(e) => format!("could not request a faster connection: {e}"),
     };
