@@ -418,7 +418,7 @@ async fn run<S: Sink>(
                 Some(input) => hub.input(input, now()),
                 None => Vec::new(),
             },
-            Some(input) = input_rx.recv() => hub.input(input, now()),
+            Some(back) = input_rx.recv() => deliver(&mut hub, back, now()),
             _ = ticker.tick() => hub.tick(now()),
             _ = presence.tick() => {
                 if hub.wants_presence_check() {
@@ -445,9 +445,36 @@ const PRESENCE_POLL: Duration = Duration::from_secs(3);
 /// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
 
+/// What a Driver task sends back: input for the receiver, or a failure for
+/// the verbose log that would otherwise only show as a retry.
+enum Back<Id> {
+    Input(Input<Id>),
+    Log(String),
+}
+
+impl<Id> From<Input<Id>> for Back<Id> {
+    fn from(input: Input<Id>) -> Self {
+        Back::Input(input)
+    }
+}
+
+fn deliver<Id: Clone + Eq + Hash + Display, S: Sink>(
+    hub: &mut Hub<Id, S>,
+    back: Back<Id>,
+    now: f64,
+) -> Vec<Output<Id>> {
+    match back {
+        Back::Input(input) => hub.input(input, now),
+        Back::Log(message) => {
+            hub.log(|| message);
+            Vec::new()
+        }
+    }
+}
+
 struct Driver {
     adapter: Adapter,
-    tx: UnboundedSender<Input<PeripheralId>>,
+    tx: UnboundedSender<Back<PeripheralId>>,
     characteristics: Characteristics,
     streams: HashMap<PeripheralId, JoinHandle<()>>,
 }
@@ -468,7 +495,8 @@ impl Driver {
                 services: Some(vec![uuid(SERVICE)]),
             };
             if let Ok(found) = adapter.retrieve_peripherals(options).await {
-                let _ = tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()));
+                let _ =
+                    tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()).into());
             }
         });
     }
@@ -489,7 +517,7 @@ impl Driver {
                             let data = props.manufacturer_data.get(&MANUFACTURER_ID)?;
                             name_from_manufacturer_data(data).map(str::to_owned)
                         });
-                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids });
+                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids }.into());
                     }
                 });
                 None
@@ -534,14 +562,17 @@ impl Driver {
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
-                        Ok(p) => p.connect().await.is_ok(),
-                        Err(_) => false,
+                        Ok(p) => p.connect().await,
+                        Err(e) => Err(e),
                     };
-                    let _ = tx.send(if connected {
-                        Input::Connected(id)
-                    } else {
-                        Input::ConnectFailed(id)
-                    });
+                    let input = match connected {
+                        Ok(()) => Input::Connected(id),
+                        Err(e) => {
+                            let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
+                            Input::ConnectFailed(id)
+                        }
+                    };
+                    let _ = tx.send(input.into());
                 });
             }
             Output::Disconnect(id) => {
@@ -561,7 +592,10 @@ impl Driver {
                 let characteristics = self.characteristics.clone();
                 tokio::spawn(async move {
                     let Ok(p) = adapter.peripheral(&id).await else { return };
-                    let _ = p.discover_services().await;
+                    if let Err(e) = p.discover_services().await {
+                        let _ =
+                            tx.send(Back::Log(format!("service discovery failed on {id}: {e}")));
+                    }
                     let found = p.characteristics();
                     let find = |want: &str| found.iter().find(|c| c.uuid == uuid(want)).cloned();
                     let (write, notify) = (find(WRITE_CHARACTERISTIC), find(NOTIFY_CHARACTERISTIC));
@@ -571,8 +605,8 @@ impl Driver {
                     {
                         map.insert(id.clone(), (w, n));
                     }
-                    let _ =
-                        tx.send(Input::CharacteristicsFound { id, write: both.0, notify: both.1 });
+                    let found = Input::CharacteristicsFound { id, write: both.0, notify: both.1 };
+                    let _ = tx.send(found.into());
                 });
             }
             Output::Subscribe(id) => {
@@ -596,8 +630,9 @@ impl Driver {
                         let Ok(mut stream) = p.notifications().await else { return };
                         while let Some(n) = stream.next().await {
                             if n.uuid == want {
-                                let _ =
-                                    tx.send(Input::Notification { id: id2.clone(), data: n.value });
+                                let _ = tx.send(
+                                    Input::Notification { id: id2.clone(), data: n.value }.into(),
+                                );
                             }
                         }
                     });
@@ -624,5 +659,41 @@ impl Driver {
             }
             Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deskpuck_inject::RecordingSink;
+
+    fn hub_logging_to(log: Arc<Mutex<Vec<String>>>) -> Hub<u32, RecordingSink> {
+        let hooks = Hooks {
+            status: Box::new(|_, _| {}),
+            report: None,
+            log: Some(Box::new(move |m: &str| log.lock().unwrap().push(m.to_owned()))),
+            error: Box::new(|m| panic!("unexpected error: {m}")),
+            latched: None,
+        };
+        Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, None)
+    }
+
+    #[test]
+    fn task_failures_reach_the_verbose_log_and_inputs_reach_the_receiver() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut hub = hub_logging_to(log.clone());
+        let out = deliver(&mut hub, Back::Log("could not connect to 7: timed out".into()), 0.0);
+        assert!(out.is_empty());
+        assert_eq!(*log.lock().unwrap(), ["could not connect to 7: timed out"]);
+
+        // A pairing window gives powering on something to do: start scanning.
+        let mut direct = hub_logging_to(Arc::default());
+        direct.start_pairing(0.0);
+        direct.start(0.0);
+        let want = direct.input(Input::AdapterPoweredOn, 0.0);
+        assert_eq!(want, [Output::StartScan], "control");
+        hub.start_pairing(0.0);
+        hub.start(0.0);
+        assert_eq!(deliver(&mut hub, Input::AdapterPoweredOn.into(), 0.0), want);
     }
 }
