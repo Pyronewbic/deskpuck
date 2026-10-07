@@ -6,6 +6,7 @@ use deskpuck_settings::config_path;
 use deskpuck_settings::keys::{choices, describe, modifier_label, modifiers};
 use deskpuck_settings::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
 use deskpuck_settings::recorder::{Recorded, clipboard_key, record};
+use deskpuck_settings::{text, theme};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
 use std::ffi::OsString;
 use std::process::ExitCode;
@@ -24,11 +25,6 @@ struct App {
 
 /// How often the window looks for edits made outside it, in seconds.
 const FILE_CHECK: f64 = 1.0;
-
-/// Below 1/s (only a hand-edited interval) the rate needs a decimal.
-fn rate_text(rate: f64) -> String {
-    if rate < 1.0 { format!("{rate:.1}/s") } else { format!("{rate:.0}/s") }
-}
 
 fn label(mapping: Option<&Mapping>) -> String {
     mapping.map_or_else(|| "None".to_owned(), describe)
@@ -157,8 +153,7 @@ impl App {
         ui.heading("Mouse");
         egui::Grid::new("mouse").num_columns(2).spacing([16.0, 6.0]).show(ui, |ui| {
             ui.label("Pointer speed");
-            let speed =
-                slider(&mut values.config.pointer_speed, SPEED_RANGE, |n| format!("{n:.2}x"));
+            let speed = slider(&mut values.config.pointer_speed, SPEED_RANGE, text::speed);
             changed |= ui.add(speed).changed();
             ui.end_row();
         });
@@ -171,12 +166,11 @@ impl App {
         if values.repeat_enabled {
             egui::Grid::new("repeat").num_columns(2).spacing([16.0, 6.0]).show(ui, |ui| {
                 ui.label("Delay before repeating");
-                let delay =
-                    slider(&mut values.config.repeat_delay, DELAY_RANGE, |n| format!("{n:.2} s"));
+                let delay = slider(&mut values.config.repeat_delay, DELAY_RANGE, text::delay);
                 changed |= ui.add(delay).changed();
                 ui.end_row();
                 ui.label("Repeat speed");
-                let rate = slider(&mut values.repeat_rate, RATE_RANGE, rate_text);
+                let rate = slider(&mut values.repeat_rate, RATE_RANGE, text::rate);
                 changed |= ui.add(rate).changed();
                 ui.end_row();
             });
@@ -216,7 +210,8 @@ impl eframe::App for App {
                 ui.add_space(12.0);
                 self.sliders(ui, now);
                 ui.add_space(16.0);
-                ui.horizontal(|ui| {
+                // Error on the left, Restore Defaults on the right, as on the Mac.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Restore Defaults").clicked() {
                         self.model.restore_defaults(now);
                     }
@@ -269,7 +264,11 @@ fn main() -> ExitCode {
             .with_min_inner_size([380.0, 320.0]),
         ..Default::default()
     };
-    match eframe::run_native("Deskpuck Settings", options, Box::new(|_| Ok(Box::new(app)))) {
+    let creator = Box::new(|cc: &eframe::CreationContext| {
+        theme::apply(&cc.egui_ctx);
+        Ok(Box::new(app) as Box<dyn eframe::App>)
+    });
+    match eframe::run_native("Deskpuck Settings", options, creator) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("deskpuck-settings: could not open the window: {e}");
