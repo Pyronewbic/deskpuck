@@ -10,7 +10,9 @@ trap 'rm -rf "$work"' EXIT
 pkg="$work/pkg"
 home="$work/home dir \$x \"q\" \`c\`"
 mkdir -p "$pkg" "$home"
-for file in deskpuck deskpuck-cli deskpuck.png; do printf '%s' "$file" >"$pkg/$file"; done
+# Git Bash on Windows marks a file executable only if it starts with #!.
+for file in deskpuck deskpuck-cli; do printf '#!/bin/sh\n# %s\n' "$file" >"$pkg/$file"; done
+printf '%s' deskpuck.png >"$pkg/deskpuck.png"
 cp "$here/deskpuck.desktop" "$here/install.sh" "$pkg/"
 
 failures=0
@@ -44,7 +46,7 @@ if [ "$(uname -s)" = Linux ]; then
     run; status=$?
     kill "$running" 2>/dev/null
     check "an update while Deskpuck runs exits 0" '[ $status -eq 0 ]'
-    check "an update while Deskpuck runs replaces it" '[ "$(cat "$home/bin/deskpuck")" = deskpuck ]'
+    check "an update while Deskpuck runs replaces it" '[ "$(cat "$home/bin/deskpuck")" = "$(cat "$pkg/deskpuck")" ]'
 fi
 check "no temporary program is left" '[ -z "$(ls -A "$home/bin" | grep "^\.")" ]'
 
