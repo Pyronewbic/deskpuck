@@ -539,7 +539,11 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(&id) {
                     stream.abort();
                 }
-                Some(Input::Disconnected(id))
+                #[cfg(target_os = "linux")]
+                let input = bluez_disconnected(id, &self.links);
+                #[cfg(not(target_os = "linux"))]
+                let input = Some(Input::Disconnected(id));
+                input
             }
             CentralEvent::StateUpdate(CentralState::PoweredOn) => Some(Input::AdapterPoweredOn),
             CentralEvent::StateUpdate(CentralState::PoweredOff) => Some(Input::AdapterPoweredOff),
@@ -737,6 +741,14 @@ impl Driver {
     }
 }
 
+/// BlueZ's disconnect signal, as receiver input. A direct link reports its
+/// own end from the socket, and a late signal from BlueZ (after a connect
+/// retry, say) would make the receiver forget a link that is still open.
+#[cfg(target_os = "linux")]
+fn bluez_disconnected<Id: Eq + Hash, L>(id: Id, links: &HashMap<Id, L>) -> Option<Input<Id>> {
+    (!links.contains_key(&id)).then_some(Input::Disconnected(id))
+}
+
 /// Connects to `id` directly and runs the link until it ends, reporting
 /// every step as receiver input.
 #[cfg(target_os = "linux")]
@@ -789,6 +801,26 @@ async fn direct_link(
 mod tests {
     use super::*;
     use deskpuck_inject::RecordingSink;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bluez_cannot_end_a_direct_link_the_receiver_still_holds() {
+        let links = HashMap::from([(7u32, ())]);
+        assert_eq!(bluez_disconnected(7, &links), None);
+        assert_eq!(bluez_disconnected(8, &links), Some(Input::Disconnected(8)), "control");
+
+        // The race: a stale BlueZ signal arriving after the link came up.
+        let mut hub = hub_logging_to(Arc::default());
+        hub.start_pairing(0.0);
+        hub.start(0.0);
+        hub.input(Input::AdapterPoweredOn, 0.0);
+        hub.input(Input::Discovered { id: 7, name: None, manufacturer_ids: vec![0x0553] }, 0.1);
+        hub.input(Input::Connected(7), 1.0);
+        if let Some(input) = bluez_disconnected(7, &links) {
+            hub.input(input, 1.1);
+        }
+        assert_eq!(hub.linked(), Some(&7));
+    }
 
     fn hub_logging_to(log: Arc<Mutex<Vec<String>>>) -> Hub<u32, RecordingSink> {
         let hooks = Hooks {
