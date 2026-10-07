@@ -37,8 +37,15 @@ for file in deskpuck deskpuck-cli deskpuck.desktop deskpuck.png; do
 done
 
 mkdir -p "$bin_dir" "$data_dir/applications" "$(dirname "$icon")" || fail "could not create the folders"
-cp "$here/deskpuck" "$here/deskpuck-cli" "$bin_dir/" || fail "could not copy the programs to $bin_dir"
-chmod 755 "$bin_dir/deskpuck" "$bin_dir/deskpuck-cli"
+# Copied beside and renamed over, which works while Deskpuck is running
+# (copying onto a running program fails with "Text file busy").
+for program in deskpuck deskpuck-cli; do
+    new="$bin_dir/.$program.new.$$"
+    if ! cp "$here/$program" "$new" || ! chmod 755 "$new" || ! mv -f "$new" "$bin_dir/$program"; then
+        rm -f "$new"
+        fail "could not install $program in $bin_dir"
+    fi
+done
 cp "$here/deskpuck.png" "$icon" || fail "could not copy the icon"
 
 # The menu entry runs the program by its full path, since ~/.local/bin is not

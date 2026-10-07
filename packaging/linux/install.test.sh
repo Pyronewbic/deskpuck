@@ -1,6 +1,8 @@
 #!/bin/bash
 # Self-test for install.sh, against a throwaway home whose path has a space
 # and a $ in it. Exit 0 when every case behaves, 1 otherwise.
+# Each check is a single-quoted condition that check() evals later.
+# shellcheck disable=SC2016,SC2034
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -33,6 +35,19 @@ check "the rest of the entry is unchanged" \
 run; status=$?
 check "a second install exits 0" '[ $status -eq 0 ]'
 check "no temporary file is left" '[ -z "$(ls "$home/share/applications" | grep tmp)" ]'
+
+# Updating while Deskpuck runs: Linux refuses to write over a running program.
+if [ "$(uname -s)" = Linux ]; then
+    cp "$(command -v sleep)" "$home/bin/deskpuck"
+    "$home/bin/deskpuck" 30 &
+    running=$!
+    sleep 0.3
+    run; status=$?
+    kill "$running" 2>/dev/null
+    check "an update while Deskpuck runs exits 0" '[ $status -eq 0 ]'
+    check "an update while Deskpuck runs replaces it" '[ "$(cat "$home/bin/deskpuck")" = deskpuck ]'
+fi
+check "no temporary program is left" '[ -z "$(ls -A "$home/bin" | grep "^\.")" ]'
 
 run --nope; status=$?
 check "a bad argument exits 2" '[ $status -eq 2 ]'
