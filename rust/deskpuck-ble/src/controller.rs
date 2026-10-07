@@ -1,12 +1,12 @@
 //! Runs the receiver against real Bluetooth on a background thread, for both
 //! the command-line tool and the Mac app. `Hub` holds every decision and is
 //! tested without hardware; `Controller` only moves data between the Hub and
-//! btleplug.
+//! btleplug. On Linux the Joy-Con link itself is a direct ATT socket instead.
 
 use crate::Session;
 use crate::receiver::{
     Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, SERVICE, Status,
-    WRITE_CHARACTERISTIC, name_from_manufacturer_data,
+    WRITE_CHARACTERISTIC, device_name,
 };
 use btleplug::api::{
     Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
@@ -386,6 +386,8 @@ async fn run<S: Sink>(
         tx: input_tx,
         characteristics: Arc::default(),
         streams: HashMap::new(),
+        #[cfg(target_os = "linux")]
+        links: HashMap::new(),
     };
 
     // Before the first status, so a pairing run never reports NotPaired first.
@@ -418,7 +420,7 @@ async fn run<S: Sink>(
                 Some(input) => hub.input(input, now()),
                 None => Vec::new(),
             },
-            Some(input) = input_rx.recv() => hub.input(input, now()),
+            Some(back) = input_rx.recv() => deliver(&mut hub, back, now()),
             _ = ticker.tick() => hub.tick(now()),
             _ = presence.tick() => {
                 if hub.wants_presence_check() {
@@ -432,6 +434,10 @@ async fn run<S: Sink>(
     // Release held input first, then let the Joy-Con go before the thread ends.
     hub.shutdown();
     let _ = adapter.stop_scan().await;
+    #[cfg(target_os = "linux")]
+    for (_, link) in driver.links.drain() {
+        link.task.abort();
+    }
     if let Some(id) = hub.linked().cloned()
         && let Ok(p) = adapter.peripheral(&id).await
     {
@@ -445,11 +451,47 @@ const PRESENCE_POLL: Duration = Duration::from_secs(3);
 /// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
 
+/// What a Driver task sends back: input for the receiver, or a failure for
+/// the verbose log that would otherwise only show as a retry.
+enum Back<Id> {
+    Input(Input<Id>),
+    Log(String),
+}
+
+impl<Id> From<Input<Id>> for Back<Id> {
+    fn from(input: Input<Id>) -> Self {
+        Back::Input(input)
+    }
+}
+
+fn deliver<Id: Clone + Eq + Hash + Display, S: Sink>(
+    hub: &mut Hub<Id, S>,
+    back: Back<Id>,
+    now: f64,
+) -> Vec<Output<Id>> {
+    match back {
+        Back::Input(input) => hub.input(input, now),
+        Back::Log(message) => {
+            hub.log(|| message);
+            Vec::new()
+        }
+    }
+}
+
 struct Driver {
     adapter: Adapter,
-    tx: UnboundedSender<Input<PeripheralId>>,
+    tx: UnboundedSender<Back<PeripheralId>>,
     characteristics: Characteristics,
     streams: HashMap<PeripheralId, JoinHandle<()>>,
+    #[cfg(target_os = "linux")]
+    links: HashMap<PeripheralId, DirectLink>,
+}
+
+/// A Joy-Con link over a direct ATT socket, and how to reach its task.
+#[cfg(target_os = "linux")]
+struct DirectLink {
+    task: JoinHandle<()>,
+    commands: UnboundedSender<crate::l2cap::Command>,
 }
 
 fn uuid(s: &str) -> Uuid {
@@ -468,7 +510,8 @@ impl Driver {
                 services: Some(vec![uuid(SERVICE)]),
             };
             if let Ok(found) = adapter.retrieve_peripherals(options).await {
-                let _ = tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()));
+                let _ =
+                    tx.send(Input::SystemConnected(found.iter().map(|p| p.id()).collect()).into());
             }
         });
     }
@@ -485,11 +528,9 @@ impl Driver {
                     let Ok(peripheral) = adapter.peripheral(&id).await else { return };
                     if let Ok(Some(props)) = peripheral.properties().await {
                         let manufacturer_ids = props.manufacturer_data.keys().copied().collect();
-                        let name = props.local_name.or_else(|| {
-                            let data = props.manufacturer_data.get(&MANUFACTURER_ID)?;
-                            name_from_manufacturer_data(data).map(str::to_owned)
-                        });
-                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids });
+                        let data = props.manufacturer_data.get(&MANUFACTURER_ID);
+                        let name = device_name(props.local_name, data.map(Vec::as_slice));
+                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids }.into());
                     }
                 });
                 None
@@ -498,7 +539,11 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(&id) {
                     stream.abort();
                 }
-                Some(Input::Disconnected(id))
+                #[cfg(target_os = "linux")]
+                let input = bluez_disconnected(id, &self.links);
+                #[cfg(not(target_os = "linux"))]
+                let input = Some(Input::Disconnected(id));
+                input
             }
             CentralEvent::StateUpdate(CentralState::PoweredOn) => Some(Input::AdapterPoweredOn),
             CentralEvent::StateUpdate(CentralState::PoweredOff) => Some(Input::AdapterPoweredOff),
@@ -513,6 +558,10 @@ impl Driver {
         output: &Output<PeripheralId>,
         hub: &Hub<PeripheralId, S>,
     ) {
+        #[cfg(target_os = "linux")]
+        if self.execute_direct(output, hub) {
+            return;
+        }
         match output {
             Output::StartScan => {
                 hub.log(|| "scanning".into());
@@ -534,14 +583,17 @@ impl Driver {
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
-                        Ok(p) => p.connect().await.is_ok(),
-                        Err(_) => false,
+                        Ok(p) => p.connect().await,
+                        Err(e) => Err(e),
                     };
-                    let _ = tx.send(if connected {
-                        Input::Connected(id)
-                    } else {
-                        Input::ConnectFailed(id)
-                    });
+                    let input = match connected {
+                        Ok(()) => Input::Connected(id),
+                        Err(e) => {
+                            let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
+                            Input::ConnectFailed(id)
+                        }
+                    };
+                    let _ = tx.send(input.into());
                 });
             }
             Output::Disconnect(id) => {
@@ -561,7 +613,10 @@ impl Driver {
                 let characteristics = self.characteristics.clone();
                 tokio::spawn(async move {
                     let Ok(p) = adapter.peripheral(&id).await else { return };
-                    let _ = p.discover_services().await;
+                    if let Err(e) = p.discover_services().await {
+                        let _ =
+                            tx.send(Back::Log(format!("service discovery failed on {id}: {e}")));
+                    }
                     let found = p.characteristics();
                     let find = |want: &str| found.iter().find(|c| c.uuid == uuid(want)).cloned();
                     let (write, notify) = (find(WRITE_CHARACTERISTIC), find(NOTIFY_CHARACTERISTIC));
@@ -571,8 +626,8 @@ impl Driver {
                     {
                         map.insert(id.clone(), (w, n));
                     }
-                    let _ =
-                        tx.send(Input::CharacteristicsFound { id, write: both.0, notify: both.1 });
+                    let found = Input::CharacteristicsFound { id, write: both.0, notify: both.1 };
+                    let _ = tx.send(found.into());
                 });
             }
             Output::Subscribe(id) => {
@@ -596,8 +651,9 @@ impl Driver {
                         let Ok(mut stream) = p.notifications().await else { return };
                         while let Some(n) = stream.next().await {
                             if n.uuid == want {
-                                let _ =
-                                    tx.send(Input::Notification { id: id2.clone(), data: n.value });
+                                let _ = tx.send(
+                                    Input::Notification { id: id2.clone(), data: n.value }.into(),
+                                );
                             }
                         }
                     });
@@ -624,5 +680,175 @@ impl Driver {
             }
             Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Driver {
+    /// Carries out the link commands over a direct ATT socket; false for
+    /// anything else, which btleplug handles.
+    fn execute_direct<S: Sink>(
+        &mut self,
+        output: &Output<PeripheralId>,
+        hub: &Hub<PeripheralId, S>,
+    ) -> bool {
+        use crate::l2cap::Command;
+        let send = |links: &HashMap<PeripheralId, DirectLink>, id, command| {
+            if let Some(link) = links.get(id) {
+                let _ = link.commands.send(command);
+            }
+        };
+        match output {
+            Output::Connect(id) => {
+                hub.log(|| format!("connecting to {id} over a direct ATT link"));
+                let (commands, rx) = unbounded_channel();
+                let task = tokio::spawn(direct_link(
+                    self.adapter.clone(),
+                    id.clone(),
+                    rx,
+                    self.tx.clone(),
+                ));
+                if let Some(old) = self.links.insert(id.clone(), DirectLink { task, commands }) {
+                    old.task.abort();
+                }
+            }
+            Output::Disconnect(id) => {
+                hub.log(|| format!("disconnecting {id}"));
+                let Some(link) = self.links.remove(id) else { return true };
+                link.task.abort();
+                // The aborted task cannot say so itself, and the receiver waits for it.
+                let _ = self.tx.send(Input::Disconnected(id.clone()).into());
+                // BlueZ may still hold the LE link, and a linked Joy-Con stops advertising.
+                let (adapter, id) = (self.adapter.clone(), id.clone());
+                tokio::spawn(async move {
+                    if let Ok(p) = adapter.peripheral(&id).await {
+                        let _ = tokio::time::timeout(Duration::from_secs(2), p.disconnect()).await;
+                    }
+                });
+            }
+            Output::DiscoverServices(id) => send(&self.links, id, Command::Discover),
+            Output::Subscribe(id) => {
+                hub.log(|| "enabling notifications".into());
+                send(&self.links, id, Command::Subscribe);
+            }
+            Output::Write { id, data } => {
+                hub.log(|| format!("init command {data:02X?}"));
+                send(&self.links, id, Command::Write(data.clone()));
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// BlueZ's disconnect signal, as receiver input. A direct link reports its
+/// own end from the socket, and a late signal from BlueZ (after a connect
+/// retry, say) would make the receiver forget a link that is still open.
+#[cfg(target_os = "linux")]
+fn bluez_disconnected<Id: Eq + Hash, L>(id: Id, links: &HashMap<Id, L>) -> Option<Input<Id>> {
+    (!links.contains_key(&id)).then_some(Input::Disconnected(id))
+}
+
+/// Connects to `id` directly and runs the link until it ends, reporting
+/// every step as receiver input.
+#[cfg(target_os = "linux")]
+async fn direct_link(
+    adapter: Adapter,
+    id: PeripheralId,
+    commands: UnboundedReceiver<crate::l2cap::Command>,
+    tx: UnboundedSender<Back<PeripheralId>>,
+) {
+    use crate::att::{Client, Event, uuid_le};
+    use btleplug::api::AddressType;
+    let socket = async {
+        let peripheral = adapter.peripheral(&id).await.map_err(|e| e.to_string())?;
+        let props = peripheral.properties().await.map_err(|e| e.to_string())?;
+        let props = props.ok_or("its address is unknown")?;
+        let random = props.address_type == Some(AddressType::Random);
+        let address = props.address.into_inner();
+        let log = |m| drop(tx.send(Back::Log(format!("{id}: {m}"))));
+        crate::l2cap::connect_retrying(|| crate::l2cap::connect(address, random), log)
+            .await
+            .map_err(|e| e.to_string())
+    };
+    let socket = match socket.await {
+        Ok(socket) => socket,
+        Err(e) => {
+            let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
+            let _ = tx.send(Input::ConnectFailed(id).into());
+            return;
+        }
+    };
+    let _ = tx.send(Input::Connected(id.clone()).into());
+    let u = |s| uuid_le(s).unwrap_or_default();
+    let client = Client::new(u(SERVICE), u(NOTIFY_CHARACTERISTIC), u(WRITE_CHARACTERISTIC));
+    let why = crate::l2cap::run(socket, client, commands, |event| {
+        let back = match event {
+            Event::Discovered { write, notify } => {
+                Input::CharacteristicsFound { id: id.clone(), write, notify }.into()
+            }
+            Event::Notification(data) => Input::Notification { id: id.clone(), data }.into(),
+            Event::Log(message) => Back::Log(format!("{id}: {message}")),
+        };
+        let _ = tx.send(back);
+    })
+    .await;
+    let _ = tx.send(Back::Log(format!("link to {id} ended: {why}")));
+    let _ = tx.send(Input::Disconnected(id).into());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deskpuck_inject::RecordingSink;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bluez_cannot_end_a_direct_link_the_receiver_still_holds() {
+        let links = HashMap::from([(7u32, ())]);
+        assert_eq!(bluez_disconnected(7, &links), None);
+        assert_eq!(bluez_disconnected(8, &links), Some(Input::Disconnected(8)), "control");
+
+        // The race: a stale BlueZ signal arriving after the link came up.
+        let mut hub = hub_logging_to(Arc::default());
+        hub.start_pairing(0.0);
+        hub.start(0.0);
+        hub.input(Input::AdapterPoweredOn, 0.0);
+        hub.input(Input::Discovered { id: 7, name: None, manufacturer_ids: vec![0x0553] }, 0.1);
+        hub.input(Input::Connected(7), 1.0);
+        if let Some(input) = bluez_disconnected(7, &links) {
+            hub.input(input, 1.1);
+        }
+        assert_eq!(hub.linked(), Some(&7));
+    }
+
+    fn hub_logging_to(log: Arc<Mutex<Vec<String>>>) -> Hub<u32, RecordingSink> {
+        let hooks = Hooks {
+            status: Box::new(|_, _| {}),
+            report: None,
+            log: Some(Box::new(move |m: &str| log.lock().unwrap().push(m.to_owned()))),
+            error: Box::new(|m| panic!("unexpected error: {m}")),
+            latched: None,
+        };
+        Hub::new(EngineSettings::default(), RecordingSink::default(), hooks, None)
+    }
+
+    #[test]
+    fn task_failures_reach_the_verbose_log_and_inputs_reach_the_receiver() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut hub = hub_logging_to(log.clone());
+        let out = deliver(&mut hub, Back::Log("could not connect to 7: timed out".into()), 0.0);
+        assert!(out.is_empty());
+        assert_eq!(*log.lock().unwrap(), ["could not connect to 7: timed out"]);
+
+        // A pairing window gives powering on something to do: start scanning.
+        let mut direct = hub_logging_to(Arc::default());
+        direct.start_pairing(0.0);
+        direct.start(0.0);
+        let want = direct.input(Input::AdapterPoweredOn, 0.0);
+        assert_eq!(want, [Output::StartScan], "control");
+        hub.start_pairing(0.0);
+        hub.start(0.0);
+        assert_eq!(deliver(&mut hub, Input::AdapterPoweredOn.into(), 0.0), want);
     }
 }

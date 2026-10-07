@@ -1,0 +1,7 @@
+# scripts/check.sh runs the tests with this profile, locally and in CI, and
+# reads the JUnit report to prove every test file ran.
+[profile.check]
+fail-fast = false
+
+[profile.check.junit]
+path = "junit.xml"

@@ -1,7 +1,11 @@
 //! Bluetooth LE for the Joy-Con 2: the connection state machine, the session
-//! that turns its reports into input, and the monitor readout.
+//! that turns its reports into input, the monitor readout, and an ATT client
+//! for links the OS GATT layer cannot serve.
 
+pub mod att;
 pub mod controller;
+#[cfg(target_os = "linux")]
+pub mod l2cap;
 pub mod receiver;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};

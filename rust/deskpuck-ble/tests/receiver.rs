@@ -234,6 +234,32 @@ fn missing_characteristics_send_nothing() {
 }
 
 #[test]
+fn an_unconfirmed_link_injects_nothing_and_times_out() {
+    let reports_until_timeout = |found: Option<(bool, bool)>| {
+        // A pairing window accepts any device; both characteristics confirm it.
+        let mut r = unpaired();
+        r.start_pairing(0.0);
+        r.handle(discovered(OTHER), 0.5);
+        r.handle(Input::Connected(OTHER), 1.0);
+        if let Some((write, notify)) = found {
+            r.handle(Input::CharacteristicsFound { id: OTHER, write, notify }, 2.0);
+        }
+        let reports = (3..30)
+            .flat_map(|t| {
+                r.handle(Input::Notification { id: OTHER, data: report_bytes(t) }, t as f64)
+            })
+            .filter(|o| matches!(o, Output::Report { .. }))
+            .count();
+        let dropped = has(&r.tick(2.0 + DATA_TIMEOUT), &Output::Disconnect(OTHER));
+        (reports, dropped, r.paired().is_some())
+    };
+    for found in [None, Some((false, true)), Some((true, false)), Some((false, false))] {
+        assert_eq!(reports_until_timeout(found), (0, true, false), "{found:?}");
+    }
+    assert_eq!(reports_until_timeout(Some((true, true))), (27, false, true), "control");
+}
+
+#[test]
 fn init_commands_are_the_ones_the_joycon_accepts() {
     // As sent to real L and R Joy-Con 2s that then streamed reports (deskpuck-cli --verbose).
     let accepted: [[u8; 12]; 2] = [
@@ -660,4 +686,34 @@ fn advertised_names_are_cleaned_and_capped() {
     let shown = shown.expect("a name");
     assert!(shown.starts_with("JoyConx"), "{shown:?}");
     assert_eq!(shown.chars().count(), deskpuck_core::pairing::MAX_NAME_CHARS);
+}
+
+#[test]
+fn scanning_stops_before_a_connect() {
+    let mut r = ready(false);
+    let out = r.handle(discovered(JOYCON), 0.0);
+    let stop = out.iter().position(|o| *o == Output::StopScan).expect("the scan is stopped");
+    let connect = out.iter().position(|o| *o == Output::Connect(JOYCON)).expect("a connect");
+    assert!(stop < connect, "{out:?}");
+}
+
+#[test]
+fn a_failed_connect_is_cancelled_so_the_link_cannot_linger() {
+    let mut r = ready(false);
+    r.handle(discovered(JOYCON), 0.0);
+    assert!(has(&r.handle(Input::ConnectFailed(JOYCON), 1.0), &Output::Disconnect(JOYCON)));
+    // A failure for a device we were not connecting to changes nothing.
+    assert!(r.handle(Input::ConnectFailed(OTHER), 2.0).is_empty());
+}
+
+#[test]
+fn the_model_name_wins_over_an_address_shaped_name() {
+    let right = [0x01, 0x00, 0x03, 0x7E, 0x05, 0x66, 0x20, 0x00];
+    let bluez_alias = Some("E0-EF-BF-2A-2B-72".to_owned());
+    assert_eq!(device_name(bluez_alias.clone(), Some(&right)).as_deref(), Some("Joy-Con 2 (R)"));
+    // Unknown model or no manufacturer data: the advertised name is all there is.
+    let unknown = [0x01, 0x00, 0x03, 0x7E, 0x05, 0x69, 0x20, 0x00];
+    assert_eq!(device_name(bluez_alias.clone(), Some(&unknown)), bluez_alias);
+    assert_eq!(device_name(Some("Joy-Con 2 (R)".into()), None).as_deref(), Some("Joy-Con 2 (R)"));
+    assert_eq!(device_name(None, None), None);
 }

@@ -48,6 +48,13 @@ pub fn name_from_manufacturer_data(data: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// The name to show for a discovered device. The model named by the
+/// manufacturer data wins over the advertised name, which BlueZ fills with
+/// the address until the real name arrives.
+pub fn device_name(advertised: Option<String>, manufacturer_data: Option<&[u8]>) -> Option<String> {
+    manufacturer_data.and_then(name_from_manufacturer_data).map(str::to_owned).or(advertised)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     BluetoothOff,
@@ -126,6 +133,8 @@ struct Link<Id> {
     resubscribe_at: Option<f64>,
     /// Accepted by a pairing window and not yet confirmed as a Joy-Con.
     pairing: bool,
+    /// Both characteristics were found; until then no report becomes input.
+    confirmed: bool,
 }
 
 #[derive(Debug)]
@@ -349,6 +358,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 // A rescan still pending from an earlier drop is moot now.
                 self.rescan_at = None;
                 Self::status(&mut out, Status::Connecting, name);
+                // BlueZ cannot connect while scanning, and a scan left running
+                // makes the next start fail; scans resume through rescan_at.
+                out.push(Output::StopScan);
                 out.push(Output::Connect(id));
             }
             Input::Connected(id) => {
@@ -364,12 +376,16 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     pending_writes: Vec::new(),
                     resubscribe_at: None,
                     pairing,
+                    confirmed: false,
                 });
                 Self::status(&mut out, Status::Connected, name);
                 out.push(Output::DiscoverServices(id));
             }
             Input::ConnectFailed(id) => {
                 if self.connecting.remove(&id).is_some() {
+                    // A failed connect can leave the OS holding the link, and a
+                    // linked Joy-Con stops advertising.
+                    out.push(Output::Disconnect(id));
                     self.idle_status(&mut out);
                     self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
                 }
@@ -391,6 +407,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     return out;
                 }
                 // Both characteristics make it a Joy-Con 2, so a pairing link is confirmed.
+                link.confirmed = true;
                 if link.pairing {
                     link.pairing = false;
                     self.pairing_until = None;
@@ -417,7 +434,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 }
             }
             Input::Notification { id, data } => {
-                let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
+                let Some(link) = self.link.as_mut().filter(|l| l.id == id && l.confirmed) else {
+                    return out;
+                };
                 // Short reports are dropped without counting as data.
                 if data.len() < REPORT_MIN_SIZE {
                     return out;

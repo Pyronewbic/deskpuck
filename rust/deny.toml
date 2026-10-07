@@ -13,6 +13,9 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
+# Public-domain dedication; scoped to the one crate that needs it (the
+# Linux tray backend) rather than allowed everywhere.
+exceptions = [{ crate = "ksni", allow = ["Unlicense"] }]
 
 [bans]
 multiple-versions = "allow"

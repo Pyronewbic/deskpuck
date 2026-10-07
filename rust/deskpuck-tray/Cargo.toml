@@ -1,0 +1,30 @@
+[package]
+name = "deskpuck-tray"
+description = "Tray icon app for Deskpuck on Linux and Windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+deskpuck-ble = { path = "../deskpuck-ble" }
+deskpuck-core = { path = "../deskpuck-core" }
+deskpuck-inject = { path = "../deskpuck-inject" }
+
+# ksni (StatusNotifierItem over D-Bus) instead of the default GTK backend,
+# whose gtk3-rs crates are unmaintained and fail cargo deny.
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
+tray-icon = { version = "0.26.0", default-features = false, features = ["ksni"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio = { version = "1", features = ["rt", "signal"] }
+zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+tempfile = "3.27.0"
