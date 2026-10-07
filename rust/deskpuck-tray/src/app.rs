@@ -70,6 +70,23 @@ struct Shown {
 }
 
 pub fn run() -> ExitCode {
+    let config_path = Config::default_path();
+    // Held until the program ends; a second start (the menu after a login
+    // start, say) leaves the running tray alone.
+    let _instance = match config_path.as_deref().map(|p| p.with_file_name("deskpuck.lock")) {
+        Some(lock) => match crate::instance::claim(&lock) {
+            Ok(crate::instance::Instance::Only(file)) => Some(file),
+            Ok(crate::instance::Instance::Running) => {
+                eprintln!("deskpuck: already running; its icon is in the system tray");
+                return ExitCode::SUCCESS;
+            }
+            Err(problem) => {
+                eprintln!("deskpuck: could not check for another copy running ({problem})");
+                None
+            }
+        },
+        None => None,
+    };
     let (tx, rx) = mpsc::channel();
     let wake = Wake {
         tx,
@@ -79,7 +96,6 @@ pub fn run() -> ExitCode {
     let start = Instant::now();
     let mut model = Model::default();
 
-    let config_path = Config::default_path();
     let (menu, items) = build_menu();
     let tray = match TrayIconBuilder::new()
         .with_title("Deskpuck")

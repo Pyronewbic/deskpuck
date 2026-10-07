@@ -9,6 +9,9 @@ mod hook;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod icon;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+mod instance;
+
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod model;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod reload;
