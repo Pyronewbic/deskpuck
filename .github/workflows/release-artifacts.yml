@@ -1,0 +1,67 @@
+name: Release artifacts
+
+# Builds the Linux and Windows releases (scripts/package.sh) as workflow
+# artifacts. It holds no write token: scripts/release.sh, run on the
+# maintainer's Mac, downloads them for the commit it releases, checks them
+# and attaches them to the draft release beside the Mac app.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-about@0.9.2
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      - run: scripts/package.sh linux
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deskpuck-linux
+          path: |
+            dist/Deskpuck-*-linux-x86_64.tar.gz
+            dist/Deskpuck-*-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-about@0.9.2
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      # Inno Setup 6 comes with the windows-2025 image.
+      - run: scripts/package.sh windows
+        env:
+          ISCC: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deskpuck-windows
+          path: |
+            dist/Deskpuck-*-windows-x86_64.zip
+            dist/Deskpuck-*-windows-x86_64.zip.sha256
+            dist/Deskpuck-*-setup.exe
+            dist/Deskpuck-*-setup.exe.sha256
+          if-no-files-found: error
