@@ -56,7 +56,9 @@ pub fn mac_name(key: Key) -> Option<&'static str> {
         Key::Num8 => "ANSI_8",
         Key::Num9 => "ANSI_9",
         Key::Minus => "ANSI_Minus",
-        Key::Equals | Key::Plus => "ANSI_Equal",
+        Key::Equals => "ANSI_Equal",
+        // As a physical key, egui reports Plus only for the keypad's +.
+        Key::Plus => "ANSI_KeypadPlus",
         Key::OpenBracket => "ANSI_LeftBracket",
         Key::CloseBracket => "ANSI_RightBracket",
         Key::Backslash => "ANSI_Backslash",
@@ -112,6 +114,18 @@ pub fn modifiers(held: egui::Modifiers) -> Modifiers {
         .into_iter()
         .filter(|(on, _)| *on)
         .fold(Modifiers::NONE, |all, (_, m)| all.with(m))
+}
+
+/// The key behind a copy, cut or paste event. egui turns Ctrl+C, Ctrl+X and
+/// Ctrl+V (and on Windows Ctrl+Insert, Shift+Delete, Shift+Insert, which
+/// come out the same) into these instead of key presses; Ctrl is held.
+pub fn clipboard_key(event: &egui::Event) -> Option<Key> {
+    match event {
+        egui::Event::Copy => Some(Key::C),
+        egui::Event::Cut => Some(Key::X),
+        egui::Event::Paste(_) => Some(Key::V),
+        _ => None,
+    }
 }
 
 /// What one key press means while recording.

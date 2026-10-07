@@ -1,12 +1,13 @@
 //! Deskpuck's settings window for Linux and Windows; the tray app opens it.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use deskpuck_core::config::{Config, Mapping};
-use deskpuck_settings::keys::{choices, describe};
+use deskpuck_core::config::Mapping;
+use deskpuck_settings::config_path;
+use deskpuck_settings::keys::{choices, describe, modifier_label, modifiers};
 use deskpuck_settings::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
-use deskpuck_settings::recorder::{Recorded, record};
+use deskpuck_settings::recorder::{Recorded, clipboard_key, record};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
-use std::path::PathBuf;
+use std::ffi::OsString;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,18 @@ const USAGE: &str = "Usage: deskpuck-settings [--config PATH]";
 struct App {
     model: Model,
     start: Instant,
+    /// A close was stopped because the last change could not be saved; the
+    /// next close goes through.
+    close_stopped: bool,
+    next_file_check: f64,
+}
+
+/// How often the window looks for edits made outside it, in seconds.
+const FILE_CHECK: f64 = 1.0;
+
+/// Below 1/s (only a hand-edited interval) the rate needs a decimal.
+fn rate_text(rate: f64) -> String {
+    if rate < 1.0 { format!("{rate:.1}/s") } else { format!("{rate:.0}/s") }
 }
 
 fn label(mapping: Option<&Mapping>) -> String {
@@ -48,7 +61,8 @@ impl App {
                         repeat: false,
                         modifiers,
                     } => Some((*key, *physical_key, *modifiers)),
-                    _ => None,
+                    _ => clipboard_key(event)
+                        .map(|key| (key, None, egui::Modifiers { ctrl: true, ..input.modifiers })),
                 })
                 .collect()
         });
@@ -75,7 +89,9 @@ impl App {
                 ui.label(row.label);
                 if self.model.recording == Some(row.id) {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Press a shortcut (Esc cancels)").weak());
+                        ui.label(
+                            RichText::new("Press a shortcut (Esc cancels; add Super after)").weak(),
+                        );
                         if ui.button("Cancel").clicked() {
                             self.model.recording = None;
                         }
@@ -87,21 +103,37 @@ impl App {
                     if !options.contains(&current) {
                         options.push(current);
                     }
-                    let (mut picked, mut start_recording) = (None, false);
-                    egui::ComboBox::from_id_salt(row.id)
-                        .selected_text(label(current.as_ref()))
-                        .width(230.0)
-                        .show_ui(ui, |ui| {
-                            for option in &options {
-                                let text = label(option.as_ref());
-                                if ui.selectable_label(*option == current, text).clicked() {
-                                    picked = Some(*option);
+                    let (mut picked, mut start_recording, mut toggled) = (None, false, None);
+                    ui.horizontal(|ui| {
+                        egui::ComboBox::from_id_salt(row.id)
+                            .selected_text(label(current.as_ref()))
+                            .width(200.0)
+                            .show_ui(ui, |ui| {
+                                for option in &options {
+                                    let text = label(option.as_ref());
+                                    if ui.selectable_label(*option == current, text).clicked() {
+                                        picked = Some(*option);
+                                    }
+                                }
+                                ui.separator();
+                                start_recording =
+                                    ui.selectable_label(false, "Record Shortcut...").clicked();
+                            });
+                        // The modifiers held with a key, including Super, which
+                        // the recorder cannot see.
+                        if let Some(Mapping::Shortcut(shortcut)) = current {
+                            for modifier in modifiers() {
+                                let on = shortcut.modifiers.contains(modifier);
+                                let text = RichText::new(modifier_label(modifier)).small();
+                                if ui.selectable_label(on, text).clicked() {
+                                    toggled = Some(modifier);
                                 }
                             }
-                            ui.separator();
-                            start_recording =
-                                ui.selectable_label(false, "Record Shortcut...").clicked();
-                        });
+                        }
+                    });
+                    if let Some(modifier) = toggled {
+                        self.model.toggle_modifier(row.id, modifier, now);
+                    }
                     if let Some(mapping) = picked.filter(|m| *m != current) {
                         self.model.set_mapping(row.id, mapping, now);
                     }
@@ -144,7 +176,7 @@ impl App {
                 changed |= ui.add(delay).changed();
                 ui.end_row();
                 ui.label("Repeat speed");
-                let rate = slider(&mut values.repeat_rate, RATE_RANGE, |n| format!("{n:.0}/s"));
+                let rate = slider(&mut values.repeat_rate, RATE_RANGE, rate_text);
                 changed |= ui.add(rate).changed();
                 ui.end_row();
             });
@@ -171,6 +203,13 @@ impl eframe::App for App {
                     for warning in &self.model.load_warnings {
                         ui.colored_label(ui.visuals().warn_fg_color, warning);
                     }
+                    if self.model.backs_up() {
+                        ui.label("Your first change keeps a copy of the file as config.json.bak.");
+                    }
+                    ui.add_space(12.0);
+                }
+                if let Some(notice) = &self.model.notice {
+                    ui.colored_label(ui.visuals().warn_fg_color, notice);
                     ui.add_space(12.0);
                 }
                 self.buttons(ui, now);
@@ -187,28 +226,41 @@ impl eframe::App for App {
                 });
             });
         });
-        self.model.save_if_due(now);
-        if let Some(due) = self.model.save_due_in(now) {
-            ui.ctx().request_repaint_after(Duration::from_secs_f64(due));
+        if now >= self.next_file_check {
+            self.next_file_check = now + FILE_CHECK;
+            self.model.check_file();
         }
+        self.model.save_if_due(now);
+        // Closing saves now; if that fails, the window stays open once to show why.
+        if ui.input(|i| i.viewport().close_requested())
+            && !self.model.flush(now)
+            && self.model.save_error.is_some()
+            && !self.close_stopped
+        {
+            self.close_stopped = true;
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+        let wait = self.model.save_due_in(now).unwrap_or(FILE_CHECK).min(FILE_CHECK);
+        ui.ctx().request_repaint_after(Duration::from_secs_f64(wait));
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.model.flush();
+        self.model.flush(self.start.elapsed().as_secs_f64());
     }
 }
 
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let path: Option<PathBuf> = match (args.next().as_deref(), args.next(), args.next()) {
-        (None, ..) => Config::default_path(),
-        (Some("--config"), Some(path), None) => Some(path.into()),
-        _ => {
-            eprintln!("{USAGE}");
-            return ExitCode::from(2);
-        }
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    let Some(path) = config_path(&args) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
     };
-    let app = App { model: Model::load(path), start: Instant::now() };
+    let app = App {
+        model: Model::load(path),
+        start: Instant::now(),
+        close_stopped: false,
+        next_file_check: FILE_CHECK,
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Deskpuck Settings")

@@ -2,7 +2,7 @@ use deskpuck_core::config::{Mapping, Shortcut};
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_inject::keymap::KEYS;
 use deskpuck_settings::keys::{MENU_KEYS, choices, describe, key_name};
-use deskpuck_settings::recorder::{Recorded, mac_name, record};
+use deskpuck_settings::recorder::{Recorded, clipboard_key, mac_name, record};
 use eframe::egui::{Key, Modifiers as Held};
 use std::collections::HashSet;
 
@@ -71,10 +71,7 @@ fn every_recordable_key_exists_in_the_key_table() {
         recordable += 1;
         let row = KEYS.iter().find(|row| row.mac_name == name);
         let row = row.unwrap_or_else(|| panic!("{key:?} -> {name} is not in the key table"));
-        // Plus is Shift+Equals on the same key.
-        if key != Key::Plus {
-            assert!(codes.insert(row.mac), "{key:?} shares a key code");
-        }
+        assert!(codes.insert(row.mac), "{key:?} shares a key code");
     }
     assert!(recordable >= 80, "only {recordable} keys can be recorded");
 }
@@ -106,4 +103,18 @@ fn escape_alone_cancels_and_unknown_keys_are_skipped() {
     );
     assert_eq!(record(Key::F35, Some(Key::F35), Held::NONE), Recorded::Unknown);
     assert_eq!(record(Key::Copy, None, held(true, false, false)), Recorded::Unknown);
+}
+
+#[test]
+fn keypad_plus_and_clipboard_shortcuts_can_be_recorded() {
+    let plain =
+        |key| Recorded::Shortcut(Mapping::Shortcut(Shortcut { key, modifiers: Modifiers::NONE }));
+    assert_eq!(record(Key::Plus, Some(Key::Plus), Held::NONE), plain(0x45), "keypad +");
+    assert_eq!(record(Key::Equals, Some(Key::Equals), Held::NONE), plain(0x18), "control: =");
+
+    use eframe::egui::Event;
+    assert_eq!(clipboard_key(&Event::Copy), Some(Key::C));
+    assert_eq!(clipboard_key(&Event::Cut), Some(Key::X));
+    assert_eq!(clipboard_key(&Event::Paste(String::new())), Some(Key::V));
+    assert_eq!(clipboard_key(&Event::Text("c".into())), None);
 }
