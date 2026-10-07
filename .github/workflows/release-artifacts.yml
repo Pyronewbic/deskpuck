@@ -2,12 +2,11 @@ name: Release artifacts
 
 # Builds the Linux and Windows releases (scripts/package.sh) as workflow
 # artifacts. It holds no write token: scripts/release.sh, run on the
-# maintainer's Mac, downloads them for the commit it releases, checks them
-# and attaches them to the draft release beside the Mac app.
+# maintainer's Mac, downloads them for the commit it releases (before it
+# tags it), checks them and attaches them to the draft release beside the
+# Mac app. Start it with: gh workflow run release-artifacts.yml --ref main
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: read
