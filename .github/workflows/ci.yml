@@ -30,7 +30,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.20.2,cargo-nextest@0.9.146
       - name: Rust toolchain from rust/rust-toolchain.toml
         working-directory: rust
         run: rustup toolchain install
@@ -52,7 +52,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config dbus
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.20.2,cargo-nextest@0.9.146
       - name: Rust toolchain from rust/rust-toolchain.toml
         working-directory: rust
         run: rustup toolchain install
@@ -76,7 +76,7 @@ jobs:
           persist-credentials: false
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.20.2,cargo-nextest@0.9.146
       - name: Rust toolchain from rust/rust-toolchain.toml
         working-directory: rust
         run: rustup toolchain install

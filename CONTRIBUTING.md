@@ -8,7 +8,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 - Xcode 26, for `scripts/make-app.sh` (it compiles the app icon with `actool`).
 - Python 3, for `scripts/make-dmg.sh` (it installs a pinned `dmgbuild` into `.venv`).
 - Rust through rustup: the app's core is the [Rust workspace](#rust-workspace), and `rust/rust-toolchain.toml` pins the version, which rustup installs on first use. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
-- `gitleaks` and `cargo-deny`, for the checks before a push (`brew install gitleaks cargo-deny`).
+- `gitleaks`, `cargo-deny` and `cargo-nextest`, for the checks before a push (`brew install gitleaks cargo-deny cargo-nextest`).
 
 ## Building the Mac app
 
@@ -55,7 +55,7 @@ sudo usermod -aG input "$USER"   # then log out and back in
 
 ## Changes
 
-- `scripts/check.sh` must pass: Rust format, lints and tests, known advisories and licenses of every crate (`rust/deny.toml`) and, on macOS, the app build. Exit 1 means a check failed, 3 that one could not run. CI runs it on pushes to main, on pull requests and weekly.
+- `scripts/check.sh` must pass: Rust format, lints and tests (with cargo-nextest, then doctests), a check that every file in `rust/*/tests/` ran, known advisories and licenses of every crate (`rust/deny.toml`) and, on macOS, the app build. Exit 1 means a check failed, 3 that one could not run. CI runs it on pushes to main, on pull requests and weekly; each check is a labelled section of the log, and each run's summary lists the test suites and their counts.
 - Turn on the pre-push hook once per clone, which scans the commits being pushed for secrets and then runs `scripts/check.sh`: `git config core.hooksPath .githooks`.
 - A behavior change or bug fix includes a test that fails without it.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/), one change per commit.
