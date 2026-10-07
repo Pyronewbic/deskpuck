@@ -2,11 +2,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use deskpuck_core::config::{Appearance, Mapping};
-use deskpuck_settings::config_path;
 use deskpuck_settings::keys::{choices, describe, modifier_label, modifiers};
 use deskpuck_settings::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
 use deskpuck_settings::recorder::{Recorded, clipboard_key, record};
 use deskpuck_settings::widgets::{section, segments, toggle};
+use deskpuck_settings::{config_path, viewport};
 use deskpuck_settings::{fonts, text, theme};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
 use std::ffi::OsString;
@@ -351,20 +351,11 @@ fn main() -> ExitCode {
         focused: false,
         asked_height: None,
     };
-    let mut viewport = egui::ViewportBuilder::default();
     // The logo the tray and the Mac app show, rendered by scripts/make-icons.sh.
-    if let Ok(icon) =
-        eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png"))
-    {
-        viewport = viewport.with_icon(icon);
-    }
+    let icon =
+        eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png")).ok();
     let options = eframe::NativeOptions {
-        viewport: viewport
-            .with_title("Deskpuck Settings")
-            .with_app_id("deskpuck-settings")
-            .with_inner_size([WIDTH, 720.0])
-            .with_min_inner_size([WIDTH, 240.0])
-            .with_max_inner_size([WIDTH, f32::INFINITY]),
+        viewport: viewport(WIDTH, icon),
         // Fitted to its content, it is tall; centred, it clears taskbars and panels.
         centered: true,
         ..Default::default()
