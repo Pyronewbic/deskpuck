@@ -679,3 +679,15 @@ fn a_failed_connect_is_cancelled_so_the_link_cannot_linger() {
     // A failure for a device we were not connecting to changes nothing.
     assert!(r.handle(Input::ConnectFailed(OTHER), 2.0).is_empty());
 }
+
+#[test]
+fn the_model_name_wins_over_an_address_shaped_name() {
+    let right = [0x01, 0x00, 0x03, 0x7E, 0x05, 0x66, 0x20, 0x00];
+    let bluez_alias = Some("E0-EF-BF-2A-2B-72".to_owned());
+    assert_eq!(device_name(bluez_alias.clone(), Some(&right)).as_deref(), Some("Joy-Con 2 (R)"));
+    // Unknown model or no manufacturer data: the advertised name is all there is.
+    let unknown = [0x01, 0x00, 0x03, 0x7E, 0x05, 0x69, 0x20, 0x00];
+    assert_eq!(device_name(bluez_alias.clone(), Some(&unknown)), bluez_alias);
+    assert_eq!(device_name(Some("Joy-Con 2 (R)".into()), None).as_deref(), Some("Joy-Con 2 (R)"));
+    assert_eq!(device_name(None, None), None);
+}

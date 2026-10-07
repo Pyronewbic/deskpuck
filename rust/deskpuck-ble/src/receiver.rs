@@ -48,6 +48,13 @@ pub fn name_from_manufacturer_data(data: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// The name to show for a discovered device. The model named by the
+/// manufacturer data wins over the advertised name, which BlueZ fills with
+/// the address until the real name arrives.
+pub fn device_name(advertised: Option<String>, manufacturer_data: Option<&[u8]>) -> Option<String> {
+    manufacturer_data.and_then(name_from_manufacturer_data).map(str::to_owned).or(advertised)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     BluetoothOff,
