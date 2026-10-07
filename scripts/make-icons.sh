@@ -2,7 +2,8 @@
 # Renders the Linux and Windows icons from the Mac app's icon, so every
 # platform shows the same logo. Run it after changing Resources/Deskpuck.icon
 # and commit the PNGs with it:   scripts/make-icons.sh
-# Needs Xcode 26's actool, like make-app.sh. Writes rust/icons/deskpuck-N.png.
+# Needs Xcode 26's actool, like make-app.sh. Writes rust/icons/deskpuck-N.png
+# and rust/icons/deskpuck.ico (the Windows .exe icon).
 # Exit 0 done, 1 a step failed, 3 a tool is missing.
 set -uo pipefail
 
@@ -35,4 +36,24 @@ for size in 32 64 128; do
     sips -z "$size" "$size" "$tmp/logo.png" --out "rust/icons/deskpuck-$size.png" >/dev/null ||
         fail "could not write the $size px icon"
 done
-echo "Wrote rust/icons/deskpuck-{32,64,128}.png"
+# The .ico holds one PNG per size, which Windows Vista and later read.
+ico_sizes="16 24 32 48 64 128 256"
+for size in $ico_sizes; do
+    sips -z "$size" "$size" "$tmp/logo.png" --out "$tmp/ico-$size.png" >/dev/null ||
+        fail "could not make the $size px .ico entry"
+done
+python3 - "$tmp" rust/icons/deskpuck.ico $ico_sizes <<'PY' || fail "could not write deskpuck.ico"
+import struct, sys
+tmp, out, sizes = sys.argv[1], sys.argv[2], [int(s) for s in sys.argv[3:]]
+images = [open(f"{tmp}/ico-{size}.png", "rb").read() for size in sizes]
+header = struct.pack("<HHH", 0, 1, len(images))
+offset = len(header) + 16 * len(images)
+entries = b""
+for size, image in zip(sizes, images):
+    # Width and height 0 mean 256; 32 bits per pixel; then the PNG's length and offset.
+    entries += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(image), offset)
+    offset += len(image)
+with open(out, "wb") as f:
+    f.write(header + entries + b"".join(images))
+PY
+echo "Wrote rust/icons/deskpuck-{32,64,128}.png and rust/icons/deskpuck.ico"

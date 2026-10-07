@@ -1,0 +1,2 @@
+// The Deskpuck logo as the icon of each Windows .exe (made by scripts/make-icons.sh).
+1 ICON "deskpuck.ico"
