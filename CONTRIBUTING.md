@@ -27,7 +27,7 @@ To debug input, run the same core without the app: `deskpuck-cli --monitor` show
 
 ## Rust workspace
 
-`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-cli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links), `deskpuck-replay` (a tool that drives the backends without Bluetooth), `deskpuck-tray` (a tray icon app for Linux and Windows) and `deskpuck-settings` (its settings window).
+`rust/` holds the core: `deskpuck-core` (parser, engine and config), `deskpuck-ble` (the Bluetooth connection and `deskpuck-cli`), `deskpuck-inject` (input backends for macOS, Linux and Windows), `deskpuck-ffi` (the C interface the app links), `deskpuck-replay` (a tool that drives the backends without Bluetooth), `deskpuck-tray` (the Linux and Windows app, built as `deskpuck`) and `deskpuck-settings` (its settings window, a library the app runs with `--settings`).
 
 ```sh
 cd rust
@@ -61,9 +61,9 @@ sudo sed -i -e 's/^MinConnectionInterval=12$/#MinConnectionInterval=/' -e 's/^Ma
 
 The `grep` should print both lines; if it does not, your `main.conf` lacks the commented defaults, so set them by hand under `[LE]`. Running the commands twice changes nothing, and the undo touches only those two lines.
 
-Shorter intervals (7.5-15 ms, about 89 a second) failed to establish a connection several times in testing. Bluetooth has not been run on Windows yet, and the Windows input backend has not been run on Windows.
+Shorter intervals (7.5-15 ms, about 89 a second) failed to establish a connection several times in testing. On Windows (tested on Windows 11), Deskpuck asks for a 15 ms interval itself, about 66 reports a second, so nothing needs changing there.
 
-`cargo build --release -p deskpuck-tray -p deskpuck-settings` builds the tray app and its settings window side by side in `rust/target/release`; start `deskpuck-tray` from there. Its menu has the Mac menu's status, pairing, pause and latch lines, and **Settings...** opens the settings window with the Mac app's controls (so does a left click on the icon). **Open Settings File** edits `config.json` by hand; the tray applies any change to the file within a second. If the file has problems when the window opens, its first save keeps a copy as `config.json.bak`. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension, and until something shows the icon the app does not connect to the Joy-Con. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
+`cargo build --release -p deskpuck-tray` builds the app as `rust/target/release/deskpuck`; start it from there. Its menu has the Mac menu's status, pairing, pause and latch lines, and **Settings...** opens the settings window with the Mac app's controls (so does a left click on the icon). **Open Settings File** edits `config.json` by hand; the tray applies any change to the file within a second. If the file has problems when the window opens, its first save keeps a copy as `config.json.bak`. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension, and until something shows the icon the app does not connect to the Joy-Con. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
 
 ## Changes
 

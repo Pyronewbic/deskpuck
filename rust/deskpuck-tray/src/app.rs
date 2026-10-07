@@ -90,7 +90,7 @@ pub fn run() -> ExitCode {
     {
         Ok(tray) => tray,
         Err(e) => {
-            eprintln!("deskpuck-tray: could not create the tray icon: {e}");
+            eprintln!("deskpuck: could not create the tray icon: {e}");
             return ExitCode::from(1);
         }
     };
@@ -165,13 +165,13 @@ pub fn run() -> ExitCode {
                     if !present && !started && !told_waiting {
                         told_waiting = true;
                         eprintln!(
-                            "deskpuck-tray: no system tray is showing icons (on GNOME, turn on \
+                            "deskpuck: no system tray is showing icons (on GNOME, turn on \
                              the AppIndicator extension); not connecting until one appears"
                         );
                     }
                 }
                 Event::Click => {
-                    if let Err(problem) = open_window(config_path.as_deref(), &mut window) {
+                    if let Err(problem) = open_own_window(config_path.as_deref(), &mut window) {
                         model.note(problem);
                     }
                 }
@@ -180,7 +180,7 @@ pub fn run() -> ExitCode {
                         break 'run;
                     }
                     if id == *items.settings.id() {
-                        if let Err(problem) = open_window(config_path.as_deref(), &mut window) {
+                        if let Err(problem) = open_own_window(config_path.as_deref(), &mut window) {
                             model.note(problem);
                         }
                         continue;
@@ -348,21 +348,31 @@ fn reload_file(
     }
 }
 
-/// Opens the settings window, the `deskpuck-settings` program installed beside
-/// this one; while one is open, another is not started.
-fn open_window(path: Option<&Path>, window: &mut Option<Child>) -> Result<(), String> {
+/// Opens the settings window with this program, which runs it under --settings.
+fn open_own_window(path: Option<&Path>, window: &mut Option<Child>) -> Result<(), String> {
+    let program =
+        std::env::current_exe().map_err(|e| format!("Could not open the settings window: {e}"))?;
+    open_window(&program, path, window)
+}
+
+/// Opens the settings window: `program` (this program) run with --settings,
+/// as its own process; while one is open, another is not started.
+fn open_window(
+    program: &Path,
+    path: Option<&Path>,
+    window: &mut Option<Child>,
+) -> Result<(), String> {
     if window.as_mut().is_some_and(|child| child.try_wait().is_ok_and(|done| done.is_none())) {
         return Ok(());
     }
-    let program = format!("deskpuck-settings{}", std::env::consts::EXE_SUFFIX);
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("Could not find the settings window: {e}"))?
-        .with_file_name(program);
-    let mut command = Command::new(&exe);
+    let mut command = Command::new(program);
+    command.arg("--settings");
     if let Some(path) = path {
         command.arg("--config").arg(path);
     }
-    let child = command.spawn().map_err(|e| format!("Could not open {}: {e}", exe.display()))?;
+    let child = command
+        .spawn()
+        .map_err(|e| format!("Could not open the settings window ({}): {e}", program.display()))?;
     *window = Some(child);
     Ok(())
 }
@@ -626,13 +636,32 @@ mod tests {
     }
 
     #[test]
-    fn the_window_is_looked_for_beside_the_tray() {
-        // Tests run from target/*/deps, where no deskpuck-settings is built.
+    fn a_program_that_cannot_start_is_reported_and_leaves_no_window() {
+        let missing = std::env::temp_dir().join("deskpuck-test-no-such-program");
         let mut window = None;
-        let problem = open_window(None, &mut window).unwrap_err();
-        let beside = std::env::current_exe().unwrap().with_file_name("deskpuck-settings");
-        assert!(problem.contains(&beside.display().to_string()), "{problem}");
+        let problem = open_window(&missing, None, &mut window).unwrap_err();
+        assert!(problem.contains(&missing.display().to_string()), "{problem}");
         assert!(window.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_window_is_this_program_with_settings_and_the_config_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("fake-deskpuck");
+        let seen = dir.path().join("args");
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\n", seen.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let mut window = None;
+        open_window(&program, Some(Path::new("/x/config.json")), &mut window).unwrap();
+        window.take().unwrap().wait().unwrap();
+        let args = std::fs::read_to_string(&seen).unwrap();
+        assert_eq!(args, "--settings\n--config\n/x/config.json\n");
     }
 
     #[cfg(target_os = "linux")]
@@ -641,14 +670,15 @@ mod tests {
         let running = Command::new("sleep").arg("30").spawn().unwrap();
         let pid = running.id();
         let mut window = Some(running);
-        assert_eq!(open_window(None, &mut window), Ok(()));
+        let missing = std::env::temp_dir().join("deskpuck-test-no-such-program");
+        assert_eq!(open_window(&missing, None, &mut window), Ok(()));
         let mut child = window.take().unwrap();
         assert_eq!(child.id(), pid, "the open window is kept");
         child.kill().unwrap();
         child.wait().unwrap();
 
-        // Once it has exited, a new one is looked for (and here not found).
+        // Once it has exited, a new one is started (and here not found).
         let mut window = Some(child);
-        assert!(open_window(None, &mut window).is_err());
+        assert!(open_window(&missing, None, &mut window).is_err());
     }
 }

@@ -6,8 +6,8 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ### Added
 
-- `deskpuck-tray`, a preview tray app for Linux and Windows, built from source: status, pairing, pause, latched modifiers, and opening or reloading `config.json`.
-- A settings window for Linux and Windows (`deskpuck-settings`) with the Mac app's controls, opened from the tray's Settings... item or a left click; the tray applies changes to `config.json` as soon as the file changes.
+- `deskpuck`, the app for Linux and Windows: a tray icon with status, pairing, pause, latched modifiers, and opening or reloading `config.json`.
+- A settings window for Linux and Windows with the Mac app's controls, opened from the tray's Settings... item or a left click (`deskpuck --settings`); the tray applies changes to `config.json` as soon as the file changes.
 - CI builds and tests the Rust workspace on Windows.
 - Linux: a Joy-Con 2 connects over a direct ATT link, since BlueZ cannot resolve its services. No root needed.
 - A Theme setting (System, Light or Dark) for the settings window, on every platform; `appearance` in `config.json`.

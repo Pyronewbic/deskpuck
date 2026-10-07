@@ -105,7 +105,7 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
     let (_daemon, address) = session_bus();
     let home = tempfile::tempdir().unwrap();
     let mut tray = Reap(
-        Command::new(env!("CARGO_BIN_EXE_deskpuck-tray"))
+        Command::new(env!("CARGO_BIN_EXE_deskpuck"))
             .env("DBUS_SESSION_BUS_ADDRESS", &address)
             // Never reach the real Bluetooth stack or the user's settings.
             .env("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/nonexistent/deskpuck-test")

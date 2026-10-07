@@ -9,10 +9,16 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The whole Linux and Windows app: the tray, and with --settings its window.
+[[bin]]
+name = "deskpuck"
+path = "src/main.rs"
+
 [dependencies]
 deskpuck-ble = { path = "../deskpuck-ble" }
 deskpuck-core = { path = "../deskpuck-core" }
 deskpuck-inject = { path = "../deskpuck-inject" }
+deskpuck-settings = { path = "../deskpuck-settings" }
 png = "0.18.1"
 
 # ksni (StatusNotifierItem over D-Bus) instead of the default GTK backend,

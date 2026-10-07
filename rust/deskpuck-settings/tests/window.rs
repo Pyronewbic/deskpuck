@@ -13,7 +13,7 @@ fn every_size_the_window_asks_for_is_finite_and_there_is_no_maximum() {
     }
     let (min, initial) = (window.min_inner_size.unwrap(), window.inner_size.unwrap());
     assert!(min.x <= initial.x && min.y <= initial.y);
-    assert_eq!(window.app_id.as_deref(), Some("deskpuck-settings"), "matches the .desktop file");
+    assert_eq!(window.app_id.as_deref(), Some("deskpuck"), "matches deskpuck.desktop");
 }
 
 #[test]

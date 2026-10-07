@@ -8,6 +8,7 @@ pub mod recorder;
 pub mod text;
 pub mod theme;
 pub mod widgets;
+pub mod window;
 
 use deskpuck_core::config::Config;
 use eframe::egui::{IconData, ViewportBuilder};
@@ -31,7 +32,7 @@ pub fn config_path(args: &[OsString]) -> Option<Option<PathBuf>> {
 pub fn viewport(width: f32, icon: Option<IconData>) -> ViewportBuilder {
     let viewport = ViewportBuilder::default()
         .with_title("Deskpuck Settings")
-        .with_app_id("deskpuck-settings")
+        .with_app_id("deskpuck")
         .with_inner_size([width, 720.0])
         .with_min_inner_size([width, 240.0]);
     match icon {

@@ -1,19 +1,16 @@
-//! Deskpuck's settings window for Linux and Windows; the tray app opens it.
-#![cfg_attr(windows, windows_subsystem = "windows")]
+//! The settings window itself: `deskpuck --settings` runs it, and the tray's
+//! Settings... item starts that.
 
+use crate::keys::{choices, describe, modifier_label, modifiers};
+use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
+use crate::recorder::{Recorded, clipboard_key, record};
+use crate::viewport;
+use crate::widgets::{section, segments, toggle};
+use crate::{fonts, text, theme};
 use deskpuck_core::config::{Appearance, Mapping};
-use deskpuck_settings::keys::{choices, describe, modifier_label, modifiers};
-use deskpuck_settings::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
-use deskpuck_settings::recorder::{Recorded, clipboard_key, record};
-use deskpuck_settings::widgets::{section, segments, toggle};
-use deskpuck_settings::{config_path, viewport};
-use deskpuck_settings::{fonts, text, theme};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
-use std::ffi::OsString;
-use std::process::ExitCode;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
-
-const USAGE: &str = "Usage: deskpuck-settings [--config PATH]";
 
 struct App {
     model: Model,
@@ -336,12 +333,9 @@ impl eframe::App for App {
     }
 }
 
-fn main() -> ExitCode {
-    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-    let Some(path) = config_path(&args) else {
-        eprintln!("{USAGE}");
-        return ExitCode::from(2);
-    };
+/// Shows the window until it is closed. `path` is the settings file, or
+/// `None` where the system has no settings folder.
+pub fn run(path: Option<PathBuf>) -> Result<(), String> {
     let app = App {
         model: Model::load(path),
         start: Instant::now(),
@@ -365,11 +359,6 @@ fn main() -> ExitCode {
         theme::apply(&cc.egui_ctx, theme::Accent::BRAND);
         Ok(Box::new(app) as Box<dyn eframe::App>)
     });
-    match eframe::run_native("Deskpuck Settings", options, creator) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("deskpuck-settings: could not open the window: {e}");
-            ExitCode::from(1)
-        }
-    }
+    eframe::run_native("Deskpuck Settings", options, creator)
+        .map_err(|e| format!("could not open the window: {e}"))
 }
