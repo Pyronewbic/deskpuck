@@ -49,7 +49,16 @@ EOF
 sudo usermod -aG input "$USER"   # then log out and back in
 ```
 
-`deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS and Linux. On Linux, BlueZ never finishes resolving a Joy-Con 2's services, so Deskpuck talks ATT over its own L2CAP socket instead (no root needed). Bluetooth has not been run on Windows yet, and the Windows input backend has not been run on Windows.
+`deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS and Linux. On Linux, BlueZ never finishes resolving a Joy-Con 2's services, so Deskpuck talks ATT over its own L2CAP socket instead (no root needed). At BlueZ's default connection interval a Joy-Con sends about 21 reports a second; for a smoother pointer, set a shorter default once as root (this applies to every Bluetooth LE device on the machine), then reconnect, since the first connection after the change can still use the old interval. With 15-30 ms the Joy-Con sent about 45 a second:
+
+```sh
+sudo sed -i.deskpuck-bak -e 's/^#MinConnectionInterval=$/MinConnectionInterval=12/' -e 's/^#MaxConnectionInterval=$/MaxConnectionInterval=24/' /etc/bluetooth/main.conf
+sudo systemctl restart bluetooth
+# To undo:
+sudo mv /etc/bluetooth/main.conf.deskpuck-bak /etc/bluetooth/main.conf && sudo systemctl restart bluetooth
+```
+
+Shorter intervals (7.5-15 ms, about 89 a second) failed to establish a connection several times in testing. Bluetooth has not been run on Windows yet, and the Windows input backend has not been run on Windows.
 
 `cargo run --release -p deskpuck-tray` starts the tray app: the Mac menu's status, pairing, pause and latch lines, plus Open Settings File and Reload Settings in place of a settings window. Settings live in `~/.config/deskpuck/config.json` on Linux and `%APPDATA%\Deskpuck\config.json` on Windows, with `pairing.json` beside them; modifier names keep the Mac spelling (`option` presses Alt, `command` the Super or Windows key). On Linux the icon is a StatusNotifierItem over D-Bus: KDE shows it, GNOME needs the AppIndicator extension, and until something shows the icon the app does not connect to the Joy-Con. On Windows it opens no console window. Like the CLI, it needs the `/dev/uinput` access above on Linux.
 
