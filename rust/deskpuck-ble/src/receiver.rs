@@ -373,6 +373,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             }
             Input::ConnectFailed(id) => {
                 if self.connecting.remove(&id).is_some() {
+                    // A failed connect can leave the OS holding the link, and a
+                    // linked Joy-Con stops advertising.
+                    out.push(Output::Disconnect(id));
                     self.idle_status(&mut out);
                     self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
                 }

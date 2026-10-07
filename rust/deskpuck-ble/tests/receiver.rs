@@ -670,3 +670,12 @@ fn scanning_stops_before_a_connect() {
     let connect = out.iter().position(|o| *o == Output::Connect(JOYCON)).expect("a connect");
     assert!(stop < connect, "{out:?}");
 }
+
+#[test]
+fn a_failed_connect_is_cancelled_so_the_link_cannot_linger() {
+    let mut r = ready(false);
+    r.handle(discovered(JOYCON), 0.0);
+    assert!(has(&r.handle(Input::ConnectFailed(JOYCON), 1.0), &Output::Disconnect(JOYCON)));
+    // A failure for a device we were not connecting to changes nothing.
+    assert!(r.handle(Input::ConnectFailed(OTHER), 2.0).is_empty());
+}
