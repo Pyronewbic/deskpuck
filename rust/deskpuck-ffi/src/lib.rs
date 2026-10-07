@@ -1,5 +1,4 @@
-//! The C interface in `include/deskpuck.h`, for the Mac app. Settings cross as
-//! JSON so the Rust validator stays the only one.
+//! Settings cross as JSON so the Rust validator stays the only one.
 
 use deskpuck_ble::controller::{
     Controller, Hooks, LatchHook, LinkStatus, PairingSetup, StatusHook,
@@ -47,7 +46,6 @@ pub fn status_hook(on_status: Option<StatusCallback>, context: usize) -> StatusH
     })
 }
 
-/// Bridges latched-modifier changes to the C callback, like `status_hook`.
 pub fn latch_hook(on_latch: Option<LatchCallback>, context: usize) -> Option<LatchHook> {
     let callback = on_latch?;
     Some(Box::new(move |modifiers| {
@@ -75,7 +73,7 @@ fn guard<T>(fallback: impl FnOnce() -> T, body: impl FnOnce() -> T) -> T {
     catch_unwind(AssertUnwindSafe(body)).unwrap_or_else(|_| fallback())
 }
 
-/// Parses config JSON strictly: any warning is a problem.
+/// Strict: any warning is a problem.
 fn parse_config(json: &str) -> Result<Config, Vec<String>> {
     let (config, warnings) = Config::from_json(json.as_bytes());
     if warnings.is_empty() { Ok(config) } else { Err(warnings) }
@@ -170,9 +168,7 @@ pub struct DpController {
 }
 
 /// # Safety
-/// `config_json` must be NULL or a valid NUL-terminated string. `context` is
-/// passed back to `on_status` and `on_latch` untouched and must stay valid
-/// until `dp_controller_free` returns.
+/// `config_json` as for `from_c`; `context` must stay valid until `dp_controller_free` returns.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_controller_start(
     config_json: *const c_char,
@@ -259,8 +255,7 @@ pub unsafe extern "C" fn dp_controller_cancel_pairing(controller: *mut DpControl
 }
 
 /// # Safety
-/// `controller` must be NULL or a live pointer from `dp_controller_start`;
-/// `config_json` must be NULL or a valid NUL-terminated string.
+/// `controller` as for the other controller calls; `config_json` as for `from_c`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dp_controller_apply_config(
     controller: *mut DpController,

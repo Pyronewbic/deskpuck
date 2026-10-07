@@ -1,7 +1,6 @@
 import AppKit
 
 enum StatusGlyph {
-    // 18 pt template image echoing the app icon: a tilted controller outline and a pointer.
     // macOS tints template images to suit the menu bar, so only the alpha matters.
     static func image() -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
@@ -25,7 +24,6 @@ enum StatusGlyph {
             pointer.close()
             pointer.lineJoinStyle = .round
 
-            // Cut a thin gap around the pointer so it stays readable where it overlaps the outline.
             NSGraphicsContext.current?.compositingOperation = .clear
             pointer.lineWidth = 1.6
             pointer.stroke()

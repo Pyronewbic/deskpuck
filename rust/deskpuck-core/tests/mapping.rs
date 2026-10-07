@@ -15,13 +15,11 @@ fn pt(x: f64, y: f64) -> Point {
 
 #[test]
 fn clamp_to_displays_cases() {
-    // Control: a move within one display is unchanged.
     assert_eq!(
         clamp_to_displays(pt(600.0, 500.0), pt(500.0, 500.0), display_at, MAIN),
         pt(600.0, 500.0)
     );
 
-    // Crossing onto the second display is allowed, and the lookup actually ran.
     let lookups = Cell::new(0);
     let counting = |p| {
         lookups.set(lookups.get() + 1);
@@ -38,19 +36,16 @@ fn clamp_to_displays_cases() {
     assert_eq!(bottom, pt(500.0, 1079.0));
     assert!(display_at(bottom).is_some());
 
-    // Off all displays from the second display clamps to the second display, not main.
     assert_eq!(
         clamp_to_displays(pt(3500.0, 100.0), pt(3000.0, 300.0), display_at, MAIN),
         pt(3199.0, 200.0)
     );
 
-    // Gap above the offset second display: clamps back onto the display we came from.
     assert_eq!(
         clamp_to_displays(pt(1950.0, 150.0), pt(1950.0, 250.0), display_at, MAIN),
         pt(1950.0, 200.0)
     );
 
-    // Origin off every display (e.g. display unplugged) falls back to the given bounds.
     assert_eq!(
         clamp_to_displays(pt(-50.0, 5000.0), pt(-40.0, 4000.0), display_at, MAIN),
         pt(0.0, 1079.0)
@@ -63,7 +58,6 @@ fn move_kind_for_held_buttons() {
     assert_eq!(mouse_move_kind(1), MoveKind::Dragged(MouseButton::Left));
     assert_eq!(mouse_move_kind(2), MoveKind::Dragged(MouseButton::Right));
     assert_eq!(mouse_move_kind(4), MoveKind::Dragged(MouseButton::Middle));
-    // Left wins when several buttons are held.
     assert_eq!(mouse_move_kind(1 | 2 | 4), MoveKind::Dragged(MouseButton::Left));
 }
 
@@ -81,7 +75,6 @@ fn ev(key_code: KeyCode, is_down: bool, is_repeat: bool) -> KeyEvent {
 
 #[test]
 fn key_press_and_release() {
-    // Control: a tap sends exactly one down then one up.
     let mut keys = KeyRepeater::new(test_mappings(), 0.4, 0.06);
     assert_eq!(keys.update(A, 0.0), [ev(124, true, false)]);
     assert_eq!(keys.update(0, 0.1), [ev(124, false, false)]);
@@ -93,10 +86,8 @@ fn key_repeat() {
     let mut keys = KeyRepeater::new(test_mappings(), 0.4, 0.06);
     assert_eq!(keys.update(A, 0.0).len(), 1);
 
-    // Held, before the delay: nothing.
     assert!(keys.update(A, 0.39).is_empty());
 
-    // At the delay: one repeat, then one per interval.
     assert_eq!(keys.update(A, 0.40), [ev(124, true, true)]);
     assert!(keys.update(A, 0.45).is_empty());
     assert_eq!(keys.update(A, 0.46), [ev(124, true, true)]);
@@ -106,8 +97,6 @@ fn key_repeat() {
     assert_eq!(keys.update(A, 5.0).len(), 1);
     assert!(keys.update(A, 5.03).is_empty());
 
-    // Release sends a plain key up and stops repeating; the repeat just above
-    // proves the same repeater would otherwise have fired.
     assert_eq!(keys.update(0, 5.1), [ev(124, false, false)]);
     assert!(keys.update(0, 10.0).is_empty());
 }
@@ -118,7 +107,6 @@ fn independent_keys() {
     assert_eq!(keys.update(A, 0.0).len(), 1);
     assert_eq!(keys.update(A | X, 0.2), [ev(126, true, false)]);
 
-    // At 0.4 only A has been held long enough to repeat.
     assert_eq!(keys.update(A | X, 0.4), [ev(124, true, true)]);
     // Just past X's own delay (0.2 + 0.4; not exactly 0.6 in floating point) both repeat.
     assert_eq!(keys.update(A | X, 0.61), [ev(124, true, true), ev(126, true, true)]);
@@ -129,7 +117,6 @@ fn unmapped_buttons_ignored() {
     let mut keys = KeyRepeater::new(test_mappings(), 0.4, 0.06);
     assert!(keys.update(UNMAPPED, 0.0).is_empty());
     assert!(keys.update(UNMAPPED, 1.0).is_empty());
-    // Positive control: a mapped button on the same repeater still produces events.
     assert_eq!(keys.update(UNMAPPED | A, 1.1).len(), 1);
 }
 
@@ -156,16 +143,13 @@ fn repeat_disable_sentinels() {
         let mut keys = KeyRepeater::new(test_mappings(), delay, interval);
         assert_eq!(keys.update(A, 0.0).len(), 1);
         assert_eq!(repeats_while_held(&mut keys), 0, "delay {delay} interval {interval}");
-        // Press and release still work with repeat off.
         assert_eq!(keys.update(0, 3.0), [ev(124, false, false)]);
     }
 
-    // Positive control: the same loop with valid knobs does repeat.
     let mut keys = KeyRepeater::new(test_mappings(), 0.4, 0.06);
     keys.update(A, 0.0);
     assert!(repeats_while_held(&mut keys) > 0);
 
-    // Delay 0 is valid: repeat starts on the next packet.
     let mut immediate = KeyRepeater::new(test_mappings(), 0.0, 0.06);
     immediate.update(A, 0.0);
     assert_eq!(immediate.update(A, 0.03).len(), 1);
@@ -180,7 +164,6 @@ fn default_mappings() {
     assert_eq!(key_for(0x0000_0400), Some(125)); // B -> Down
     assert_eq!(key_for(0x0000_0100), Some(123)); // Y -> Left
     assert_eq!(key_for(0x0000_0800), Some(124)); // A -> Right
-    // R and ZR stay mouse buttons.
     assert_eq!(key_for(0x0000_4000), None);
     assert_eq!(key_for(0x0000_8000), None);
 }
@@ -191,13 +174,10 @@ fn release_all() {
     keys.update(A | X, 0.0);
     assert_eq!(keys.release_all(), [ev(124, false, false), ev(126, false, false)]);
 
-    // Released keys stay released, and a second release has nothing left to send.
     assert!(keys.release_all().is_empty());
 
-    // Still holding A on reconnect counts as a fresh press.
     assert_eq!(keys.update(A, 5.0), [ev(124, true, false)]);
 
-    // Nothing held: nothing to release.
     assert!(KeyRepeater::new(test_mappings(), 0.4, 0.06).release_all().is_empty());
 }
 
@@ -213,12 +193,10 @@ fn shortcut(button_mask: u32, key_code: KeyCode, modifiers: Modifiers) -> Button
 fn shortcut_presses_modifiers_around_the_key_and_never_repeats() {
     let mut keys = KeyRepeater::new(vec![shortcut(A, C, Modifiers::CONTROL)], 0.4, 0.06);
     assert_eq!(keys.update(A, 0.0), [ev(CONTROL, true, false), ev(C, true, false)]);
-    // Held well past the repeat delay: a shortcut fires once.
     for t in [0.5, 1.0, 5.0] {
         assert!(keys.update(A, t).is_empty(), "repeated at {t}");
     }
     assert_eq!(keys.update(0, 5.1), [ev(C, false, false), ev(CONTROL, false, false)]);
-    // Positive control: a plain key under the same timing does repeat.
     let mut plain = KeyRepeater::new(test_mappings(), 0.4, 0.06);
     plain.update(A, 0.0);
     assert_eq!(plain.update(A, 0.5), [ev(124, true, true)]);
@@ -260,7 +238,6 @@ fn shortcuts_sharing_a_modifier_hold_it_until_the_last_is_released() {
     assert_eq!(keys.update(A | X, 0.1), [ev(V, true, false)]);
     assert_eq!(keys.update(X, 0.2), [ev(C, false, false)], "Control still held for V");
     assert_eq!(keys.update(0, 0.3), [ev(V, false, false), ev(CONTROL, false, false)]);
-    // Pressing again starts from zero: Control goes down once more.
     assert_eq!(keys.update(A, 0.4), [ev(CONTROL, true, false), ev(C, true, false)]);
 }
 
@@ -286,7 +263,6 @@ fn a_hold_modifier_button_is_that_modifier_while_held() {
     assert_eq!(keys.update(A, 0.0), [ev(SHIFT, true, false)]);
     assert!(keys.update(A, 2.0).is_empty(), "a modifier never repeats");
     assert_eq!(keys.update(A | X, 2.1), [ev(126, true, false)]);
-    // A plain key still repeats under a held modifier, like Shift+arrow on a keyboard.
     assert_eq!(keys.update(A | X, 2.6), [ev(126, true, true)]);
     assert_eq!(keys.update(A, 2.7), [ev(126, false, false)]);
     assert_eq!(keys.update(0, 2.8), [ev(SHIFT, false, false)]);
@@ -338,6 +314,5 @@ fn release_all_unlatches() {
     assert_eq!(keys.release_all(), [ev(SHIFT, false, false)]);
     assert_eq!(keys.latched(), Modifiers::NONE);
     assert!(keys.release_all().is_empty());
-    // The next tap latches afresh rather than unlatching a stale state.
     assert_eq!(keys.update(A, 0.2), [ev(SHIFT, true, false)]);
 }

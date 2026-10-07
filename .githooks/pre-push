@@ -1,5 +1,4 @@
 #!/bin/bash
-# Scans the commits being pushed for secrets, then runs scripts/check.sh.
 # Enable once per clone: git config core.hooksPath .githooks
 set -uo pipefail
 
@@ -9,8 +8,7 @@ zero=0000000000000000000000000000000000000000
 
 while read -r _local_ref local_sha remote_ref remote_sha; do
     [ "$local_sha" = "$zero" ] && continue
-    # A remote commit we do not have (new branch, or a force push) cannot bound
-    # the range, so scan everything the remote has not seen.
+    # Unknown remote commit (new branch, force push): scan everything the remote lacks.
     if [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
         "$root/scripts/scan-secrets.sh" "$remote_sha..$local_sha"
     else

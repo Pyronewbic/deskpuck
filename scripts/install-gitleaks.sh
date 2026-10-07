@@ -1,7 +1,6 @@
 #!/bin/bash
-# Installs a pinned gitleaks into DIR (default ~/.local/bin) for CI, checking
-# the download against a hash kept here rather than one fetched alongside it.
-# Exit 0 installed, 3 could not install (unsupported platform, download or hash).
+# Installs a pinned gitleaks into DIR (default ~/.local/bin), checked against a hash kept here.
+# Exit 0 installed, 3 could not install (platform, download or hash).
 set -uo pipefail
 
 version=8.30.1

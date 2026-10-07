@@ -1,7 +1,5 @@
-//! Runs the receiver against real Bluetooth on a background thread, for both
-//! the command-line tool and the Mac app. `Hub` holds every decision and is
-//! tested without hardware; `Controller` only moves data between the Hub and
-//! btleplug. On Linux the Joy-Con link itself is a direct ATT socket instead.
+//! `Hub` holds every decision and is tested without hardware; `Controller` only moves data.
+//! On Linux the Joy-Con link itself is a direct ATT socket instead of btleplug.
 
 use crate::Session;
 use crate::receiver::{
@@ -30,8 +28,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-/// What the user should see. Unauthorized and Unavailable come from the
-/// Bluetooth stack itself rather than the receiver.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkStatus {
     BluetoothOff,
@@ -60,7 +56,6 @@ impl From<Status> for LinkStatus {
 }
 
 pub type StatusHook = Box<dyn FnMut(LinkStatus, Option<&str>) + Send>;
-/// Report, raw bytes, device name, and milliseconds since connecting.
 pub type ReportHook = Box<dyn FnMut(&Report, &[u8], Option<&str>, u128) + Send>;
 pub type MessageHook = Box<dyn Fn(&str) + Send>;
 pub type LatchHook = Box<dyn FnMut(Modifiers) + Send>;
@@ -68,17 +63,12 @@ pub type LatchHook = Box<dyn FnMut(Modifiers) + Send>;
 /// Callbacks run on the controller's thread, never on the caller's.
 pub struct Hooks {
     pub status: StatusHook,
-    /// Every parsed report, paused or not.
     pub report: Option<ReportHook>,
-    /// Connection detail, for --verbose.
     pub log: Option<MessageHook>,
-    /// Failures worth showing even without --verbose.
     pub error: MessageHook,
-    /// The modifiers latched on by modifier buttons, whenever they change.
     pub latched: Option<LatchHook>,
 }
 
-/// The receiver plus the session: inputs in, Bluetooth commands out.
 pub struct Hub<Id, S: Sink> {
     receiver: Receiver<Id>,
     session: Session<S>,
@@ -89,8 +79,6 @@ pub struct Hub<Id, S: Sink> {
 }
 
 impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
-    /// Connects only to the Joy-Con paired in `pairing_file`, and saves a new
-    /// pairing there. Without a file, a pairing lasts until the Hub is dropped.
     pub fn new(
         settings: EngineSettings,
         sink: S,
@@ -178,7 +166,6 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         }
     }
 
-    /// A status from the Bluetooth stack rather than the receiver.
     pub fn report_status(&mut self, status: LinkStatus) {
         (self.hooks.status)(status, None);
     }
@@ -197,7 +184,6 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         }
     }
 
-    /// Releases held input; the caller then stops scanning and disconnects `linked()`.
     pub fn shutdown(&mut self) {
         if let Err(e) = self.session.shutdown() {
             (self.hooks.error)(&e.to_string());
@@ -209,7 +195,6 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         self.receiver.linked().map(|(id, _)| id)
     }
 
-    /// Statuses and reports are handled here; Bluetooth commands are returned.
     fn route(&mut self, outputs: Vec<Output<Id>>, now: f64) -> Vec<Output<Id>> {
         let mut commands = Vec::new();
         for output in outputs {
@@ -262,8 +247,6 @@ enum Command {
     Shutdown,
 }
 
-/// Where the paired Joy-Con is remembered, and whether to open a pairing
-/// window as soon as Bluetooth is ready.
 #[derive(Clone, Debug, Default)]
 pub struct PairingSetup {
     pub file: Option<PathBuf>,
@@ -308,7 +291,6 @@ impl Controller {
         let _ = self.tx.send(Command::Apply(settings));
     }
 
-    /// Opens a pairing window of `PAIRING_WINDOW` seconds.
     pub fn start_pairing(&self) {
         let _ = self.tx.send(Command::StartPairing);
     }
@@ -327,7 +309,6 @@ impl Drop for Controller {
     }
 }
 
-/// Without Bluetooth, still honor pause and settings until shutdown.
 async fn idle<S: Sink>(
     mut hub: Hub<PeripheralId, S>,
     mut rx: UnboundedReceiver<Command>,
@@ -388,6 +369,8 @@ async fn run<S: Sink>(
         streams: HashMap::new(),
         #[cfg(target_os = "linux")]
         links: HashMap::new(),
+        #[cfg(windows)]
+        fast: FastLinks::default(),
     };
 
     // Before the first status, so a pairing run never reports NotPaired first.
@@ -445,14 +428,13 @@ async fn run<S: Sink>(
     }
 }
 
-/// How often to ask whether another program holds the paired Joy-Con.
 const PRESENCE_POLL: Duration = Duration::from_secs(3);
 
-/// The two characteristics of a linked Joy-Con, found during service discovery.
 type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
 
-/// What a Driver task sends back: input for the receiver, or a failure for
-/// the verbose log that would otherwise only show as a retry.
+#[cfg(windows)]
+type FastLinks = Arc<Mutex<HashMap<PeripheralId, Option<crate::winrt::FastLink>>>>;
+
 enum Back<Id> {
     Input(Input<Id>),
     Log(String),
@@ -485,9 +467,10 @@ struct Driver {
     streams: HashMap<PeripheralId, JoinHandle<()>>,
     #[cfg(target_os = "linux")]
     links: HashMap<PeripheralId, DirectLink>,
+    #[cfg(windows)]
+    fast: FastLinks,
 }
 
-/// A Joy-Con link over a direct ATT socket, and how to reach its task.
 #[cfg(target_os = "linux")]
 struct DirectLink {
     task: JoinHandle<()>,
@@ -499,8 +482,7 @@ fn uuid(s: &str) -> Uuid {
 }
 
 impl Driver {
-    /// Reports the Joy-Cons connected to this computer by any program. A
-    /// backend that cannot tell (BlueZ, WinRT) reports nothing, so the status
+    /// A backend that cannot tell (BlueZ, WinRT) reports nothing, so the status
     /// simply stays Searching.
     fn check_presence(&self) {
         let (adapter, tx) = (self.adapter.clone(), self.tx.clone());
@@ -516,8 +498,6 @@ impl Driver {
         });
     }
 
-    /// Turns a btleplug event into receiver input. Discoveries need the
-    /// peripheral's properties, which are fetched off the main loop.
     fn on_event(&mut self, event: CentralEvent) -> Option<Input<PeripheralId>> {
         match event {
             CentralEvent::DeviceDiscovered(id)
@@ -539,6 +519,8 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(&id) {
                     stream.abort();
                 }
+                #[cfg(windows)]
+                self.forget_fast_link(&id);
                 #[cfg(target_os = "linux")]
                 let input = bluez_disconnected(id, &self.links);
                 #[cfg(not(target_os = "linux"))]
@@ -551,8 +533,6 @@ impl Driver {
         }
     }
 
-    /// Carries out one receiver command. Slow operations run as tasks that
-    /// report back through `tx`, so the loop never blocks.
     async fn execute<S: Sink>(
         &mut self,
         output: &Output<PeripheralId>,
@@ -581,19 +561,25 @@ impl Driver {
                     hub.log(|| format!("advertised: {:02X?}", props.manufacturer_data));
                 }
                 let (adapter, tx, id) = (self.adapter.clone(), self.tx.clone(), id.clone());
+                #[cfg(windows)]
+                let fast = self.fast.clone();
+                #[cfg(windows)]
+                if let Ok(mut slots) = fast.lock() {
+                    slots.insert(id.clone(), None);
+                }
                 tokio::spawn(async move {
                     let connected = match adapter.peripheral(&id).await {
                         Ok(p) => p.connect().await,
                         Err(e) => Err(e),
                     };
-                    let input = match connected {
-                        Ok(()) => Input::Connected(id),
-                        Err(e) => {
-                            let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
-                            Input::ConnectFailed(id)
-                        }
+                    let Err(e) = connected else {
+                        let _ = tx.send(Input::Connected(id.clone()).into());
+                        #[cfg(windows)]
+                        prefer_throughput(&id, &fast, &tx).await;
+                        return;
                     };
-                    let _ = tx.send(input.into());
+                    let _ = tx.send(Back::Log(format!("could not connect to {id}: {e}")));
+                    let _ = tx.send(Input::ConnectFailed(id).into());
                 });
             }
             Output::Disconnect(id) => {
@@ -601,6 +587,8 @@ impl Driver {
                 if let Some(stream) = self.streams.remove(id) {
                     stream.abort();
                 }
+                #[cfg(windows)]
+                self.forget_fast_link(id);
                 let (adapter, id) = (self.adapter.clone(), id.clone());
                 tokio::spawn(async move {
                     if let Ok(p) = adapter.peripheral(&id).await {
@@ -660,6 +648,10 @@ impl Driver {
                     self.streams.insert(id.clone(), reader);
                 }
                 hub.log(|| "enabling notifications".into());
+                #[cfg(windows)]
+                if let Some(ms) = self.fast_link_interval(id) {
+                    hub.log(|| format!("connection interval {ms} ms"));
+                }
                 tokio::spawn(async move {
                     let _ = peripheral.subscribe(&notify).await;
                 });
@@ -683,10 +675,43 @@ impl Driver {
     }
 }
 
+#[cfg(windows)]
+impl Driver {
+    fn forget_fast_link(&self, id: &PeripheralId) {
+        if let Ok(mut fast) = self.fast.lock() {
+            fast.remove(id);
+        }
+    }
+
+    fn fast_link_interval(&self, id: &PeripheralId) -> Option<f64> {
+        self.fast.lock().ok()?.get(id)?.as_ref()?.interval_ms()
+    }
+}
+
+/// Asks Windows for its shortest connection interval and keeps the request
+/// open for the link; a refusal only costs report rate, so it is logged.
+#[cfg(windows)]
+async fn prefer_throughput(
+    id: &PeripheralId,
+    fast: &FastLinks,
+    tx: &UnboundedSender<Back<PeripheralId>>,
+) {
+    let message = match crate::winrt::FastLink::request(id).await {
+        Ok(link) => {
+            let message = format!("faster connection requested: {}", link.status());
+            if fast.lock().is_ok_and(|mut slots| crate::winrt::settle(&mut slots, id, link)) {
+                message
+            } else {
+                format!("{message}, but the link ended first; request closed")
+            }
+        }
+        Err(e) => format!("could not request a faster connection: {e}"),
+    };
+    let _ = tx.send(Back::Log(message));
+}
+
 #[cfg(target_os = "linux")]
 impl Driver {
-    /// Carries out the link commands over a direct ATT socket; false for
-    /// anything else, which btleplug handles.
     fn execute_direct<S: Sink>(
         &mut self,
         output: &Output<PeripheralId>,
@@ -741,16 +766,13 @@ impl Driver {
     }
 }
 
-/// BlueZ's disconnect signal, as receiver input. A direct link reports its
-/// own end from the socket, and a late signal from BlueZ (after a connect
+/// A direct link reports its own end from the socket; a late BlueZ signal (after a connect
 /// retry, say) would make the receiver forget a link that is still open.
 #[cfg(target_os = "linux")]
 fn bluez_disconnected<Id: Eq + Hash, L>(id: Id, links: &HashMap<Id, L>) -> Option<Input<Id>> {
     (!links.contains_key(&id)).then_some(Input::Disconnected(id))
 }
 
-/// Connects to `id` directly and runs the link until it ends, reporting
-/// every step as receiver input.
 #[cfg(target_os = "linux")]
 async fn direct_link(
     adapter: Adapter,

@@ -1,6 +1,5 @@
-//! Calls the exported functions the way the Swift app does. Nothing here
-//! starts Bluetooth: dp_controller_start is only exercised on paths that fail
-//! before the controller thread exists.
+//! Nothing here starts Bluetooth: dp_controller_start is only exercised on
+//! paths that fail before the controller thread exists.
 
 use deskpuck_ble::controller::LinkStatus;
 use deskpuck_ffi::*;
@@ -12,7 +11,6 @@ use std::sync::Mutex;
 const HEADER: &str = include_str!("../include/deskpuck.h");
 const SOURCE: &str = include_str!("../src/lib.rs");
 
-/// Takes ownership of a returned string.
 fn take(s: *mut c_char) -> Option<String> {
     if s.is_null() {
         return None;
@@ -90,7 +88,6 @@ fn problems_reject_bad_input() {
     assert_eq!(problems(r#"{"version": 1, "pointerSpeed": 50}"#).len(), 1);
     assert!(problems("{not json")[0].contains("not valid JSON"));
     assert!(problems(r#"{"pointerSpeed": 2}"#)[0].contains("version"));
-    // Positive control: the same setting in range is accepted.
     assert!(problems(r#"{"version": 1, "pointerSpeed": 2}"#).is_empty());
 
     let null = json(unsafe { dp_config_problems(ptr::null()) });
@@ -115,7 +112,6 @@ fn save_and_load_round_trip() {
     assert_eq!(loaded["config"]["pointerSpeed"], 2.5);
     assert_eq!(loaded["config"]["scrollEnabled"], false);
 
-    // Invalid settings are refused and leave the saved file alone.
     let bad = c(r#"{"version": 1, "pointerSpeed": 50}"#);
     let refused = take(unsafe { dp_config_save(bad.as_ptr(), path.as_ptr()) }).expect("refused");
     assert!(refused.contains("pointerSpeed"), "{refused}");
@@ -190,7 +186,6 @@ fn status_reaches_the_callback_from_another_thread() {
             (0xC0FFEE, 4, Some("badname".into())),
         ]
     );
-    // No callback registered: nothing happens, nothing crashes.
     status_hook(None, 0)(LinkStatus::Connected, Some("x"));
 }
 

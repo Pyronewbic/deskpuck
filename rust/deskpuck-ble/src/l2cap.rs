@@ -1,7 +1,5 @@
-//! A direct ATT link to a Joy-Con 2 over an L2CAP LE socket, for Linux: the
-//! LE link comes up under BlueZ, but BlueZ never finishes resolving the
-//! Joy-Con 2's services, so its GATT API cannot be used. The socket needs no
-//! privileges at low security; the `att::Client` does the protocol.
+//! Direct ATT link over an L2CAP LE socket for Linux: BlueZ never finishes resolving the
+//! Joy-Con 2's services, so its GATT API cannot be used.
 
 use crate::att::{Client, Event};
 use std::io;
@@ -14,12 +12,10 @@ const BTPROTO_L2CAP: libc::c_int = 0;
 const SOL_BLUETOOTH: libc::c_int = 274;
 const BT_SECURITY: libc::c_int = 4;
 const BT_SECURITY_LOW: u8 = 1;
-/// The fixed L2CAP channel ATT uses on LE.
 const ATT_CID: u16 = 4;
 const BDADDR_LE_PUBLIC: u8 = 1;
 const BDADDR_LE_RANDOM: u8 = 2;
 
-/// `struct sockaddr_l2` from the kernel's Bluetooth headers.
 #[repr(C)]
 struct SockaddrL2 {
     family: libc::sa_family_t,
@@ -30,7 +26,6 @@ struct SockaddrL2 {
     bdaddr_type: u8,
 }
 
-/// `struct bt_security`.
 #[repr(C)]
 struct BtSecurity {
     level: u8,
@@ -117,19 +112,14 @@ pub async fn connect(device: [u8; 6], random: bool) -> io::Result<AsyncFd<OwnedF
     Ok(fd)
 }
 
-/// How many times to try a connection the Joy-Con failed to establish.
 pub const CONNECT_ATTEMPTS: u32 = 3;
 
-/// The kernel has no errno for HCI status 0x3E (Connection Failed to be
-/// Established) and reports ENOSYS. A Joy-Con can miss the first
-/// connection events, more often at short connection intervals; trying
-/// again at once catches it while it is still advertising.
+/// A Joy-Con can miss the first connection events (the kernel reports HCI status 0x3E as
+/// ENOSYS); retrying at once catches it while it is still advertising.
 fn not_established(e: &io::Error) -> bool {
     e.raw_os_error() == Some(libc::ENOSYS)
 }
 
-/// Runs `attempt` until it succeeds, fails another way, or has failed to
-/// establish `CONNECT_ATTEMPTS` times; each retry is logged.
 pub async fn connect_retrying<T, F: Future<Output = io::Result<T>>>(
     mut attempt: impl FnMut() -> F,
     mut log: impl FnMut(String),
@@ -151,7 +141,6 @@ pub async fn connect_retrying<T, F: Future<Output = io::Result<T>>>(
     }
 }
 
-/// What the controller asks of a running link.
 #[derive(Debug)]
 pub enum Command {
     Discover,
@@ -180,8 +169,6 @@ async fn send(fd: &AsyncFd<OwnedFd>, pdu: &[u8]) -> io::Result<()> {
     }
 }
 
-/// Carries PDUs between the socket and `client` until the link closes,
-/// `commands` ends, or a request times out. Returns why it stopped.
 pub async fn run(
     fd: AsyncFd<OwnedFd>,
     mut client: Client,
@@ -260,8 +247,6 @@ mod tests {
         Client::new(u(SERVICE), u(NOTIFY_CHARACTERISTIC), u(WRITE_CHARACTERISTIC))
     }
 
-    /// A connected SEQPACKET pair: the link's end, and a blocking end that
-    /// plays the Joy-Con.
     fn pair() -> (AsyncFd<OwnedFd>, UnixStream) {
         let mut fds = [0; 2];
         // SAFETY: `fds` has room for the two descriptors socketpair writes.
@@ -301,7 +286,6 @@ mod tests {
             let write = [vec![0x13, 0x00, 0x04, 0x14, 0x00], uuid(WRITE_CHARACTERISTIC)].concat();
             let characteristics = [vec![0x09, 21], notify, write].concat();
             expect(&mut joycon, &[0x08, 0x08, 0x00, 0x2A, 0x00, 0x03, 0x28], &characteristics);
-            // Characteristics are read until the Joy-Con says there are no more.
             let none_left = [0x01, 0x08, 0x14, 0x00, 0x0A];
             expect(&mut joycon, &[0x08, 0x14, 0x00, 0x2A, 0x00, 0x03, 0x28], &none_left);
             expect(
@@ -311,7 +295,6 @@ mod tests {
             );
             expect(&mut joycon, &[0x12, 0x0B, 0x00, 0x01, 0x00], &[0x13]);
             expect(&mut joycon, &[0x52, 0x14, 0x00, 0x0C, 0x91], &[0x1B, 0x0A, 0x00, 7, 8, 9]);
-            // Closing ends the link.
         });
         let mut events = Vec::new();
         let commands_for_events = commands.clone();
@@ -358,7 +341,6 @@ mod tests {
         assert_eq!(joycon.read(&mut buf).unwrap(), 0, "the socket was closed");
     }
 
-    /// Fails with each error in turn, then succeeds with the attempt number.
     async fn retry_with(errors: &[i32]) -> (io::Result<u32>, u32, Vec<String>) {
         let mut calls = 0;
         let mut logged = Vec::new();

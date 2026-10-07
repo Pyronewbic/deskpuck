@@ -1,6 +1,5 @@
-//! Translates macOS virtual key codes (the config's key space) to Linux evdev
-//! key codes and Windows virtual keys. Each row keeps the header name of every
-//! number so tests can check the table against each OS's own definitions.
+//! Each row keeps the header name of every code so tests can check the table
+//! against each OS's own definitions.
 
 use deskpuck_core::mapping::KeyCode;
 
@@ -215,7 +214,6 @@ mod tests {
         assert!(lookup(0x3F).is_none(), "Fn has no PC equivalent");
     }
 
-    /// Checks each row's mac code against the SDK header it names.
     #[cfg(target_os = "macos")]
     #[test]
     fn mac_codes_match_the_sdk_header() {
@@ -235,7 +233,6 @@ mod tests {
         }
     }
 
-    /// Checks each row's evdev code against the kernel header (linux-libc-dev).
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_codes_match_the_kernel_header() {
@@ -248,8 +245,6 @@ mod tests {
         }
     }
 
-    /// Collects `<prefix>NAME = value` or `<prefix>NAME<whitespace>value` lines
-    /// with decimal or hex values; anything else is skipped.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn parse_defines(header: &str, prefix: &str) -> std::collections::HashMap<String, u16> {
         header

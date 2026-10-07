@@ -1,5 +1,7 @@
 import AppKit
 import ApplicationServices
+import Combine
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -8,8 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let settings: SettingsModel
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
+    private var appearanceWatch: AnyCancellable?
     private var accessibilityTimer: Timer?
-    // Kept so an open menu follows state changes and the pairing countdown.
     private var statusLine: NSMenuItem?
     private var pairItem: NSMenuItem?
     private var menuTimer: Timer?
@@ -45,7 +47,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Release any held key or click and let the Joy-Con go.
         controller.stop()
     }
 
@@ -79,6 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         menu.addItem(.separator())
         menu.addItem(item("Settings...", action: #selector(showSettings), key: ","))
+        let login = item("Start at Login", action: #selector(toggleStartAtLogin))
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
         menu.addItem(.separator())
         let version = NSMenuItem(title: versionText(), action: nil, keyEquivalent: "")
         version.isEnabled = false
@@ -155,7 +159,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func updateIcon() {
-        // A latched modifier changes every click and key, so it shows by the icon.
         let latched = controller.latchedModifiers.map(KeyChoice.label).joined(separator: "+")
         statusItem.length = latched.isEmpty ? NSStatusItem.squareLength : NSStatusItem.variableLength
         statusItem.button?.title = latched.isEmpty ? "" : " " + latched
@@ -168,7 +171,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else {
             statusItem.button?.image = StatusGlyph.image()
         }
-        // Dimmed until a Joy-Con is connected.
         statusItem.button?.appearsDisabled = !connected
     }
 
@@ -187,6 +189,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         updateIcon()
     }
 
+    @objc private func toggleStartAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not change Start at Login"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        // macOS can hold a new login item until it is allowed in System Settings.
+        if service.status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+        }
+    }
+
     @objc private func showSettings() {
         if settingsWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: settings)))
@@ -195,10 +217,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
+            // Only this window: NSApp.appearance would restyle the menu bar menu too.
+            appearanceWatch = settings.$appearance.sink { [weak window] name in
+                window?.appearance = Self.appearance(named: name)
+            }
         }
         // A menu-bar-only app must activate itself or the window opens behind others.
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private static func appearance(named name: String) -> NSAppearance? {
+        switch name {
+        case "light": NSAppearance(named: .aqua)
+        case "dark": NSAppearance(named: .darkAqua)
+        default: nil
+        }
     }
 
     @objc private func openAccessibilitySettings() {

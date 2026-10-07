@@ -148,7 +148,6 @@ fn write(path: &Path, json: &str) {
     std::fs::write(path, json).unwrap();
 }
 
-/// Rewrites the file with a later modification time, as an editor would.
 fn edit_outside(path: &Path, json: &str) {
     let later = std::fs::metadata(path).unwrap().modified().unwrap() + Duration::from_secs(5);
     std::fs::write(path, json).unwrap();
@@ -174,7 +173,6 @@ fn a_file_with_problems_is_kept_as_a_backup_before_the_first_save() {
     assert_eq!(std::fs::read_to_string(&backup).unwrap(), broken);
     assert!(!model.backs_up(), "only before the first save");
 
-    // A clean file is not copied.
     let (_dir2, clean) = temp();
     write(&clean, r#"{"version": 1}"#);
     let mut model = Model::load(Some(clean.clone()));
@@ -210,7 +208,6 @@ fn edits_made_outside_the_window_are_picked_up_not_overwritten() {
     assert_eq!(model.values.config.pointer_speed, 3.0);
     assert!(model.notice.is_some());
 
-    // An edit here meanwhile does not write over the newer file.
     model.values.config.pointer_speed = 0.5;
     model.edited(1.0);
     edit_outside(&path, r#"{"version": 1, "pointerSpeed": 4}"#);
@@ -305,7 +302,6 @@ fn modifiers_can_be_added_to_a_recorded_key() {
         model.mapping("A"),
         Some(Mapping::Shortcut(Shortcut { key: 0x08, modifiers: Modifiers::SHIFT }))
     );
-    // Only shortcuts have modifiers to add.
     let held = Mapping::Modifier { modifier: Modifiers::SHIFT, latch: false };
     model.set_mapping("B", Some(held), 0.0);
     model.toggle_modifier("B", Modifiers::COMMAND, 0.0);

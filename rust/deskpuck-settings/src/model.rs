@@ -1,14 +1,8 @@
-//! The settings window's state with no UI: the values each control shows,
-//! how edits become a `Config`, and when it is written. Mirrors the Mac
-//! app's SettingsModel.
-
 use deskpuck_core::config::{Config, Mapping, Shortcut};
 use deskpuck_core::mapping::Modifiers;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// A right Joy-Con button shown in the window, in the order they sit on the
-/// controller. Mappings for other buttons (a left Joy-Con's) are kept but not shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonRow {
     pub id: &'static str,
@@ -30,12 +24,9 @@ pub const RIGHT_JOYCON: [ButtonRow; 10] = [
 
 pub const SPEED_RANGE: (f64, f64, f64) = (0.25, 4.0, 0.25);
 pub const DELAY_RANGE: (f64, f64, f64) = (0.15, 1.0, 0.05);
-/// Keys per second while held; stored as repeatInterval = 1 / rate.
 pub const RATE_RANGE: (f64, f64, f64) = (4.0, 30.0, 1.0);
-/// Edits are written once they have settled, so a slider drag is one write.
 pub const SAVE_DELAY: f64 = 0.4;
 
-/// What the controls show.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Values {
     pub config: Config,
@@ -83,7 +74,6 @@ impl Values {
     }
 }
 
-/// The file's modification time and size, to notice edits from outside.
 type Stamp = Option<(SystemTime, u64)>;
 
 fn stamp(path: &Path) -> Stamp {
@@ -94,16 +84,11 @@ fn stamp(path: &Path) -> Stamp {
 pub struct Model {
     pub values: Values,
     path: Option<PathBuf>,
-    /// Problems found loading config.json; defaults were used for these.
     pub load_warnings: Vec<String>,
     pub save_error: Option<String>,
-    /// Something to tell once, such as an outside edit being picked up.
     pub notice: Option<String>,
-    /// The button whose shortcut is being recorded.
     pub recording: Option<&'static str>,
-    /// When the last unsaved edit was made.
     edited_at: Option<f64>,
-    /// The file as this window last read or wrote it.
     seen: Stamp,
     /// The file had problems, so it is copied to config.json.bak before the
     /// first write replaces what could not be read.
@@ -111,7 +96,6 @@ pub struct Model {
 }
 
 impl Model {
-    /// Loads `path`; a missing file shows the defaults and is written on the first edit.
     pub fn load(path: Option<PathBuf>) -> Self {
         let mut model = Self {
             values: Values::from_config(Config::default()),
@@ -140,7 +124,6 @@ impl Model {
         self.values = Values::from_config(config);
     }
 
-    /// Whether the next save first copies the file to config.json.bak.
     pub fn backs_up(&self) -> bool {
         self.needs_backup
     }
@@ -149,8 +132,6 @@ impl Model {
         self.path.as_deref().is_some_and(|path| stamp(path) != self.seen)
     }
 
-    /// Picks up an edit made outside the window (an editor, another window)
-    /// while nothing here is waiting to be saved. Call about once a second.
     pub fn check_file(&mut self) {
         if self.edited_at.is_none() && self.changed_outside() {
             self.read();
@@ -187,14 +168,11 @@ impl Model {
         }
     }
 
-    /// Call after changing `values` directly (sliders and toggles).
     pub fn edited(&mut self, now: f64) {
         self.edited_at = Some(now);
         self.notice = None;
     }
 
-    /// The defaults for everything the window shows; mappings for buttons it
-    /// does not show (a left Joy-Con's) are kept.
     pub fn restore_defaults(&mut self, now: f64) {
         let shown = |button: &str| RIGHT_JOYCON.iter().any(|row| row.id == button);
         let hidden: Vec<(String, Mapping)> = self
@@ -211,12 +189,10 @@ impl Model {
         self.edited(now);
     }
 
-    /// Seconds until the pending edit is due to be written, if one is pending.
     pub fn save_due_in(&self, now: f64) -> Option<f64> {
         self.edited_at.map(|at| (at + SAVE_DELAY - now).max(0.0))
     }
 
-    /// Writes the settings once edits have settled. True if it wrote.
     pub fn save_if_due(&mut self, now: f64) -> bool {
         if self.save_due_in(now) != Some(0.0) {
             return false;
@@ -224,13 +200,10 @@ impl Model {
         self.flush(now)
     }
 
-    /// Whether an edit is waiting to be written.
     pub fn pending(&self) -> bool {
         self.edited_at.is_some()
     }
 
-    /// Writes any pending edit now, e.g. as the window closes. True if it
-    /// wrote. A failed write stays pending and is tried again.
     pub fn flush(&mut self, now: f64) -> bool {
         if self.edited_at.take().is_none() {
             return false;

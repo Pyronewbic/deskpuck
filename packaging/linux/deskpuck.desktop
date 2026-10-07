@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Deskpuck
+GenericName=Joy-Con Mouse
+Comment=Use a Switch 2 Joy-Con as a mouse and keyboard
+Exec=deskpuck
+Icon=deskpuck
+Terminal=false
+Categories=Utility;
+Keywords=joy-con;joycon;mouse;switch;controller;
+StartupWMClass=deskpuck

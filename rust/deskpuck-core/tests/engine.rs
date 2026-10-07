@@ -49,7 +49,6 @@ fn mouse_button_mapping() {
     assert_eq!(mouse_buttons_for_joycon_buttons(L), 2);
     assert_eq!(mouse_buttons_for_joycon_buttons(LS), 4);
     assert_eq!(mouse_buttons_for_joycon_buttons(R | ZR | LS), 7);
-    // The right stick click is a key (Return), not a mouse button.
     assert_eq!(mouse_buttons_for_joycon_buttons(RS), 0);
 }
 
@@ -70,12 +69,10 @@ fn wheel_levels() {
 #[test]
 fn scroll_centres_on_first_report() {
     let mut engine = InputEngine::default();
-    // The first report defines the resting position, whatever it is.
     assert_eq!(engine.process(&sticks(2047, 2100), 0.0).wheel, 0);
     assert_eq!(engine.process(&sticks(2047, 2220), 0.1).wheel, -10);
     assert_eq!(engine.process(&sticks(2047, 1980), 0.2).wheel, 10);
 
-    // A new connection recentres on its first report.
     engine.connection_started();
     assert_eq!(engine.process(&sticks(2047, 2300), 0.3).wheel, 0);
     assert_eq!(engine.process(&sticks(2047, 2300), 0.4).wheel, 0);
@@ -102,7 +99,6 @@ fn pointer_deltas() {
     let out = engine.process(&mouse(-32766, 0), 0.3);
     assert_eq!((out.dx, out.dy), (2.0, 0.0));
 
-    // No sensor movement, no pointer movement.
     let out = engine.process(&mouse(-32766, 0), 0.4);
     assert_eq!((out.dx, out.dy), (0.0, 0.0));
 }
@@ -146,7 +142,6 @@ fn no_jump_on_connect() {
     let out = engine.process(&mouse(5000, 300), 0.1);
     assert_eq!((out.dx, out.dy), (0.0, 0.0));
 
-    // Positive control: the next report moves from the new baseline.
     let out = engine.process(&mouse(5050, 300), 0.2);
     assert_eq!((out.dx, out.dy), (10.0, 0.0));
 }
@@ -170,12 +165,9 @@ fn no_scroll_while_stick_clicked() {
     engine.process(&sticks(2047, 2047), 0.0);
     // Pressing the right stick in tilts it slightly; that must not scroll.
     assert_eq!(engine.process(&report(RS, 0, 0, 2047, 2167), 0.1).wheel, 0);
-    // Same for the left stick on a left Joy-Con.
     assert_eq!(engine.process(&report(LS, 0, 0, 2167, 2047), 0.2).wheel, 0);
-    // Positive control: the same tilts scroll once the stick is released.
     assert_eq!(engine.process(&sticks(2047, 2167), 0.3).wheel, -10);
     assert_eq!(engine.process(&sticks(2167, 2047), 0.4).wheel, -10);
-    // Clicking one stick does not silence the other.
     assert_eq!(engine.process(&report(RS, 0, 0, 2167, 2167), 0.5).wheel, -10);
 }
 
@@ -187,7 +179,6 @@ fn scroll_disabled() {
     assert_eq!(engine.process(&sticks(2047, 2647), 0.1).wheel, 0);
     assert_eq!(engine.process(&sticks(2647, 2047), 0.2).wheel, 0);
 
-    // Positive control: the same deflections scroll with scrolling on.
     let mut enabled = InputEngine::default();
     enabled.process(&sticks(2047, 2047), 0.0);
     assert_eq!(enabled.process(&sticks(2047, 2647), 0.1).wheel, -50);
@@ -199,7 +190,6 @@ fn apply_settings() {
     let mut engine = InputEngine::default();
     engine.process(&report(RS, 1000, 0, 2047, 2100), 0.0);
 
-    // Remap RS from Return to Space while it is held: Return must be released.
     let released = engine.apply_settings(EngineSettings {
         key_mappings: vec![ButtonKeyMapping::key(RS, 49)],
         pointer_speed: 2.0,
@@ -208,12 +198,10 @@ fn apply_settings() {
     assert_eq!(released.len(), 1);
     assert!(released[0].key_code == 36 && !released[0].is_down);
 
-    // Still held after the change: a fresh press under the new mapping.
     let out = engine.process(&report(RS, 1050, 0, 2047, 2100), 0.1);
     assert_eq!(out.keys.len(), 1);
     assert!(out.keys[0].key_code == 49 && out.keys[0].is_down);
     // Pointer baseline survives (no jump) and the new speed applies: 50 * 2 / 5.
     assert_eq!(out.dx, 20.0);
-    // Scroll centre survives: same stick position, no scroll.
     assert_eq!(out.wheel, 0);
 }

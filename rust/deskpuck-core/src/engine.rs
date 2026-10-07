@@ -65,7 +65,6 @@ pub fn wheel_for_stick_deviation(deviation: i32) -> i32 {
     if deviation > 0 { -speed } else { speed }
 }
 
-/// Turns Joy-Con reports into pointer, click, scroll and key output. No OS calls.
 #[derive(Clone, Debug)]
 pub struct InputEngine {
     settings: EngineSettings,
@@ -86,8 +85,6 @@ impl InputEngine {
         Self { settings, keys, last_mouse: None, stick_centre_y: None }
     }
 
-    /// Call when a controller connects; the next report recentres the scroll stick
-    /// and becomes the baseline for pointer motion.
     pub fn connection_started(&mut self) {
         self.last_mouse = None;
         self.stick_centre_y = None;
@@ -125,18 +122,14 @@ impl InputEngine {
         }
     }
 
-    /// Modifiers toggled on by latching modifier buttons.
     pub fn latched(&self) -> Modifiers {
         self.keys.latched()
     }
 
-    /// Releases every held key. Mouse buttons in the output are all up.
     pub fn disconnected(&mut self) -> EngineOutput {
         EngineOutput { keys: self.keys.release_all(), ..EngineOutput::default() }
     }
 
-    /// Swaps settings mid-session. Returns key-ups for keys held under the old
-    /// mapping; pointer baseline and scroll centre carry over.
     pub fn apply_settings(&mut self, settings: EngineSettings) -> Vec<KeyEvent> {
         let released = self.keys.release_all();
         self.keys = repeater_for(&settings);

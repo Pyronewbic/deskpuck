@@ -64,7 +64,7 @@ pub enum MoveKind {
     Dragged(MouseButton),
 }
 
-/// Mouse button bits: 1 left, 2 right, 4 middle. Left wins when several are held.
+/// Mouse button bits: 1 left, 2 right, 4 middle.
 pub fn mouse_move_kind(mouse_buttons: u8) -> MoveKind {
     if mouse_buttons & 1 != 0 {
         MoveKind::Dragged(MouseButton::Left)
@@ -77,7 +77,6 @@ pub fn mouse_move_kind(mouse_buttons: u8) -> MoveKind {
     }
 }
 
-/// Modifier keys held around a mapped key, as a set.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Modifiers(u8);
 
@@ -88,7 +87,7 @@ impl Modifiers {
     pub const SHIFT: Modifiers = Modifiers(4);
     pub const COMMAND: Modifiers = Modifiers(8);
 
-    /// Config name, set, and macOS key code, in the order they are pressed.
+    /// In the order they are pressed.
     pub const ALL: [(&'static str, Modifiers, KeyCode); 4] = [
         ("control", Modifiers::CONTROL, 59),
         ("option", Modifiers::OPTION, 58),
@@ -104,7 +103,7 @@ impl Modifiers {
         self.0 == 0
     }
 
-    /// 1 Control, 2 Option, 4 Shift, 8 Command, as the C interface exposes them.
+    /// Values are part of the C interface (DP_MODIFIER_*).
     pub fn bits(self) -> u8 {
         self.0
     }
@@ -117,21 +116,22 @@ impl Modifiers {
         Modifiers(self.0 | other.0)
     }
 
-    /// Config names in pressing order.
     pub fn names(self) -> Vec<&'static str> {
         Self::ALL.iter().filter(|(_, m, _)| self.contains(*m)).map(|(n, ..)| *n).collect()
     }
 }
 
-/// What a mapped button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonAction {
-    /// Types a key, with any modifiers pressed before it and released after
-    /// it. A key with modifiers is a shortcut: it never repeats.
-    Key { key_code: KeyCode, modifiers: Modifiers },
-    /// Acts as modifier keys while held, or with `latch`, toggles them on
-    /// each press, for one-handed use.
-    Modifier { modifiers: Modifiers, latch: bool },
+    /// A key with modifiers is a shortcut: it never repeats.
+    Key {
+        key_code: KeyCode,
+        modifiers: Modifiers,
+    },
+    Modifier {
+        modifiers: Modifiers,
+        latch: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,7 +153,6 @@ impl ButtonKeyMapping {
         Self { button_mask, action: ButtonAction::Modifier { modifiers, latch } }
     }
 
-    /// The non-modifier key this mapping types, if any.
     pub fn key_code(&self) -> Option<KeyCode> {
         match self.action {
             ButtonAction::Key { key_code, .. } => Some(key_code),
@@ -182,14 +181,12 @@ pub fn default_button_key_mappings() -> Vec<ButtonKeyMapping> {
     .collect()
 }
 
-/// Turns button states into key down/up events, repeating held keys like a keyboard.
 /// Repeat is off unless repeat_delay >= 0 and repeat_interval > 0 (NaN counts as off).
 /// At most one repeat per key per update, so a stalled packet stream never bursts.
 #[derive(Clone, Debug)]
 pub struct KeyRepeater {
     mappings: Vec<ButtonKeyMapping>,
     next_repeat_at: Vec<f64>,
-    /// Per mapping: a latching modifier button is toggled on.
     latched: Vec<bool>,
     repeat_delay: f64,
     repeat_interval: f64,
@@ -300,7 +297,6 @@ impl KeyRepeater {
         events
     }
 
-    /// Modifiers toggled on by latching buttons.
     pub fn latched(&self) -> Modifiers {
         self.mappings.iter().zip(&self.latched).filter(|(_, on)| **on).fold(
             Modifiers::NONE,
@@ -311,8 +307,7 @@ impl KeyRepeater {
         )
     }
 
-    /// Key-up for every held key and modifier, latched ones included, e.g.
-    /// when the controller disconnects mid-press.
+    /// Latched modifiers are released too.
     pub fn release_all(&mut self) -> Vec<KeyEvent> {
         let mut events = Vec::new();
         for i in 0..self.mappings.len() {

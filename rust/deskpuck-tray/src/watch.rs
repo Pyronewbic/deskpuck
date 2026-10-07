@@ -1,10 +1,6 @@
-//! Notices when config.json changes on disk, so edits from the settings
-//! window or an editor apply without Reload Settings.
-
 use std::path::Path;
 use std::time::SystemTime;
 
-/// How often the tray looks at the file.
 pub const POLL_SECONDS: u64 = 1;
 
 #[derive(Debug, Default)]
@@ -18,7 +14,6 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 }
 
 impl Watch {
-    /// Starts from the file as it is now, which the caller has already loaded.
     pub fn new(path: &Path) -> Self {
         Self { seen: stamp(path) }
     }

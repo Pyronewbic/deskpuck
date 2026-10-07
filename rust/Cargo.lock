@@ -795,21 +795,23 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-ble"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "btleplug",
  "deskpuck-core",
  "deskpuck-inject",
+ "embed-resource",
  "futures",
  "libc",
  "tempfile",
  "tokio",
  "uuid",
+ "windows",
 ]
 
 [[package]]
 name = "deskpuck-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dirs",
  "libc",
@@ -820,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-ble",
  "deskpuck-core",
@@ -830,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-inject"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "evdev",
@@ -841,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-replay"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
@@ -850,21 +852,28 @@ dependencies = [
 
 [[package]]
 name = "deskpuck-settings"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-core",
  "deskpuck-inject",
  "eframe",
+ "skrifa",
  "tempfile",
+ "windows",
+ "zbus",
 ]
 
 [[package]]
 name = "deskpuck-tray"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "deskpuck-ble",
  "deskpuck-core",
  "deskpuck-inject",
+ "deskpuck-settings",
+ "dirs",
+ "embed-resource",
+ "png",
  "tempfile",
  "tokio",
  "tray-icon",
@@ -1071,6 +1080,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c8d4141cf0f60fb2f7aefaf352d3ffa5171ef0ab09731c64391801e95e48f1"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "embed-resource"
+version = "3.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6168487b5e7eb2673e6efe1200b1848016e436a6ca0b8031bf04bd9d493a249f"
+dependencies = [
+ "cc",
+ "memchr",
+ "rustc_version",
+ "toml",
+ "vswhom",
+ "winreg",
 ]
 
 [[package]]
@@ -2955,6 +2978,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3273,6 +3305,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml"
+version = "1.1.6+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "920602543f0911ab71da12c50d59701da54c196d1a2bf5cb4b75667f137a406a"
+dependencies = [
+ "indexmap",
+ "serde_core",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
+]
+
+[[package]]
 name = "toml_datetime"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3301,6 +3348,12 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.2+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tracing"
@@ -3447,6 +3500,26 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vswhom"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be979b7f07507105799e854203b470ff7c78a1639e330a58f183b5fea574608b"
+dependencies = [
+ "libc",
+ "vswhom-sys",
+]
+
+[[package]]
+name = "vswhom-sys"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb067e4cbd1ff067d1df46c9194b5de0e98efd2810bbc95c5d5e5f25a3231150"
+dependencies = [
+ "cc",
+ "libc",
+]
 
 [[package]]
 name = "wait-timeout"
@@ -4160,6 +4233,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winreg"
+version = "0.56.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

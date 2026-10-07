@@ -1,6 +1,3 @@
-//! What to do when config.json is loaded again, after it changed on disk
-//! or on Reload Settings.
-
 use deskpuck_core::config::Config;
 use deskpuck_core::engine::EngineSettings;
 
@@ -9,11 +6,9 @@ pub struct Reload {
     /// Settings to apply; none when they did not change, since applying
     /// releases held keys and latched modifiers.
     pub apply: Option<EngineSettings>,
-    /// What to show about the file; `None` clears an earlier settings note.
     pub note: Option<String>,
 }
 
-/// A short note for the menu: the first warning, and how many more.
 pub fn summarize(warnings: &[String]) -> Option<String> {
     let first = warnings.first()?;
     Some(match warnings.len() {

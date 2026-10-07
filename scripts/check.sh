@@ -1,7 +1,6 @@
 #!/bin/bash
 # Every check that must pass before code leaves this machine; CI runs it too.
-# Exit 0 all passed, 1 a check failed, 3 a check could not run (missing tool,
-# advisory database unreachable): unknown is never treated as passed.
+# Exit 0 all passed, 1 a check failed, 3 a check could not run (unknown is never passed).
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 3
@@ -9,7 +8,6 @@ cd "$(dirname "$0")/.." || exit 3
 failed=()
 fail() { failed+=("$1"); echo "FAIL: $1" >&2; }
 cannot() { echo "CANNOT CHECK: $1" >&2; exit 3; }
-# Collapsible, labelled sections in the GitHub Actions log; a heading locally.
 group() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::group::$1"; else echo "== $1"; fi; }
 endgroup() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::endgroup::"; fi; }
 
@@ -34,6 +32,16 @@ tests_ran=$?
 [ $tests_ran -eq 0 ] || fail "cargo nextest"
 (cd rust && cargo test --doc --locked --quiet) || fail "doctests"
 endgroup
+
+group "Linux installer"
+packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
+endgroup
+
+if [ "$(uname)" = Darwin ]; then
+    group "Release script"
+    scripts/release.test.sh || fail "release.sh self-test"
+    endgroup
+fi
 
 group "Every test file ran"
 scripts/check-tests-ran.test.sh || fail "check-tests-ran.sh self-test"

@@ -3,8 +3,6 @@ import Carbon.HIToolbox
 import DeskpuckFFI
 import SwiftUI
 
-/// One entry in a button's menu: no key, a key, a shortcut, a modifier
-/// button, or "record one".
 struct KeyChoice: Hashable {
     let mapping: KeyMapping?
     let name: String
@@ -38,8 +36,7 @@ struct KeyChoice: Hashable {
         + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: false)) }
         + modifierNames.map { KeyChoice(mapping: .modifier($0.name, latch: true)) }
 
-    /// Modifier names as config.json spells them, in the order the core presses them,
-    /// with their DP_MODIFIER_* bit.
+    // In the order the core presses them.
     static let modifierNames: [(name: String, flag: NSEvent.ModifierFlags, label: String, bit: UInt32)] = [
         ("control", .control, "Control", UInt32(DP_MODIFIER_CONTROL)),
         ("option", .option, "Option", UInt32(DP_MODIFIER_OPTION)),
@@ -68,7 +65,6 @@ struct KeyChoice: Hashable {
         return character(for: code) ?? "Key code \(code)"
     }
 
-    /// What the key types on the current keyboard layout, e.g. "C".
     private static func character(for code: Int) -> String? {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
               let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
@@ -92,8 +88,6 @@ struct KeyChoice: Hashable {
     }
 }
 
-/// Waits for one key press and reports it, with the modifiers held, as a mapping.
-/// Escape without modifiers cancels.
 struct ShortcutRecorder: View {
     let onRecord: (KeyMapping) -> Void
     let onCancel: () -> Void
@@ -138,7 +132,6 @@ struct ShortcutRecorder: View {
     }
 }
 
-// Right Joy-Con buttons shown in Settings, in the order they sit on the controller.
 // Mappings for other buttons (e.g. a left Joy-Con) are kept but not shown.
 struct ButtonRow: Hashable {
     let id: String

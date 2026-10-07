@@ -14,7 +14,6 @@ fn save_and_load_round_trip() {
     device.save(&path).expect("save");
     assert_eq!(PairedDevice::load(&path), Ok(Some(device)));
 
-    // Replacing the pairing leaves one file and no temp files.
     let other = PairedDevice::new("hci0/dev_98_B6_E9_00_11_22", None).expect("valid");
     other.save(&path).expect("save again");
     assert_eq!(PairedDevice::load(&path), Ok(Some(other)));
@@ -37,7 +36,6 @@ fn new_rejects_bad_ids_and_cleans_names() {
     let device = PairedDevice::new(UUID, Some(&format!("\x1b[2J{long}"))).expect("valid id");
     let name = device.name.clone().expect("name kept");
     assert!(name.chars().count() == MAX_NAME_CHARS && !name.contains('\x1b'), "{name:?}");
-    // What new() builds always loads back.
     assert_eq!(PairedDevice::from_json(&device.to_json()), Ok(device));
     assert_eq!(PairedDevice::new(UUID, Some("\n\r")).expect("valid").name, None);
 }
@@ -64,7 +62,6 @@ fn malformed_records_are_rejected() {
     }
     let long_name = format!(r#"{{"version": 1, "id": "a", "name": "{}"}}"#, "n".repeat(65));
     assert!(PairedDevice::from_json(long_name.as_bytes()).is_err());
-    // Positive control: the minimal record and a null name load.
     for ok in [r#"{"version": 1, "id": "a"}"#, r#"{"version": 1, "id": "a", "name": null}"#] {
         assert_eq!(
             PairedDevice::from_json(ok.as_bytes()),
@@ -145,10 +142,8 @@ fn names_lose_hidden_characters_and_are_capped() {
     assert_eq!(clean_name(sneaky).as_deref(), Some("Joylortnocx[2J"));
     assert_eq!(clean_name("\u{200B}\u{202E}\n"), None);
     assert_eq!(clean_name(&"N".repeat(300)).map(|n| n.chars().count()), Some(MAX_NAME_CHARS));
-    // Positive control: ordinary names, accents included, pass unchanged.
     assert_eq!(clean_name("Joy-Con 2 (R) caf\u{e9}").as_deref(), Some("Joy-Con 2 (R) caf\u{e9}"));
 
-    // The file accepts only names that are already clean.
     let bidi = r#"{"version": 1, "id": "a", "name": "Joy\u202eCon"}"#;
     assert!(PairedDevice::from_json(bidi.as_bytes()).is_err_and(|e| e.contains("invalid name")));
     assert_eq!(

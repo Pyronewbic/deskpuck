@@ -1,8 +1,5 @@
-//! A minimal ATT client with no I/O, for links where the OS's GATT layer
-//! cannot be used: feed it received PDUs and the current time, send the PDUs
-//! it queues. It finds the Joy-Con's characteristics by UUID (never by fixed
-//! handles), enables notifications and writes commands. Everything it reads
-//! comes from the radio, so every length and handle is checked.
+//! Minimal I/O-free ATT client for links where the OS GATT layer is unusable.
+//! Finds characteristics by UUID, never fixed handles; all radio input is length-checked.
 
 use std::collections::VecDeque;
 
@@ -27,10 +24,8 @@ const REQUEST_NOT_SUPPORTED: u8 = 0x06;
 const PRIMARY_SERVICE: u16 = 0x2800;
 const CHARACTERISTIC: u16 = 0x2803;
 const CLIENT_CHARACTERISTIC_CONFIGURATION: u16 = 0x2902;
-/// The default before an MTU exchange, and the largest ATT allows.
 pub const DEFAULT_MTU: u16 = 23;
 pub const MAX_MTU: u16 = 517;
-/// A server that does not answer a request within this many seconds is gone.
 pub const REQUEST_TIMEOUT: f64 = 3.0;
 
 /// Requests a server can send; a client that cannot serve them must refuse
@@ -38,7 +33,6 @@ pub const REQUEST_TIMEOUT: f64 = 3.0;
 const SERVER_REQUESTS: [u8; 11] =
     [0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x12, 0x16, 0x18, 0x20];
 
-/// A UUID string in the little-endian byte order ATT uses on the wire.
 pub fn uuid_le(uuid: &str) -> Option<[u8; 16]> {
     let mut bytes = *uuid::Uuid::parse_str(uuid).ok()?.as_bytes();
     bytes.reverse();
@@ -47,11 +41,8 @@ pub fn uuid_le(uuid: &str) -> Option<[u8; 16]> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    /// Discovery ended; which characteristics were found.
     Discovered { write: bool, notify: bool },
-    /// A value from the notify characteristic.
     Notification(Vec<u8>),
-    /// Worth a line in the verbose log.
     Log(String),
 }
 
@@ -84,7 +75,6 @@ pub struct Client {
     write_uuid: [u8; 16],
     mtu: u16,
     step: Step,
-    /// The request in flight: its opcode and when it times out. ATT allows one.
     waiting: Option<(u8, f64)>,
     queued: VecDeque<Vec<u8>>,
     outgoing: Vec<Vec<u8>>,
@@ -125,12 +115,10 @@ impl Client {
         self.handles
     }
 
-    /// PDUs to send now, in order.
     pub fn take_outgoing(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.outgoing)
     }
 
-    /// When the request in flight times out, if one is.
     pub fn deadline(&self) -> Option<f64> {
         self.waiting.map(|(_, at)| at)
     }
@@ -141,7 +129,6 @@ impl Client {
         self.failed.as_deref()
     }
 
-    /// Exchanges the MTU, then finds the service and its characteristics.
     pub fn discover(&mut self, now: f64) {
         if self.step != Step::Idle {
             return;
@@ -152,7 +139,6 @@ impl Client {
         self.request(pdu, now);
     }
 
-    /// Enables notifications on the notify characteristic.
     pub fn subscribe(&mut self, now: f64) -> Vec<Event> {
         let Some(cccd) = self.handles.cccd else {
             return vec![Event::Log("cannot enable notifications: no descriptor found".into())];
@@ -165,7 +151,6 @@ impl Client {
         Vec::new()
     }
 
-    /// Writes to the write characteristic without a response.
     pub fn write(&mut self, data: &[u8]) -> Vec<Event> {
         let Some(handle) = self.handles.write else {
             return vec![Event::Log("cannot write: no write characteristic found".into())];
@@ -184,7 +169,6 @@ impl Client {
         Vec::new()
     }
 
-    /// Marks the link failed if the request in flight has timed out.
     pub fn tick(&mut self, now: f64) {
         if let Some((opcode, at)) = self.waiting
             && at <= now
@@ -239,7 +223,6 @@ impl Client {
         self.mtu = server.clamp(DEFAULT_MTU, MAX_MTU);
     }
 
-    /// A response to the request in flight; anything else is ignored.
     fn response(&mut self, pdu: &[u8], now: f64, events: &mut Vec<Event>) {
         let Some((sent, _)) = self.waiting else { return };
         let error = pdu[0] == ERROR_RESPONSE;
@@ -420,7 +403,6 @@ impl Client {
         }
     }
 
-    /// Ends discovery, logging `problem` unless it is empty.
     fn finish(&mut self, events: &mut Vec<Event>, problem: &str) {
         self.step = Step::Done;
         if !problem.is_empty() {
@@ -445,8 +427,6 @@ fn le16(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
 }
 
-/// The entries of a Read By Type or Read By Group Type response, if its
-/// entry length is one of `widths` and the entries fill the PDU exactly.
 fn entries<'a>(pdu: &'a [u8], widths: &[usize]) -> Option<std::slice::ChunksExact<'a, u8>> {
     let width = usize::from(*pdu.get(1)?);
     let body = &pdu[2..];

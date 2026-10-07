@@ -1,6 +1,3 @@
-//! What the tray shows, kept apart from the tray library so it is tested on
-//! every OS. Mirrors the Mac app's menu (Sources/Deskpuck/AppDelegate.swift).
-
 use deskpuck_ble::controller::LinkStatus;
 use deskpuck_ble::receiver::PAIRING_WINDOW;
 use deskpuck_core::mapping::Modifiers;
@@ -9,7 +6,6 @@ pub const PAIR: &str = "Pair New Joy-Con...";
 pub const CANCEL_PAIRING: &str = "Cancel Pairing";
 pub const WAITING: &str = "Waiting for a system tray";
 
-/// Times are seconds since the tray started, like the receiver's clock.
 #[derive(Debug)]
 pub struct Model {
     status: LinkStatus,
@@ -19,7 +15,6 @@ pub struct Model {
     pairing_ends: Option<f64>,
     latched: Modifiers,
     note: Option<String>,
-    /// The note came from loading config.json, so a clean load clears it.
     note_from_settings: bool,
     failure: Option<String>,
     host: bool,
@@ -90,8 +85,6 @@ impl Model {
         self.latched = modifiers;
     }
 
-    /// A problem worth showing until the next connection: a refused input
-    /// event, a settings warning.
     pub fn note(&mut self, message: impl Into<String>) {
         self.note = Some(message.into());
         self.note_from_settings = false;
@@ -123,8 +116,6 @@ impl Model {
         self.host
     }
 
-    /// Nothing can run (no input injection, no controller): the problem
-    /// replaces the status line and only Quit is left.
     pub fn fail(&mut self, problem: impl Into<String>) {
         self.failure = Some(problem.into());
     }
@@ -175,7 +166,6 @@ impl Model {
         if self.pairing { CANCEL_PAIRING } else { PAIR }
     }
 
-    /// Cancel is always allowed; starting is not while paused.
     pub fn pair_enabled(&self) -> bool {
         !self.failed() && self.host && (self.pairing || !self.paused)
     }
@@ -192,7 +182,6 @@ impl Model {
         self.note.as_deref()
     }
 
-    /// Hover text: the status, then whatever else the menu would show.
     pub fn tooltip(&self, now: f64) -> String {
         let mut lines = vec![format!("Deskpuck: {}", self.status_text(now))];
         lines.extend(self.latched_text());

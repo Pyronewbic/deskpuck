@@ -10,8 +10,6 @@ enum Attr {
     Descriptor(u16),
 }
 
-/// A GATT server that answers the way the ATT spec allows, returning at most
-/// `per_response` entries per response so paging is exercised.
 struct FakeJoyCon {
     attrs: Vec<(u16, Attr)>,
     mtu: u16,
@@ -41,14 +39,12 @@ fn client() -> Client {
 }
 
 impl FakeJoyCon {
-    /// The layout a real Joy-Con 2 (R) reported: a first service at
-    /// 0x0001-0x0007, the Joy-Con service at 0x0008-0x002A, notify value
-    /// 0x000A with its descriptor at 0x000B, write value 0x0014.
+    /// Layout a real Joy-Con 2 (R) reported: service 0x0008-0x002A, notify value 0x000A
+    /// with descriptor 0x000B, write value 0x0014.
     fn real() -> Self {
         Self::at(0x0008, 0x002A)
     }
 
-    /// The same characteristics, moved so the service starts at `start`.
     fn at(start: u16, end: u16) -> Self {
         let o = start - 0x0008;
         let mut attrs = vec![
@@ -132,7 +128,6 @@ impl FakeJoyCon {
         pdu
     }
 
-    /// Entries of one length only, as many as fit and `per_response` allows.
     fn list(
         &self,
         opcode: u8,
@@ -226,7 +221,6 @@ impl FakeJoyCon {
     }
 }
 
-/// Delivers every queued PDU to the server and its answers back, until quiet.
 fn exchange(client: &mut Client, server: &mut FakeJoyCon, now: f64) -> Vec<Event> {
     let mut events = Vec::new();
     for _ in 0..1000 {
@@ -457,8 +451,6 @@ fn a_write_longer_than_the_mtu_allows_is_refused() {
     assert_eq!(client.take_outgoing().len(), 1);
 }
 
-/// Answers each request with `bad`, then checks discovery ends in a bounded
-/// number of requests with nothing found.
 fn discovery_survives(bad: &[u8], at_opcode: u8) {
     let mut server = FakeJoyCon::real();
     let mut client = client();
@@ -594,7 +586,6 @@ fn nothing_is_reported_until_notifications_are_enabled() {
 
 #[test]
 fn a_device_without_the_descriptor_never_streams() {
-    // Only the notify characteristic, no descriptor and no write characteristic.
     let mut server = FakeJoyCon::real();
     server.attrs.retain(|(h, _)| !matches!(*h, 0x000B | 0x0013 | 0x0014));
     let mut client = client();

@@ -1,5 +1,3 @@
-//! Starts the real tray on a private D-Bus session bus and reads its menu,
-//! tooltip and icon back the way a panel would. Needs dbus-daemon, no display.
 #![cfg(target_os = "linux")]
 
 use std::collections::HashMap;
@@ -57,7 +55,6 @@ fn property(bus: &Connection, service: &str, name: &str) -> Option<OwnedValue> {
 
 type Node = (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>);
 
-/// Stands in for a panel's StatusNotifierWatcher with a host registered.
 struct Watcher;
 
 #[zbus::interface(name = "org.kde.StatusNotifierWatcher")]
@@ -72,7 +69,6 @@ impl Watcher {
 
 const WAITING: &str = "Deskpuck: Waiting for a system tray";
 
-/// The tooltip's title, and the first line of its text.
 fn tooltip(bus: &Connection, service: &str) -> Option<(String, String)> {
     let value = property(bus, service, "ToolTip")?;
     let (_icon, _pixmaps, title, text) =
@@ -105,7 +101,7 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
     let (_daemon, address) = session_bus();
     let home = tempfile::tempdir().unwrap();
     let mut tray = Reap(
-        Command::new(env!("CARGO_BIN_EXE_deskpuck-tray"))
+        Command::new(env!("CARGO_BIN_EXE_deskpuck"))
             .env("DBUS_SESSION_BUS_ADDRESS", &address)
             // Never reach the real Bluetooth stack or the user's settings.
             .env("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/nonexistent/deskpuck-test")

@@ -1,8 +1,6 @@
 #!/bin/bash
-# Proves every integration test file ran, from the JUnit report nextest wrote:
-# a green run where a file silently stopped running must not pass.
-# Usage: check-tests-ran.sh REPORT. Exit 0 every file ran, 1 one did not,
-# 3 the report is missing or unreadable, or a file's #![cfg] is not understood.
+# Fails if a test file silently stopped running. Usage: check-tests-ran.sh REPORT.
+# Exit 0 all ran, 1 one did not, 3 report unreadable or a #![cfg] not understood.
 set -uo pipefail
 
 report=${1:?usage: check-tests-ran.sh REPORT}
@@ -17,8 +15,7 @@ case "${CHECK_OS:-$(uname -s)}" in
     *) cannot "unknown OS $(uname -s)" ;;
 esac
 
-# Whether a whole-file #![cfg(...)] includes this OS. Only the forms the repo
-# uses are understood; anything else cannot be judged here.
+# Only the #![cfg] forms the repo uses are understood; others cannot be judged.
 cfg_includes_os() {
     case "$1" in
         'target_os = "linux"') [ "$os" = linux ] ;;

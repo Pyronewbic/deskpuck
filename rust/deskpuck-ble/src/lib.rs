@@ -1,12 +1,9 @@
-//! Bluetooth LE for the Joy-Con 2: the connection state machine, the session
-//! that turns its reports into input, the monitor readout, and an ATT client
-//! for links the OS GATT layer cannot serve.
-
 pub mod att;
 pub mod controller;
 #[cfg(target_os = "linux")]
 pub mod l2cap;
 pub mod receiver;
+pub mod winrt;
 
 use deskpuck_core::engine::{EngineSettings, InputEngine};
 use deskpuck_core::mapping::Modifiers;
@@ -15,8 +12,6 @@ use deskpuck_inject::{InjectError, InputEvent, Poster, Sink, post_all};
 use receiver::Status;
 use std::fmt::Write;
 
-/// Mirrors the Mac app's DPController: connection changes and reports in,
-/// posted input out. Every disconnect, pause and the shutdown release held input.
 pub struct Session<S: Sink> {
     engine: InputEngine,
     poster: Poster,
@@ -83,7 +78,6 @@ impl<S: Sink> Session<S> {
         self.paused
     }
 
-    /// Modifiers latched on by a modifier button; pausing or a disconnect clears them.
     pub fn latched(&self) -> Modifiers {
         self.engine.latched()
     }
@@ -104,7 +98,6 @@ impl<S: Sink> Session<S> {
         post_all(&events, &mut self.sink).map(|_| ())
     }
 
-    /// Releases every held key and button, e.g. on Ctrl+C.
     pub fn shutdown(&mut self) -> Result<(), InjectError> {
         self.connected = false;
         self.release()
@@ -115,7 +108,6 @@ impl<S: Sink> Session<S> {
     }
 }
 
-/// The live readout for `--monitor`.
 #[derive(Debug, Default)]
 pub struct Monitor {
     last_mouse: (i16, i16),

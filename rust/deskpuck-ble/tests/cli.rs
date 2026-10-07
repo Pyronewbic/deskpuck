@@ -38,7 +38,6 @@ fn missing_config_exits_2_before_bluetooth() {
     assert!(!stderr(&out).contains("Searching"));
 }
 
-/// Runs with HOME in a temp dir, so the pairing file is one this test controls.
 #[cfg(unix)]
 fn cli_at_home(home: &std::path::Path, args: &[&str]) -> Output {
     Command::new(BIN)

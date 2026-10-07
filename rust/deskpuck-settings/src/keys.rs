@@ -1,12 +1,7 @@
-//! What the settings window calls keys, shortcuts and modifiers. Key codes
-//! are macOS virtual key codes, as in config.json; names follow a PC
-//! keyboard, since this window runs on Linux and Windows.
-
 use deskpuck_core::config::Mapping;
 use deskpuck_core::mapping::{KeyCode, Modifiers};
 use deskpuck_inject::keymap::KEYS;
 
-/// The keys offered in every button's menu, as on the Mac.
 pub const MENU_KEYS: [KeyCode; 14] = [
     0x24, // Return
     0x35, // Escape
@@ -24,7 +19,6 @@ pub const MENU_KEYS: [KeyCode; 14] = [
     0x77, // End
 ];
 
-/// The key code for a macOS key name as `deskpuck-inject`'s table spells it.
 pub fn code_for(mac_name: &str) -> Option<KeyCode> {
     KEYS.iter().find(|row| row.mac_name == mac_name).map(|row| row.mac)
 }
@@ -103,7 +97,6 @@ pub fn key_name(code: KeyCode) -> String {
     name.strip_prefix("ANSI_").unwrap_or(name).to_owned()
 }
 
-/// "Ctrl+Shift+C", or "Shift (while held)" for a modifier button.
 pub fn describe(mapping: &Mapping) -> String {
     match mapping {
         Mapping::Shortcut(shortcut) => {
@@ -121,8 +114,6 @@ pub fn describe(mapping: &Mapping) -> String {
     }
 }
 
-/// Every menu entry except "Record Shortcut...": nothing, the menu keys,
-/// then each modifier held and latched.
 pub fn choices() -> Vec<Option<Mapping>> {
     let mut all = vec![None];
     all.extend(MENU_KEYS.iter().map(|&key| Some(Mapping::from(key))));

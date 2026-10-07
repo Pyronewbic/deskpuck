@@ -1,11 +1,5 @@
-//! The one Joy-Con Deskpuck connects to outside a pairing window, remembered
-//! in pairing.json beside config.json. Kept out of config.json so a settings
-//! save can never race a newly paired id.
-//!
-//! The id is the Bluetooth stack's peripheral id: a CoreBluetooth UUID on
-//! macOS, an adapter path and address on Linux. It is only meaningful on the
-//! machine that wrote it. Pinning an id identifies a device; it does not
-//! authenticate it, since an address can be spoofed.
+//! Kept out of config.json so a settings save can never race a newly paired id.
+//! The id is a per-machine Bluetooth peripheral id; it identifies a device, not authenticates it.
 
 use crate::config::Config;
 use crate::files;
@@ -29,8 +23,7 @@ fn valid_id(id: &str) -> bool {
     (1..=MAX_ID_LEN).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_graphic())
 }
 
-/// Control characters, and invisible ones that reorder or hide text
-/// (bidi overrides and isolates, zero-width, soft hyphen, BOM).
+/// Control characters and invisible ones that reorder or hide text (bidi, zero-width, BOM).
 fn is_hidden(c: char) -> bool {
     c.is_control()
         || matches!(c, '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{FEFF}')
@@ -38,9 +31,7 @@ fn is_hidden(c: char) -> bool {
         || matches!(c, '\u{2060}'..='\u{206F}' | '\u{FFF9}'..='\u{FFFB}')
 }
 
-/// A device name safe to show in a menu or terminal: hidden characters
-/// removed, at most `MAX_NAME_CHARS`. `None` if nothing is left. The name
-/// comes from whatever device advertised it.
+/// The name comes from whatever device advertised it, so it is sanitised.
 pub fn clean_name(name: &str) -> Option<String> {
     let clean: String = name.chars().filter(|c| !is_hidden(*c)).take(MAX_NAME_CHARS).collect();
     (!clean.is_empty()).then_some(clean)
@@ -51,8 +42,7 @@ fn valid_name(name: &str) -> bool {
 }
 
 impl PairedDevice {
-    /// `None` if the id is empty, too long, or not printable ASCII. The name
-    /// is cleaned to what `from_json` accepts, so a saved record always loads.
+    /// The name is cleaned to what `from_json` accepts, so a saved record always loads.
     pub fn new(id: &str, name: Option<&str>) -> Option<Self> {
         if !valid_id(id) {
             return None;
@@ -61,13 +51,11 @@ impl PairedDevice {
         Some(Self { id: id.to_owned(), name })
     }
 
-    /// pairing.json in the same directory as the default config.json.
     pub fn default_path() -> Option<PathBuf> {
         Config::default_path().map(|p| p.with_file_name("pairing.json"))
     }
 
-    /// The file is ours but read back as untrusted: every field is checked
-    /// and anything unexpected rejects the whole record.
+    /// Read back as untrusted: anything unexpected rejects the whole record.
     pub fn from_json(bytes: &[u8]) -> Result<Self, String> {
         let value: Value = serde_json::from_slice(bytes).map_err(|_| "is not valid JSON")?;
         let dict = value.as_object().ok_or("is not a JSON object")?;
@@ -92,8 +80,7 @@ impl PairedDevice {
         serde_json::to_vec_pretty(&value).unwrap_or_default()
     }
 
-    /// `Ok(None)` if nothing is paired. `Err` describes a file that exists but
-    /// cannot be used; the caller treats that as not paired.
+    /// `Err` is a file that exists but is unusable; callers treat it as not paired.
     pub fn load(path: &Path) -> Result<Option<Self>, String> {
         let fail = |problem: String| format!("{} {problem}", path.display());
         match files::read_capped(path, MAX_PAIRING_BYTES).map_err(fail)? {
@@ -102,7 +89,6 @@ impl PairedDevice {
         }
     }
 
-    /// Atomic and owner-only, like the config.
     pub fn save(&self, path: &Path) -> io::Result<()> {
         files::write_private(path, &self.to_json())
     }

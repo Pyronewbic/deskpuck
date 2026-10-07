@@ -40,6 +40,5 @@ fn captured_reports_match_upstream_output() {
         assert_eq!(format!("{:.1}", r.temperature()), f[21]);
         records += 1;
     }
-    // Positive control: the fixture was actually read, including live IMU reports.
     assert_eq!(records, 18);
 }

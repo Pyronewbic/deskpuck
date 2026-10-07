@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published var mappings: [String: KeyMapping] { didSet { commit() } }
-    /// The button whose shortcut is being recorded, if any.
     @Published var recordingButton: String?
     @Published var pointerSpeed: Double { didSet { commit() } }
     @Published var scrollEnabled: Bool { didSet { commit() } }
@@ -11,6 +10,7 @@ final class SettingsModel: ObservableObject {
     @Published var repeatDelay: Double { didSet { commit() } }
     // Keys per second while held; stored as repeatInterval = 1 / rate.
     @Published var repeatRate: Double { didSet { commit() } }
+    @Published var appearance: String { didSet { commit() } }
 
     @Published private(set) var loadWarnings: [String]
     @Published private(set) var saveError: String?
@@ -32,6 +32,7 @@ final class SettingsModel: ObservableObject {
         repeatEnabled = true
         repeatDelay = 0.4
         repeatRate = Self.defaultRepeatRate
+        appearance = "system"
         load(config)
     }
 
@@ -54,7 +55,8 @@ final class SettingsModel: ObservableObject {
             pointerSpeed: pointerSpeed,
             repeatDelay: repeatDelay,
             repeatInterval: repeatEnabled ? 1.0 / repeatRate : 0,
-            scrollEnabled: scrollEnabled
+            scrollEnabled: scrollEnabled,
+            appearance: appearance
         )
     }
 
@@ -66,6 +68,7 @@ final class SettingsModel: ObservableObject {
         repeatDelay = config.repeatDelay
         repeatEnabled = config.repeatInterval > 0
         repeatRate = config.repeatInterval > 0 ? 1.0 / config.repeatInterval : Self.defaultRepeatRate
+        appearance = config.appearance
         loading = false
     }
 

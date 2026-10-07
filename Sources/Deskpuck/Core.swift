@@ -40,7 +40,6 @@ enum KeyMapping: Codable, Hashable {
     }
 }
 
-/// The settings in config.json. The Rust core validates and saves them.
 struct DeskpuckConfig: Codable, Equatable {
     var version = 1
     var keyMappings: [String: KeyMapping]
@@ -48,22 +47,20 @@ struct DeskpuckConfig: Codable, Equatable {
     var repeatDelay: Double
     var repeatInterval: Double
     var scrollEnabled: Bool
+    var appearance: String
 }
 
 struct CoreError: LocalizedError {
     let errorDescription: String?
 }
 
-/// Settings calls into the Rust core.
 enum Core {
-    /// A stale or mismatched static library must fail loudly, not misbehave.
     static func checkLibrary() {
         guard dp_abi_version() == UInt32(DP_ABI_VERSION) else {
             fatalError("Deskpuck's Rust library is out of date; run scripts/build-rust.sh and rebuild.")
         }
     }
 
-    /// Takes ownership of a string returned by the library.
     static func take(_ pointer: UnsafeMutablePointer<CChar>?) -> String? {
         guard let pointer else { return nil }
         defer { dp_string_free(pointer) }
@@ -90,10 +87,9 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true)
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system")
     }
 
-    /// Never fails: anything unusable falls back to its default and is described in the warnings.
     static func load(from url: URL) -> (DeskpuckConfig, [String]) {
         struct Loaded: Decodable {
             let config: DeskpuckConfig
@@ -107,7 +103,6 @@ enum Core {
         json(config).withCString { decode([String].self, take(dp_config_problems($0))) } ?? ["Settings could not be checked."]
     }
 
-    /// Validates, then replaces the file atomically.
     static func save(_ config: DeskpuckConfig, to url: URL) throws {
         let message = json(config).withCString { config in
             url.path.withCString { path in take(dp_config_save(config, path)) }
@@ -136,14 +131,11 @@ enum ConnectionState {
     }
 }
 
-/// The Joy-Con connection, run by the Rust core on its own thread.
 @MainActor
 final class Controller {
     private(set) var connectionState = ConnectionState.bluetoothOff
     private(set) var deviceName: String?
-    /// Config names of the modifiers latched on by modifier buttons.
     private(set) var latchedModifiers: [String] = []
-    /// When the open pairing window closes; nil when none is open.
     private(set) var pairingEndsAt: Date?
     /// From Pair New Joy-Con until a Joy-Con connects or the window closes,
     /// including while one it accepted is still connecting, which Cancel drops.
@@ -196,7 +188,6 @@ final class Controller {
         }
     }
 
-    /// Releases held input and disconnects; no callback arrives after this.
     func stop() {
         dp_controller_free(handle)
         handle = nil
@@ -212,7 +203,6 @@ final class Controller {
         }
     }
 
-    /// The first Joy-Con that connects in the next DP_PAIRING_SECONDS replaces the paired one.
     func startPairing() {
         guard handle != nil, !paused else { return }
         pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
@@ -226,14 +216,12 @@ final class Controller {
         stateDidChange?()
     }
 
-    /// Takes effect immediately. Throws the problems if the settings are invalid.
     func apply(_ config: DeskpuckConfig) throws {
         let problems = Core.problems(config)
         guard problems.isEmpty else {
             throw CoreError(errorDescription: problems.joined(separator: " "))
         }
         self.config = config
-        // Not started yet: start() picks the new config up.
         guard let handle else { return }
         if let message = Core.json(config).withCString({ Core.take(dp_controller_apply_config(handle, $0)) }) {
             throw CoreError(errorDescription: message)

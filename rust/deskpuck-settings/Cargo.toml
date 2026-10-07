@@ -13,6 +13,15 @@ workspace = true
 deskpuck-core = { path = "../deskpuck-core" }
 deskpuck-inject = { path = "../deskpuck-inject" }
 eframe = { version = "0.36.2", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+# The parser egui uses; a font it cannot read would otherwise panic the window.
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["UI_ViewManagement"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+

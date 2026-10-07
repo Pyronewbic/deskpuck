@@ -1,5 +1,3 @@
-//! CGEvent backend, mirroring the Mac app's DPController.
-
 use crate::{InjectError, InputEvent, Sink};
 use deskpuck_core::mapping::{MouseButton, MoveKind, Point, Rect, clamp_to_displays};
 use objc2_core_foundation::{CFRetained, CGPoint, CGRect};
@@ -43,7 +41,6 @@ impl MacSink {
     }
 }
 
-/// The flag a modifier key sets, left or right.
 fn modifier_flag(key_code: u16) -> Option<CGEventFlags> {
     match key_code {
         54 | 55 => Some(CGEventFlags::MaskCommand),
@@ -229,7 +226,6 @@ mod tests {
         assert_eq!(key_flags(none, CTRL, Some(CTRL)), CTRL);
         assert_eq!(key_flags(none, CTRL, None), CTRL);
         assert_eq!(key_flags(CTRL, none, Some(CTRL)), none);
-        // A modifier held on the real keyboard is kept, not replaced.
         assert_eq!(key_flags(SHIFT, CTRL, None), SHIFT | CTRL);
         assert_eq!(key_flags(SHIFT | CTRL, none, Some(CTRL)), SHIFT);
     }
