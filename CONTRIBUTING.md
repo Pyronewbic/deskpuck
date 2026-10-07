@@ -40,14 +40,7 @@ cargo run --release -p deskpuck-replay                   # post them for real
 
 Without `--dry-run`, the replay moves the real pointer, scrolls and presses arrow keys for about eight seconds after a three-second countdown. It never clicks or presses Return. Focus a text editor first. `--help` lists the options and exit codes.
 
-On Linux the replay needs write access to `/dev/uinput`:
-
-```sh
-sudo tee /etc/udev/rules.d/60-deskpuck.rules <<'EOF'
-KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
-EOF
-sudo usermod -aG input "$USER"   # then log out and back in
-```
+On Linux the replay needs write access to `/dev/uinput`, set up as in the [README](README.md#linux) (step 2).
 
 `deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS and Linux. On Linux, BlueZ never finishes resolving a Joy-Con 2's services, so Deskpuck talks ATT over its own L2CAP socket instead (no root needed). At BlueZ's default connection interval a Joy-Con sends about 21 reports a second; for a smoother pointer, set a shorter default once as root (this applies to every Bluetooth LE device on the machine), then reconnect, since the first connection after the change can still use the old interval. With 15-30 ms the Joy-Con sent about 45 a second:
 
