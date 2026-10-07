@@ -27,5 +27,7 @@ windows = { version = "0.62.2", features = ["Devices_Bluetooth", "Foundation"] }
 [dev-dependencies]
 tempfile = "3.27.0"
 
-[build-dependencies]
+# Only builds on Windows embed the icon; a build dependency's cfg is the host's
+# (see ../icons/embed.rs).
+[target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0.12"
