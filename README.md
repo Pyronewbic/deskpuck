@@ -69,7 +69,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=uinput
 | Stick click          | Return                          |
 | X / B / Y / A        | Up / Down / Left / Right arrows |
 
-Change the key mappings, pointer speed, scrolling, key repeat and theme in **Settings...**, from the menu bar icon on a Mac or a left click on the tray icon elsewhere. A button can also press a recorded shortcut such as Control+C, or act as a modifier: held, or latched on with one tap and off with the next. Settings are saved in `config.json`, with the pairing beside it: in `~/Library/Application Support/Deskpuck` on a Mac, `%APPDATA%\Deskpuck` on Windows and `~/.config/deskpuck` on Linux.
+Change the key mappings, pointer speed, scrolling, key repeat and theme in **Settings...**, from the menu bar icon on a Mac or a left click on the tray icon elsewhere. A button can also press a recorded shortcut such as Control+C, or act as a modifier: held, or latched on with one tap and off with the next. Settings are saved in `config.json` (modifier names keep the Mac spelling: `option` is Alt, `command` the Super or Windows key), with the pairing beside it: in `~/Library/Application Support/Deskpuck` on a Mac, `%APPDATA%\Deskpuck` on Windows and `~/.config/deskpuck` on Linux.
 
 **Pause Mouse Control** stops all input from the Joy-Con but keeps it connected, so resuming is instant; quit Deskpuck to release it completely. **Start at Login** starts Deskpuck when you log in. To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces the paired one.
 
@@ -78,7 +78,25 @@ Change the key mappings, pointer speed, scrolling, key repeat and theme in **Set
 - **The pointer does not move (Mac):** check that Deskpuck is on in **System Settings > Privacy & Security > Accessibility**. If it is on but still nothing happens, reset the permission and allow it again: `tccutil reset Accessibility com.pyronewbic.deskpuck`
 - **The pointer does not move (Linux):** Deskpuck needs write access to `/dev/uinput` (Install, Linux).
 - **The Joy-Con does not connect:** if the menu says Not paired, pair it first (see Install). Otherwise hold SYNC until the lights flash, and make sure it is not connected to a Switch or another computer at the same time. If the menu says the Joy-Con is in use by another app, quit that app (for example `deskpuck-cli`).
+- **Linux: the pointer feels choppy:** at BlueZ's default connection interval a Joy-Con sends about 21 reports a second. A shorter default doubles that; see below. (Windows asks for a short interval itself.)
 - **Windows: the Joy-Con stops working in an admin window:** Windows does not let ordinary apps send input to apps running as administrator (such as an admin PowerShell). Switch away with the mouse, the keyboard or Alt+Tab, and the Joy-Con works again.
+
+<details>
+<summary>Linux: a shorter Bluetooth connection interval</summary>
+
+Set a shorter default once, as root. It applies to every Bluetooth LE device on the machine. Reconnect the Joy-Con afterwards; the first connection after the change can still use the old interval. With 15-30 ms the Joy-Con sent about 45 reports a second; shorter intervals failed to connect several times in testing.
+
+```sh
+sudo sed -i -e 's/^#MinConnectionInterval=$/MinConnectionInterval=12/' -e 's/^#MaxConnectionInterval=$/MaxConnectionInterval=24/' /etc/bluetooth/main.conf
+grep -E '^(Min|Max)ConnectionInterval=' /etc/bluetooth/main.conf
+sudo systemctl restart bluetooth
+# To undo:
+sudo sed -i -e 's/^MinConnectionInterval=12$/#MinConnectionInterval=/' -e 's/^MaxConnectionInterval=24$/#MaxConnectionInterval=/' /etc/bluetooth/main.conf && sudo systemctl restart bluetooth
+```
+
+The `grep` should print both lines; if it does not, your `main.conf` lacks the commented defaults, so set them by hand under `[LE]`. Running the commands twice changes nothing, and the undo touches only those two lines.
+
+</details>
 
 ## Build from source
 

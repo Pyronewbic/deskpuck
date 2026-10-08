@@ -47,6 +47,7 @@ fi
 
 # Any Rust build failure is a build failure (1); 2 means a missing signing identity.
 scripts/build-rust.sh || exit 1
+(cd rust && cargo build --release --locked -p deskpuck-ble --bin deskpuck-cli) || exit 1
 # SwiftPM does not track the Rust library as an input; removing the binary forces
 # a relink, which the check below proves.
 rust_lib=rust/target/release/libdeskpuck_ffi.a
@@ -60,6 +61,7 @@ fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Deskpuck "$APP/Contents/MacOS/Deskpuck"
+cp rust/target/release/deskpuck-cli "$APP/Contents/MacOS/deskpuck-cli"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD)" "$APP/Contents/Info.plist"
@@ -75,11 +77,17 @@ rm -f "$icon_plist"
 
 # Hardened runtime: without it, DYLD_INSERT_LIBRARIES can load code into the app
 # and borrow its Accessibility permission.
+# Nested code is signed first; the app's seal then covers it.
+codesign --force --options runtime --identifier com.pyronewbic.deskpuck.cli --sign "$sign_as" \
+    "$APP/Contents/MacOS/deskpuck-cli"
 codesign --force --options runtime --sign "$sign_as" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
-signature=$(codesign -dv "$APP" 2>&1)
-if ! grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\([^)]*runtime' <<<"$signature"; then
-    echo "$APP is not signed with the hardened runtime" >&2
-    exit 1
-fi
+for code in "$APP" "$APP/Contents/MacOS/deskpuck-cli"; do
+    signature=$(codesign -dv "$code" 2>&1)
+    if ! grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\([^)]*runtime' <<<"$signature"; then
+        echo "$code is not signed with the hardened runtime" >&2
+        exit 1
+    fi
+done
+"$APP/Contents/MacOS/deskpuck-cli" --help 2>/dev/null || { echo "the bundled deskpuck-cli does not run" >&2; exit 1; }
 echo "Built $APP ($VERSION), signed with: ${sign_as/#-/ad hoc}"
