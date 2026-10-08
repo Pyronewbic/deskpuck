@@ -1,0 +1,6 @@
+*
+!PKGBUILD
+!.SRCINFO
+!.gitignore
+!deskpuck.install
+!60-deskpuck-uinput.rules
