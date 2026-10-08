@@ -19,7 +19,7 @@ scripts/make-app.sh          # dist/Deskpuck.app
 scripts/make-dmg.sh          # dist/Deskpuck-<version>-macos-arm64.dmg and .zip
 ```
 
-Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md).
+Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md). Once the release is published, `scripts/aur-update.sh` points the Arch package in `packaging/aur/deskpuck-bin` at it, after checking the Linux tarball's checksum and attestation; it needs `makepkg` or Docker to write `.SRCINFO`. Commit the change, then copy those files to the `deskpuck-bin` repository on the AUR and push there.
 
 `make-app.sh` signs with a self-signed certificate named "Deskpuck Dev" (or the one named in `DESKPUCK_SIGN_IDENTITY`), so macOS keeps the Accessibility permission across rebuilds. If the certificate is missing, it prints the one-time steps to create it in Keychain Access. `--adhoc` skips the certificate, but then the permission resets on every build.
 

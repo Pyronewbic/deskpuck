@@ -43,6 +43,10 @@ if [ "$(uname)" = Darwin ]; then
     endgroup
 fi
 
+group "AUR package script"
+scripts/aur-update.test.sh || fail "aur-update.sh self-test"
+endgroup
+
 group "Every test file ran"
 scripts/check-tests-ran.test.sh || fail "check-tests-ran.sh self-test"
 if [ $tests_ran -ne 0 ] && [ ! -f "$report" ]; then
