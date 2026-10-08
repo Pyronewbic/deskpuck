@@ -13,6 +13,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 - `deskpuck-ble`: the Bluetooth connection. `receiver.rs` is a state machine with no I/O (inputs and the time in, commands out, every timer a deadline); `controller.rs` drives it through btleplug on a background thread. On Linux the link itself is a direct ATT socket (`l2cap.rs`) run by `att.rs`, an ATT client with no I/O that finds the characteristics by UUID. Shared by the app and the `deskpuck-cli` command-line tool.
 - `deskpuck-inject`: turns engine output into events and posts them through a backend per OS: CGEvent, uinput, or SendInput.
 - `deskpuck-ffi`: the C interface the app calls (`include/deskpuck.h`), built as a static library by `scripts/build-rust.sh`. Settings cross it as JSON.
+- `deskpuck-tray`: the Linux and Windows app, built as `deskpuck`: a tray icon with the Mac menu's lines, running the same Bluetooth and input code in-process. On Linux the icon is a StatusNotifierItem over D-Bus, and the app connects to no Joy-Con until something shows it (GNOME needs the AppIndicator extension).
 - `deskpuck-settings`: the settings window for Linux and Windows (egui), a library: the app shows it when run as `deskpuck --settings`, which the tray starts. Its state lives in `model.rs`, with no UI types, and is saved through `deskpuck-core`; the tray reloads `config.json` when the file changes.
 - `deskpuck-replay`: feeds a built-in demo or a capture file through engine and backend, so the input layer can be tested without Bluetooth.
 
@@ -20,7 +21,7 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 **`tests/fixtures/`**: `joycon2_r_capture.txt`, reports captured from a real Joy-Con 2 (R), which the Rust parser, session and replay tests read.
 
-**`scripts/`**: build, sign and package the app.
+**`scripts/`**: the checks, builds, packaging and releases ([RELEASING.md](RELEASING.md)). **`packaging/`**: the Linux and Windows installers and the AUR package.
 
 ## Rules that hold the code together
 
