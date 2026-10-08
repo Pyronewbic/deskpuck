@@ -352,6 +352,11 @@ async fn run<S: Sink>(
         hub.report_status(LinkStatus::Unavailable);
         return idle(hub, rx, start).await;
     };
+    if hub.logging()
+        && let Ok(info) = adapter.adapter_info().await
+    {
+        hub.log(|| format!("adapter {info}"));
+    }
     let mut events = match adapter.events().await {
         Ok(events) => events,
         Err(e) => {

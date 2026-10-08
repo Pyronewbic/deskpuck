@@ -81,3 +81,24 @@ fn not_paired_exits_2_before_bluetooth() {
 fn help_mentions_pairing() {
     assert!(stderr(&cli(&["--help"])).contains("--pair"));
 }
+
+#[test]
+fn verbose_prints_the_version_and_platform_first() {
+    let out = cli(&["--verbose", "--config", "/nonexistent/deskpuck/config.json"]);
+    // Control: the missing config is what ends the run, after the banner.
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    let banner = format!(
+        "deskpuck-cli {} on {} {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    assert_eq!(stderr(&out).lines().next(), Some(banner.as_str()), "{}", stderr(&out));
+}
+
+#[test]
+fn without_verbose_there_is_no_banner() {
+    let out = cli(&["--config", "/nonexistent/deskpuck/config.json"]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("deskpuck-cli 0."), "{}", stderr(&out));
+}
