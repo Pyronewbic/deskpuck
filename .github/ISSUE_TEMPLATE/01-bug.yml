@@ -74,8 +74,8 @@ body:
       description: >-
         Quit the Deskpuck app, run `deskpuck-cli --verbose`, hold SYNC on the
         Joy-Con, and paste the output up to the problem. It is formatted
-        automatically. The Mac app does not include this tool; skip this if
-        you do not have it.
+        automatically. On a Mac the tool is inside the app (releases after
+        0.3.0): `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
       render: shell
   - type: input
     id: hardware

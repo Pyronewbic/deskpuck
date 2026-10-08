@@ -4,6 +4,10 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+### Added
+
+- The Mac app includes `deskpuck-cli`, for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added
