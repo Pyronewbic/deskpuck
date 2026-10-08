@@ -27,9 +27,8 @@ Bluetooth report -> parse -> engine -> post as OS input events
 
 - The parser and engine never call the OS. The screen-edge clamp (`clamp_to_displays`) takes the display lookup as a function: the macOS backend passes the real one, tests pass fake displays. Everything else platform-specific lives in the Bluetooth driver (`controller.rs`) or an input backend.
 - Key codes are macOS virtual key codes everywhere, including in `config.json`. The Linux and Windows backends translate them at the last step (`deskpuck-inject/src/keymap.rs`).
-- Only the paired Joy-Con connects, except inside a pairing window. The receiver enforces this on discovery, and its single scan path is also where pausing stops all scanning. The pairing lives in its own `pairing.json` (`pairing.rs`), so a settings save never overwrites it.
+- Only the paired Joy-Con connects, except inside a pairing window. The receiver enforces this on discovery. Every path that starts a Bluetooth scan goes through one function, `scan` in `receiver.rs`, which is also where Pause blocks scanning. The pairing lives in its own `pairing.json` (`pairing.rs`), so a settings save never overwrites it.
 - Settings are loaded, validated and saved only in Rust (`config.rs`). The app passes them across the C interface and shows the warnings or errors that come back.
 - On macOS, pointer motion is posted as real move or drag events, never as cursor warps. The Dock and hot corners only react to real events.
 - A pointer move is posted before the same report's button changes, so a press in that report starts a drag on the next move.
-- Every path that starts a Bluetooth scan goes through one function, `scan` in `receiver.rs`, which is where Pause blocks scanning.
 - The C header and the library are versioned together (`DP_ABI_VERSION`); the app refuses to start if the library's version differs from the header it was compiled with.
