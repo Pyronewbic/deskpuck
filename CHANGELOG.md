@@ -7,6 +7,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 ### Added
 
 - The Mac app includes `deskpuck-cli`, for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
+- `deskpuck-cli --verbose` first prints the version and platform, then the Bluetooth adapter once it is found.
 
 ## [0.3.0] - 2026-10-08
 
