@@ -1,0 +1,85 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before reporting
+      options:
+        - label: I searched the existing issues, open and closed.
+          required: true
+        - label: This happens on the latest release.
+          required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Deskpuck?
+      options:
+        - macOS .dmg
+        - macOS .zip
+        - Windows setup.exe
+        - Windows .zip
+        - Linux tarball (install.sh)
+        - AUR (deskpuck-bin)
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Deskpuck version
+      description: Shown in the app's menu, and in the download's file name.
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        If the pointer or keys do nothing, first check the permission for your
+        platform (Accessibility on macOS, /dev/uinput on Linux; see the README).
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop and session (Linux)
+      description: Desktop environment, and whether the session is Wayland or X11.
+      placeholder: KDE Plasma 6, Wayland
+  - type: textarea
+    id: verbose
+    attributes:
+      label: Output of deskpuck-cli --verbose
+      description: >-
+        Quit the Deskpuck app, run `deskpuck-cli --verbose`, hold SYNC on the
+        Joy-Con, and paste the output up to the problem. It is formatted
+        automatically. The Mac app does not include this tool; skip this if
+        you do not have it.
+      render: shell
+  - type: input
+    id: hardware
+    attributes:
+      label: Joy-Con and Bluetooth adapter
+      description: Left or right Joy-Con, and built-in Bluetooth or a dongle.
+      placeholder: Joy-Con (R), built-in Bluetooth

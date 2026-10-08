@@ -1,0 +1,29 @@
+# Maintainer: Pyronewbic <36982731+Pyronewbic@users.noreply.github.com>
+
+pkgname=deskpuck-bin
+pkgver=0.3.0
+pkgrel=1
+pkgdesc='Use a Nintendo Switch 2 Joy-Con as a mouse and keyboard'
+arch=('x86_64')
+url='https://github.com/Pyronewbic/deskpuck'
+license=('MIT')
+depends=('bluez' 'dbus' 'glibc' 'hicolor-icon-theme' 'libgcc' 'libglvnd' 'libx11' 'libxcursor' 'libxi'
+         'libxkbcommon' 'libxkbcommon-x11' 'libxrender' 'wayland')
+optdepends=('gnome-shell-extension-appindicator: tray icon on GNOME')
+provides=('deskpuck')
+conflicts=('deskpuck')
+options=('!debug')
+install=deskpuck.install
+source=("Deskpuck-$pkgver-linux-$CARCH.tar.gz::$url/releases/download/v$pkgver/Deskpuck-$pkgver-linux-$CARCH.tar.gz"
+        '60-deskpuck-uinput.rules')
+sha256sums=('ca66b384e27fcc80e822c99ce5f66b1f80f423c4fbd71dbf3174de851aa6f88c'
+            '27e69cdde6bcbb696b345efc7646c9be04357243dd8afa3f0a5c521d5cd87b1b')
+
+package() {
+  cd "Deskpuck-$pkgver-linux-$CARCH"
+  install -Dm755 deskpuck deskpuck-cli -t "$pkgdir/usr/bin/"
+  install -Dm644 deskpuck.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 deskpuck.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/deskpuck.png"
+  install -Dm644 LICENSE THIRD-PARTY-NOTICES.txt -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 "$srcdir/60-deskpuck-uinput.rules" -t "$pkgdir/usr/lib/udev/rules.d/"
+}

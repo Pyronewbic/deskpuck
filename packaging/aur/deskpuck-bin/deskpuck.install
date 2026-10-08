@@ -1,0 +1,14 @@
+# pacman reloads udev rules only after these scripts run, so reload here first.
+_uinput_access() {
+  udevadm control --reload-rules 2>/dev/null && udevadm trigger --name-match=uinput 2>/dev/null || true
+}
+
+post_install() {
+  _uinput_access
+  echo 'Start Deskpuck from your app menu, then choose Pair New Joy-Con... from its tray icon.'
+  echo 'On GNOME, the tray icon needs the AppIndicator extension.'
+}
+
+post_upgrade() {
+  _uinput_access
+}

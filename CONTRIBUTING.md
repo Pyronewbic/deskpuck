@@ -19,7 +19,7 @@ scripts/make-app.sh          # dist/Deskpuck.app
 scripts/make-dmg.sh          # dist/Deskpuck-<version>-macos-arm64.dmg and .zip
 ```
 
-Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md).
+Releases are built and signed on the maintainer's Mac by `scripts/release.sh`, which runs every check, builds the disk image, and with `--publish` pushes a signed tag and creates a draft GitHub release. The notes come from [CHANGELOG.md](CHANGELOG.md). Once the release is published, `scripts/aur-update.sh` points the Arch package in `packaging/aur/deskpuck-bin` at it, after checking the Linux tarball's checksum and attestation; it needs `makepkg` or Docker to write `.SRCINFO`. Commit the change, then copy those files to the `deskpuck-bin` repository on the AUR and push there.
 
 `make-app.sh` signs with a self-signed certificate named "Deskpuck Dev" (or the one named in `DESKPUCK_SIGN_IDENTITY`), so macOS keeps the Accessibility permission across rebuilds. If the certificate is missing, it prints the one-time steps to create it in Keychain Access. `--adhoc` skips the certificate, but then the permission resets on every build.
 
@@ -40,7 +40,7 @@ cargo run --release -p deskpuck-replay                   # post them for real
 
 Without `--dry-run`, the replay moves the real pointer, scrolls and presses arrow keys for about eight seconds after a three-second countdown. It never clicks or presses Return. Focus a text editor first. `--help` lists the options and exit codes.
 
-On Linux the replay needs write access to `/dev/uinput`, set up as in the [README](README.md#linux) (step 2).
+On Linux the replay needs write access to `/dev/uinput`, set up as in the [README](README.md#linux).
 
 `deskpuck-cli` reads the app's `config.json` and `pairing.json` (`--pair` pairs a Joy-Con, `--config` picks another settings file, `--verbose` prints connection detail) and is tested with a real Joy-Con on macOS and Linux. On Linux, BlueZ never finishes resolving a Joy-Con 2's services, so Deskpuck talks ATT over its own L2CAP socket instead (no root needed). At BlueZ's default connection interval a Joy-Con sends about 21 reports a second; for a smoother pointer, set a shorter default once as root (this applies to every Bluetooth LE device on the machine), then reconnect, since the first connection after the change can still use the old interval. With 15-30 ms the Joy-Con sent about 45 a second:
 

@@ -31,7 +31,7 @@ app and this tool share the pairing.
   --pair         for 60 seconds, connect to any Joy-Con and pair it,
                  replacing the paired one; then carry on as usual
   --config PATH  settings file (default: the Deskpuck app's config.json)
-  --verbose      print Bluetooth connection detail
+  --verbose      print the app version, Bluetooth adapter and connection detail
   --monitor      show a live readout of every Joy-Con report
 
 Exit status: 0 quit (Ctrl+C, the terminal closed, or SIGTERM), 1 Bluetooth
@@ -61,6 +61,15 @@ fn parse_args() -> Result<Args, String> {
         }
     }
     Ok(args)
+}
+
+fn banner() -> String {
+    format!(
+        "deskpuck-cli {} on {} {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
 }
 
 fn load_settings(path: Option<PathBuf>) -> Result<EngineSettings, String> {
@@ -149,6 +158,10 @@ fn main() -> ExitCode {
             return ExitCode::from(if problem.is_empty() { 0 } else { 2 });
         }
     };
+    // First, so bug reports carry the environment even when a later check fails.
+    if args.verbose {
+        note!("{}", banner());
+    }
     let settings = match load_settings(args.config.clone()) {
         Ok(settings) => settings,
         Err(problem) => {

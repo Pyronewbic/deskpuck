@@ -43,6 +43,17 @@ if [ "$(uname)" = Darwin ]; then
     endgroup
 fi
 
+# Not on Windows: its sha256sum writes binary-mode "*file" sums the stub's
+# SHA256SUMS would carry, and the AUR flow never runs there.
+case "$(uname)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *)
+        group "AUR package script"
+        scripts/aur-update.test.sh || fail "aur-update.sh self-test"
+        endgroup
+        ;;
+esac
+
 group "Every test file ran"
 scripts/check-tests-ran.test.sh || fail "check-tests-ran.sh self-test"
 if [ $tests_ran -ne 0 ] && [ ! -f "$report" ]; then
