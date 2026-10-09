@@ -5,7 +5,8 @@ Please report vulnerabilities privately through the repository's **Security** ta
 Deskpuck has Accessibility permission, so it can post any keyboard and mouse input. The parts most worth scrutiny are:
 
 - the report parser, which reads data from the paired Joy-Con, and during a pairing window from any nearby device that advertises as a Joy-Con 2;
-- the `config.json` and `pairing.json` loaders, which decide which keys get pressed and which device may connect.
+- the `config.json` and `pairing.json` loaders, which decide which keys get pressed and which device may connect;
+- the daily update check, Deskpuck's only network request: one HTTPS request to github.com for the latest-release redirect. Its answer is treated as untrusted (only this repository's tag page with a plain version number is accepted), it downloads and runs nothing, and the page it opens is a fixed address.
 
 ## Known limitation
 

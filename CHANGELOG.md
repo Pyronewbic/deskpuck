@@ -8,6 +8,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 - The Mac app includes `deskpuck-cli`, for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
 - `deskpuck-cli --verbose` first prints the version and platform, then the Bluetooth adapter once it is found.
+- **Update Available** in the menu on every platform: once a day Deskpuck asks github.com for the latest release, and choosing the line opens the release page. Turn it off under **Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`. On Linux, installs under `/usr` (such as the AUR package) are told to update through their package manager.
 
 ## [0.3.0] - 2026-10-08
 
