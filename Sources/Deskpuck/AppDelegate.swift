@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var statusLine: NSMenuItem?
     private var pairItem: NSMenuItem?
     private var menuTimer: Timer?
+    private var updateTimer: Timer?
+    private var availableUpdate: String?
 
     override init() {
         Core.checkLibrary()
@@ -44,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             watchAccessibility()
         }
         controller.start()
+        if !UpdateChecker.disabledByEnvironment {
+            scheduleUpdateCheck(after: .random(in: 30...120))
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -84,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
+        if let availableUpdate {
+            menu.addItem(item("Update Available: \(availableUpdate)...", action: #selector(openReleases)))
+        }
         let version = NSMenuItem(title: versionText(), action: nil, keyEquivalent: "")
         version.isEnabled = false
         menu.addItem(version)
@@ -172,6 +180,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             statusItem.button?.image = StatusGlyph.image()
         }
         statusItem.button?.appearsDisabled = !connected
+    }
+
+    // MARK: Updates
+
+    private func scheduleUpdateCheck(after seconds: TimeInterval) {
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+            Task { @MainActor in await self?.checkForUpdate() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        updateTimer = timer
+    }
+
+    private func checkForUpdate() async {
+        scheduleUpdateCheck(after: 24 * 60 * 60 + .random(in: 0...(60 * 60)))
+        guard settings.checkUpdates,
+              let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              let newer = await UpdateChecker.newerVersion(than: current)
+        else { return }
+        availableUpdate = newer
+    }
+
+    // The address is a constant; nothing from the update check reaches the browser.
+    @objc private func openReleases() {
+        NSWorkspace.shared.open(UpdateChecker.releasesURL)
     }
 
     // MARK: Actions

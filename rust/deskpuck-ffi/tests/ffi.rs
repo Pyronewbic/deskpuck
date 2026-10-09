@@ -135,6 +135,13 @@ fn load_falls_back_on_bad_paths() {
 }
 
 #[test]
+fn update_constants_match_the_core() {
+    use deskpuck_core::update::{DISABLE_ENV, LATEST_URL};
+    assert!(HEADER.contains(&format!("#define DP_LATEST_RELEASE_URL \"{LATEST_URL}\"\n")));
+    assert!(HEADER.contains(&format!("#define DP_UPDATE_DISABLE_ENV \"{DISABLE_ENV}\"\n")));
+}
+
+#[test]
 fn update_evaluate_crosses_and_tolerates_null() {
     let newer = c("https://github.com/Pyronewbic/deskpuck/releases/tag/v0.4.0");
     let foreign = c("https://github.com/Attacker/deskpuck/releases/tag/v9.9.9");
