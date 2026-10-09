@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 4
+#define DP_ABI_VERSION 5
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -27,6 +27,10 @@ char *dp_config_load(const char *path);
 char *dp_config_problems(const char *config_json);
 // NULL on success, else a message.
 char *dp_config_save(const char *config_json, const char *path);
+
+// location: the Location header of the latest-release redirect; current: the
+// running version. The newer version ("0.4.0"), or NULL for anything else.
+char *dp_update_evaluate(const char *location, const char *current);
 
 typedef enum {
     DP_STATUS_BLUETOOTH_OFF = 0,

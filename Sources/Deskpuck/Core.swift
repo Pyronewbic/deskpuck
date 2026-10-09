@@ -103,6 +103,13 @@ enum Core {
         json(config).withCString { decode([String].self, take(dp_config_problems($0))) } ?? ["Settings could not be checked."]
     }
 
+    /// The newer version named by the latest-release redirect's Location, or nil.
+    static func newerVersion(location: String, current: String) -> String? {
+        location.withCString { location in
+            current.withCString { current in take(dp_update_evaluate(location, current)) }
+        }
+    }
+
     static func save(_ config: DeskpuckConfig, to url: URL) throws {
         let message = json(config).withCString { config in
             url.path.withCString { path in take(dp_config_save(config, path)) }

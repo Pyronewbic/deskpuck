@@ -47,7 +47,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 14, "{exported:?}");
+    assert_eq!(exported.len(), 15, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -132,6 +132,22 @@ fn load_falls_back_on_bad_paths() {
     let null = json(unsafe { dp_config_load(ptr::null()) });
     assert_eq!(null["warnings"].as_array().map(Vec::len), Some(1));
     assert_eq!(null["config"]["version"], 1);
+}
+
+#[test]
+fn update_evaluate_crosses_and_tolerates_null() {
+    let newer = c("https://github.com/Pyronewbic/deskpuck/releases/tag/v0.4.0");
+    let foreign = c("https://github.com/Attacker/deskpuck/releases/tag/v9.9.9");
+    let current = c("0.3.0");
+    assert_eq!(
+        take(unsafe { dp_update_evaluate(newer.as_ptr(), current.as_ptr()) }).as_deref(),
+        Some("0.4.0")
+    );
+    assert_eq!(take(unsafe { dp_update_evaluate(foreign.as_ptr(), current.as_ptr()) }), None);
+    assert_eq!(take(unsafe { dp_update_evaluate(ptr::null(), current.as_ptr()) }), None);
+    assert_eq!(take(unsafe { dp_update_evaluate(newer.as_ptr(), ptr::null()) }), None);
+    let not_utf8 = CString::new(vec![0xFF, 0xFE]).expect("no NUL");
+    assert_eq!(take(unsafe { dp_update_evaluate(not_utf8.as_ptr(), current.as_ptr()) }), None);
 }
 
 #[test]
