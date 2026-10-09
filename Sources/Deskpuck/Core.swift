@@ -48,6 +48,7 @@ struct DeskpuckConfig: Codable, Equatable {
     var repeatInterval: Double
     var scrollEnabled: Bool
     var appearance: String
+    var checkUpdates: Bool
 }
 
 struct CoreError: LocalizedError {
@@ -87,7 +88,7 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system")
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true)
     }
 
     static func load(from url: URL) -> (DeskpuckConfig, [String]) {

@@ -91,6 +91,14 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Check for updates daily", isOn: $model.checkUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Asks github.com for the latest version. No other data is sent.")
+            }
+
+            Section {
                 HStack {
                     if let error = model.saveError {
                         Label(error, systemImage: "exclamationmark.triangle")

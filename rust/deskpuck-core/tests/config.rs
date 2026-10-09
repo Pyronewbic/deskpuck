@@ -56,6 +56,7 @@ fn round_trip() {
         repeat_interval: 0.0,
         scroll_enabled: false,
         appearance: Appearance::Dark,
+        check_updates: false,
     };
     let (back, warnings) = Config::from_json(&config.to_json().expect("valid config serializes"));
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -188,6 +189,14 @@ fn other_fields() {
     assert!(!c.scroll_enabled && w.is_empty());
     let (c, w) = parse(r#"{"version": 1, "scrollEnabled": 0}"#);
     assert!(c.scroll_enabled && warned(&w, "scrollEnabled"));
+
+    assert!(Config::default().check_updates);
+    let (c, w) = parse(r#"{"version": 1, "checkUpdates": false}"#);
+    assert!(!c.check_updates && w.is_empty(), "{w:?}");
+    for bad in ["0", r#""false""#, "null"] {
+        let (c, w) = parse(&format!(r#"{{"version": 1, "checkUpdates": {bad}}}"#));
+        assert!(c.check_updates && warned(&w, "checkUpdates"), "{bad}");
+    }
 
     for appearance in Appearance::ALL {
         let (c, w) = parse(&format!(r#"{{"version": 1, "appearance": "{}"}}"#, appearance.name()));
