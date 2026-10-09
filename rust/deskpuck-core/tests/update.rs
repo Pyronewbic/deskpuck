@@ -117,6 +117,7 @@ fn only_a_readable_config_or_none_allows_the_check() {
         (r#"{"version": 1, "checkUpdates": true}"#.to_owned(), true),
         (r#"{"version": 1}"#.to_owned(), true),
         (r#"{"version": 1, "checkUpdates": false}"#.to_owned(), false),
+        (r#"{"version": 1, "checkUpdates": "false"}"#.to_owned(), false),
         (r#"{"version": 1, "checkUpdates": fal"#.to_owned(), false),
         ("not json".to_owned(), false),
         (format!(r#"{{"version": 1, "pad": "{}"}}"#, "x".repeat(70 * 1024)), false),

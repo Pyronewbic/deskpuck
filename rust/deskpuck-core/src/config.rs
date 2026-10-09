@@ -279,7 +279,11 @@ impl Config {
         match dict.get(CHECK_UPDATES) {
             None => {}
             Some(Value::Bool(enabled)) => config.check_updates = *enabled,
-            Some(_) => warnings.push("checkUpdates must be true or false; using true.".to_owned()),
+            // Off, unlike other bad values: a mistyped "false" must not mean checking.
+            Some(_) => {
+                config.check_updates = false;
+                warnings.push("checkUpdates must be true or false; using false.".to_owned());
+            }
         }
 
         match dict.get(APPEARANCE) {

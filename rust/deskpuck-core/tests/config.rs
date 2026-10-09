@@ -193,9 +193,9 @@ fn other_fields() {
     assert!(Config::default().check_updates);
     let (c, w) = parse(r#"{"version": 1, "checkUpdates": false}"#);
     assert!(!c.check_updates && w.is_empty(), "{w:?}");
-    for bad in ["0", r#""false""#, "null"] {
+    for bad in ["0", r#""false""#, r#""true""#, "null"] {
         let (c, w) = parse(&format!(r#"{{"version": 1, "checkUpdates": {bad}}}"#));
-        assert!(c.check_updates && warned(&w, "checkUpdates"), "{bad}");
+        assert!(!c.check_updates && warned(&w, "checkUpdates"), "{bad}");
     }
 
     for appearance in Appearance::ALL {
