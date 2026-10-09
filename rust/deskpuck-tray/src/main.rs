@@ -16,6 +16,8 @@ mod model;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod reload;
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+mod update;
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod watch;
 
 const USAGE: &str = "Usage: deskpuck [--settings [--config PATH]]";
