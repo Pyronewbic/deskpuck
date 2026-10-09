@@ -47,7 +47,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 15, "{exported:?}");
+    assert_eq!(exported.len(), 16, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -139,6 +139,21 @@ fn update_constants_match_the_core() {
     use deskpuck_core::update::{DISABLE_ENV, LATEST_URL};
     assert!(HEADER.contains(&format!("#define DP_LATEST_RELEASE_URL \"{LATEST_URL}\"\n")));
     assert!(HEADER.contains(&format!("#define DP_UPDATE_DISABLE_ENV \"{DISABLE_ENV}\"\n")));
+}
+
+#[test]
+fn update_allowed_follows_the_file_and_refuses_the_unknown() {
+    let dir = std::env::temp_dir().join(format!("dp-ffi-update-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.json");
+    let c_path = c(path.to_str().expect("utf-8"));
+    assert!(unsafe { dp_update_allowed(c_path.as_ptr()) }, "no file: the default");
+    std::fs::write(&path, r#"{"version": 1, "checkUpdates": false}"#).unwrap();
+    assert!(!unsafe { dp_update_allowed(c_path.as_ptr()) });
+    std::fs::write(&path, "{broken").unwrap();
+    assert!(!unsafe { dp_update_allowed(c_path.as_ptr()) });
+    assert!(!unsafe { dp_update_allowed(ptr::null()) });
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]

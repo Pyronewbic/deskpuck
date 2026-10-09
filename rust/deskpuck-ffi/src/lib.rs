@@ -182,6 +182,20 @@ pub unsafe extern "C" fn dp_update_evaluate(
     })
 }
 
+/// # Safety
+/// `config_path` must be NULL or a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_update_allowed(config_path: *const c_char) -> bool {
+    guard(
+        || false,
+        || {
+            // SAFETY: forwarded from the caller's contract.
+            unsafe { from_c(config_path) }
+                .is_ok_and(|path| update::allowed_by_config(Path::new(path)))
+        },
+    )
+}
+
 pub struct DpController {
     controller: Controller,
 }

@@ -1,6 +1,9 @@
 //! Decides whether github.com's latest-release redirect names a newer version.
 //! The Location header is attacker-influenced, so only an exact, bounded shape passes.
 
+use crate::config::Config;
+use std::path::Path;
+
 /// Fetched with redirects off (GitHub answers with a 302 to the latest tag's page), and
 /// the page the app opens: a constant, so nothing from the response reaches the browser.
 pub const LATEST_URL: &str = "https://github.com/Pyronewbic/deskpuck/releases/latest";
@@ -19,6 +22,12 @@ pub fn evaluate(location: &str, current: &str) -> Option<String> {
     let latest = parse(tag)?;
     let running = parse(current)?;
     (latest > running).then(|| format!("{}.{}.{}", latest.0, latest.1, latest.2))
+}
+
+/// Read when a check is due. A missing file means the default (on); a file that
+/// cannot be read leaves the user's choice unknown, so it means off.
+pub fn allowed_by_config(path: &Path) -> bool {
+    Config::try_load(path).is_ok_and(|(config, _)| config.check_updates)
 }
 
 /// `true` when the environment turns the check off.

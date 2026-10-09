@@ -111,6 +111,11 @@ enum Core {
         }
     }
 
+    /// A missing settings file allows the update check; one that cannot be read does not.
+    static func updateAllowed(by url: URL) -> Bool {
+        url.path.withCString { dp_update_allowed($0) }
+    }
+
     static func save(_ config: DeskpuckConfig, to url: URL) throws {
         let message = json(config).withCString { config in
             url.path.withCString { path in take(dp_config_save(config, path)) }

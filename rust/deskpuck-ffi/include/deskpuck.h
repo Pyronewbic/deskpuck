@@ -35,6 +35,9 @@ char *dp_config_save(const char *config_json, const char *path);
 // location: the Location header of the latest-release redirect; current: the
 // running version. The newer version ("0.4.0"), or NULL for anything else.
 char *dp_update_evaluate(const char *location, const char *current);
+// Whether the settings file allows the check now: a missing file does (the
+// default), one that cannot be read does not.
+bool dp_update_allowed(const char *config_path);
 
 typedef enum {
     DP_STATUS_BLUETOOTH_OFF = 0,

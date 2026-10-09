@@ -194,7 +194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func checkForUpdate() async {
         scheduleUpdateCheck(after: 24 * 60 * 60 + .random(in: 0...(60 * 60)))
-        guard settings.checkUpdates,
+        // The file, not the window's state: an unreadable file leaves the choice unknown.
+        guard Core.updateAllowed(by: Core.defaultFileURL),
               let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
               let newer = await UpdateChecker.newerVersion(than: current)
         else { return }

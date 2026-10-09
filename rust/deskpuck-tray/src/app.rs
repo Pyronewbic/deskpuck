@@ -12,8 +12,6 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitCode};
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
@@ -135,13 +133,9 @@ pub fn run() -> ExitCode {
     let mut told_waiting = false;
     platform::on_session_end(release_hook(&controller), wake.clone());
     platform::watch_host(wake.clone());
-    // Read now, not at connect: the first check can come before a tray shows the icon.
-    let checks = Arc::new(AtomicBool::new(
-        config_path.as_deref().is_none_or(|path| Config::load(path).0.check_updates),
-    ));
     if !deskpuck_core::update::disabled_by_env() {
         let wake = wake.clone();
-        crate::update::watch(checks.clone(), move |version| wake.send(Event::Update(version)));
+        crate::update::watch(config_path.clone(), move |version| wake.send(Event::Update(version)));
     }
 
     'run: loop {
@@ -150,7 +144,7 @@ pub fn run() -> ExitCode {
         if let (Some(path), Some(controller)) = (&config_path, controller.borrow().as_ref())
             && watch.changed(path)
         {
-            reload_file(path, &mut model, controller, &mut applied, &checks);
+            reload_file(path, &mut model, controller, &mut applied);
         }
         if window.as_mut().is_some_and(|child| child.try_wait().is_ok_and(|done| done.is_some())) {
             window = None;
@@ -246,7 +240,7 @@ pub fn run() -> ExitCode {
                     } else if id == *items.reload.id()
                         && let Some(path) = &config_path
                     {
-                        reload_file(path, &mut model, controller, &mut applied, &checks);
+                        reload_file(path, &mut model, controller, &mut applied);
                     }
                 }
             }
@@ -385,13 +379,8 @@ fn reload_file(
     model: &mut Model,
     controller: &Controller,
     applied: &mut EngineSettings,
-    checks: &AtomicBool,
 ) {
-    let loaded = Config::try_load(path);
-    if let Ok((config, _)) = &loaded {
-        checks.store(config.check_updates, Ordering::Relaxed);
-    }
-    let outcome = reload::reload(applied, loaded);
+    let outcome = reload::reload(applied, Config::try_load(path));
     model.settings_note(outcome.note);
     if let Some(settings) = outcome.apply {
         controller.apply_settings(settings);

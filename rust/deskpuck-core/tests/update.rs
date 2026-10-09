@@ -1,4 +1,4 @@
-use deskpuck_core::update::evaluate;
+use deskpuck_core::update::{allowed_by_config, evaluate};
 
 const TAG: &str = "https://github.com/Pyronewbic/deskpuck/releases/tag/v";
 
@@ -106,4 +106,22 @@ fn oversized_input_is_refused() {
 #[test]
 fn the_largest_accepted_component_still_compares() {
     assert_eq!(evaluate(&at("999999.0.0"), "999998.999999.999999"), Some("999999.0.0".into()));
+}
+
+#[test]
+fn only_a_readable_config_or_none_allows_the_check() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("config.json");
+    assert!(allowed_by_config(&path), "no file means the default, on");
+    for (contents, allowed) in [
+        (r#"{"version": 1, "checkUpdates": true}"#.to_owned(), true),
+        (r#"{"version": 1}"#.to_owned(), true),
+        (r#"{"version": 1, "checkUpdates": false}"#.to_owned(), false),
+        (r#"{"version": 1, "checkUpdates": fal"#.to_owned(), false),
+        ("not json".to_owned(), false),
+        (format!(r#"{{"version": 1, "pad": "{}"}}"#, "x".repeat(70 * 1024)), false),
+    ] {
+        std::fs::write(&path, &contents).expect("write");
+        assert_eq!(allowed_by_config(&path), allowed, "{}", &contents[..contents.len().min(60)]);
+    }
 }

@@ -1,14 +1,12 @@
 //! The daily update check: the system's curl asks for the latest-release redirect,
 //! and deskpuck-core decides whether it names a newer version.
 
-use deskpuck_core::update::{LATEST_URL, evaluate};
+use deskpuck_core::update::{LATEST_URL, allowed_by_config, evaluate};
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const MAX_OUTPUT: u64 = 1024;
@@ -16,9 +14,9 @@ const FIRST_CHECK: (u64, u64) = (30, 120);
 const DAY: u64 = 24 * 60 * 60;
 const JITTER: u64 = 60 * 60;
 
-/// Checks after a jittered delay, then daily, while `enabled` holds; `found` gets
-/// each newer version once.
-pub fn watch(enabled: Arc<AtomicBool>, found: impl Fn(String) + Send + 'static) {
+/// Checks after a jittered delay, then daily, when the settings file allows it;
+/// `found` gets each newer version once.
+pub fn watch(config: Option<PathBuf>, found: impl Fn(String) + Send + 'static) {
     std::thread::spawn(move || {
         let curl = curl();
         let mut wait = FIRST_CHECK.0 + random(FIRST_CHECK.1 - FIRST_CHECK.0);
@@ -26,7 +24,7 @@ pub fn watch(enabled: Arc<AtomicBool>, found: impl Fn(String) + Send + 'static) 
         loop {
             std::thread::sleep(Duration::from_secs(wait));
             wait = DAY + random(JITTER);
-            if !enabled.load(Ordering::Relaxed) {
+            if !config.as_deref().is_none_or(allowed_by_config) {
                 continue;
             }
             if let Some(version) = check(&curl, env!("CARGO_PKG_VERSION"))
