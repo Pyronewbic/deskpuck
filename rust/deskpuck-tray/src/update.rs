@@ -689,6 +689,10 @@ mod live_tests {
         let folder = read("InstallLocation").expect("the install folder");
         let installed = Path::new(&folder).join("deskpuck.exe");
         assert!(installed.is_file(), "{}", installed.display());
+        // 0.3.0's installer predates deskpuck.iss starting Deskpuck after a silent install.
+        if published() == "0.3.0" {
+            return;
+        }
         eventually("the installer to start the new copy", 120, || {
             let output = Command::new("powershell")
                 .args(["-NoProfile", "-Command", "(Get-Process deskpuck -ErrorAction Ignore).Path"])
