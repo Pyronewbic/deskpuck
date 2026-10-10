@@ -1,5 +1,6 @@
 #!/bin/bash
-# Usage: scripts/release.sh [--artifacts | --publish]; signing stays on this Mac. --artifacts and --publish need GH_TOKEN.
+# Usage: scripts/release.sh [--artifacts | --sign | --publish]; signing stays on this Mac. --artifacts and --publish need GH_TOKEN.
+# --sign signs an existing dist/SHA256SUMS with the minisign key at $DESKPUCK_MINISIGN_KEY (default ~/.minisign/deskpuck.key).
 # Exit 0 done, 1 a check failed, 2 bad usage, 3 a check could not run.
 set -uo pipefail
 
@@ -12,8 +13,9 @@ mode=build
 case "${1:-}" in
     "") ;;
     --artifacts) mode=artifacts ;;
+    --sign) mode=sign ;;
     --publish) mode=publish ;;
-    *) echo "Usage: scripts/release.sh [--artifacts | --publish]" >&2; exit 2 ;;
+    *) echo "Usage: scripts/release.sh [--artifacts | --sign | --publish]" >&2; exit 2 ;;
 esac
 
 version=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)"$/\1/p' scripts/make-app.sh)
@@ -66,6 +68,27 @@ then run this again once it has passed."
     echo "Fetched the Linux and Windows builds of run $run and verified their checksums and attestations."
 }
 
+# The apps install an update only when this signature verifies with packaging/minisign.pub.
+sign_sums() {
+    command -v minisign >/dev/null || cannot "minisign not found (brew install minisign)"
+    [ -f dist/SHA256SUMS ] || fail "no dist/SHA256SUMS to sign"
+    rm -f dist/SHA256SUMS.minisig || fail "could not clear dist/SHA256SUMS.minisig"
+    if ! minisign -S -s "${DESKPUCK_MINISIGN_KEY:-$HOME/.minisign/deskpuck.key}" -m dist/SHA256SUMS \
+        -t "Deskpuck $version"; then
+        rm -f dist/SHA256SUMS.minisig
+        fail "could not sign dist/SHA256SUMS"
+    fi
+    if ! minisign -V -p packaging/minisign.pub -m dist/SHA256SUMS >/dev/null; then
+        rm -f dist/SHA256SUMS.minisig
+        fail "the signature does not verify with packaging/minisign.pub; the apps would refuse this release"
+    fi
+}
+
+if [ "$mode" = sign ]; then
+    sign_sums
+    exit 0
+fi
+
 if [ "$mode" = artifacts ]; then
     github_repo
     fetch_ci_assets
@@ -107,6 +130,7 @@ if [ "$mode" = build ]; then
     exit 0
 fi
 
+sign_sums
 git tag -s "$tag" -m "Deskpuck $version" || fail "could not create the signed tag $tag"
 # shellcheck disable=SC2016 # git's shell expands GH_TOKEN, keeping it off the command line
 git -c credential.helper= \
@@ -117,5 +141,5 @@ for asset in "${assets[@]}"; do
     uploads+=("dist/$asset")
 done
 gh release create "$tag" --repo "$repo" --draft --verify-tag --title "Deskpuck $version" --notes "$notes" \
-    "${uploads[@]}" dist/SHA256SUMS || fail "could not create the draft release"
+    "${uploads[@]}" dist/SHA256SUMS dist/SHA256SUMS.minisig || fail "could not create the draft release"
 echo "Draft release $tag created. Review it on GitHub, then publish it there."
