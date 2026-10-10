@@ -69,6 +69,18 @@ impl Watcher {
 
 const WAITING: &str = "Deskpuck: Waiting for a system tray";
 
+/// packaging/linux/tarball.test.sh points this at the copy install.sh put in place.
+fn tray_program() -> std::path::PathBuf {
+    match std::env::var_os("DESKPUCK_TRAY_BIN") {
+        Some(path) => {
+            let path = std::path::PathBuf::from(path);
+            assert!(path.is_file(), "DESKPUCK_TRAY_BIN is not a file: {}", path.display());
+            path
+        }
+        None => env!("CARGO_BIN_EXE_deskpuck").into(),
+    }
+}
+
 fn tooltip(bus: &Connection, service: &str) -> Option<(String, String)> {
     let value = property(bus, service, "ToolTip")?;
     let (_icon, _pixmaps, title, text) =
@@ -101,7 +113,7 @@ fn tray_publishes_its_menu_and_quits_cleanly_on_sigterm() {
     let (_daemon, address) = session_bus();
     let home = tempfile::tempdir().unwrap();
     let mut tray = Reap(
-        Command::new(env!("CARGO_BIN_EXE_deskpuck"))
+        Command::new(tray_program())
             .env("DBUS_SESSION_BUS_ADDRESS", &address)
             // Never reach the real Bluetooth stack or the user's settings.
             .env("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/nonexistent/deskpuck-test")

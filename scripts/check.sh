@@ -34,7 +34,7 @@ tests_ran=$?
 endgroup
 
 group "Shell scripts"
-shellcheck -x scripts/*.sh .githooks/pre-push packaging/linux/*.sh || fail "shellcheck"
+shellcheck -x scripts/*.sh .githooks/pre-push packaging/linux/*.sh packaging/windows/*.sh || fail "shellcheck"
 # makepkg reads the PKGBUILD's variables (SC2034), sets pkgdir, srcdir and CARCH (SC2154),
 # and runs package() with errexit, so a failed cd stops it (SC2164).
 shellcheck --shell=bash -e SC2034,SC2154,SC2164 packaging/aur/deskpuck-bin/PKGBUILD packaging/aur/deskpuck-bin/deskpuck.install ||
