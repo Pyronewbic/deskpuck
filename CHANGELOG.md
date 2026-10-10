@@ -8,8 +8,17 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 - The Mac app includes `deskpuck-cli`, for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
 - `deskpuck-cli --verbose` first prints the version and platform, then the Bluetooth adapter once it is found.
-- **Update Available** in the menu on every platform: once a day Deskpuck asks github.com for the latest release, and choosing the line opens the release page. Turn it off under **Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`. On Linux, installs under `/usr` (such as the AUR package) are told to update through their package manager.
+- **Update Available** in the menu on every platform: once a day Deskpuck asks github.com for the latest release, and choosing the line opens the release page. Turn it off under **General > Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`. On Linux, installs under `/usr` (such as the AUR package) are told to update through their package manager.
 - **Update to X.Y.Z** in the menu installs the update for you: Deskpuck downloads it, checks its minisign signature and checksum, installs it and restarts, keeping Accessibility on the Mac. Portable copies keep opening the release page, and `/usr` installs keep using the package manager.
+
+### Changed
+
+- Settings has two tabs, **Buttons** and **General**, with the buttons in two columns, so the window fits a laptop screen.
+
+### Fixed
+
+- **Restore Defaults** could be cut off on a 13 to 14 inch screen. It is now **Restore All Defaults...**, always visible at the bottom, and asks first.
+- The Mac settings window opens centred.
 
 ## [0.3.0] - 2026-10-08
 

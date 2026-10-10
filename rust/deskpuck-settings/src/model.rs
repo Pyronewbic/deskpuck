@@ -22,6 +22,24 @@ pub const RIGHT_JOYCON: [ButtonRow; 10] = [
     ButtonRow { id: "SR", label: "SR" },
 ];
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Tab {
+    #[default]
+    Buttons,
+    General,
+}
+
+impl Tab {
+    pub const ALL: [Self; 2] = [Self::Buttons, Self::General];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Buttons => "Buttons",
+            Self::General => "General",
+        }
+    }
+}
+
 pub const SPEED_RANGE: (f64, f64, f64) = (0.25, 4.0, 0.25);
 pub const DELAY_RANGE: (f64, f64, f64) = (0.15, 1.0, 0.05);
 pub const RATE_RANGE: (f64, f64, f64) = (4.0, 30.0, 1.0);
@@ -88,6 +106,8 @@ pub struct Model {
     pub save_error: Option<String>,
     pub notice: Option<String>,
     pub recording: Option<&'static str>,
+    /// Restore All Defaults was clicked and waits for Restore or Cancel.
+    pub confirming_restore: bool,
     edited_at: Option<f64>,
     seen: Stamp,
     /// The file had problems, so it is copied to config.json.bak before the
@@ -104,6 +124,7 @@ impl Model {
             save_error: None,
             notice: None,
             recording: None,
+            confirming_restore: false,
             edited_at: None,
             seen: None,
             needs_backup: false,
@@ -168,6 +189,15 @@ impl Model {
         }
     }
 
+    /// Leaving a tab ends a recording on it, which would otherwise keep
+    /// taking key presses from a row no longer on screen.
+    pub fn switch_tab(&mut self, tab: &mut Tab, to: Tab) {
+        if *tab != to {
+            *tab = to;
+            self.recording = None;
+        }
+    }
+
     pub fn edited(&mut self, now: f64) {
         self.edited_at = Some(now);
         self.notice = None;
@@ -187,6 +217,21 @@ impl Model {
         self.values.config.key_mappings.extend(hidden);
         self.recording = None;
         self.edited(now);
+    }
+
+    pub fn ask_to_restore(&mut self) {
+        self.confirming_restore = true;
+    }
+
+    pub fn cancel_restore(&mut self) {
+        self.confirming_restore = false;
+    }
+
+    /// Restores only after `ask_to_restore`, so a stray confirm resets nothing.
+    pub fn confirm_restore(&mut self, now: f64) {
+        if std::mem::take(&mut self.confirming_restore) {
+            self.restore_defaults(now);
+        }
     }
 
     pub fn save_due_in(&self, now: f64) -> Option<f64> {

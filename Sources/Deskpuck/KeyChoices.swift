@@ -95,8 +95,9 @@ struct ShortcutRecorder: View {
 
     var body: some View {
         HStack {
-            Text("Press a shortcut (Esc cancels)")
+            Text("Press a shortcut")
                 .foregroundStyle(.secondary)
+                .help("Esc cancels")
             Button("Cancel", action: onCancel)
         }
         .onAppear {

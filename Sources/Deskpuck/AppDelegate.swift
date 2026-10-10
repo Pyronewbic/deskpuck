@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var appearanceWatch: AnyCancellable?
+    private var settingsResizeWatch: AnyCancellable?
     private var accessibilityTimer: Timer?
     private var statusLine: NSMenuItem?
     private var pairItem: NSMenuItem?
@@ -330,16 +331,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             window.title = "Deskpuck Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
-            window.center()
             settingsWindow = window
             // Only this window: NSApp.appearance would restyle the menu bar menu too.
             appearanceWatch = settings.$appearance.sink { [weak window] name in
                 window?.appearance = Self.appearance(named: name)
             }
+            // SwiftUI sizes the window a run loop turn later; centre it at that size.
+            DispatchQueue.main.async { [weak self] in
+                window.center()
+                self?.bringSettingsForward()
+            }
+            // A taller tab grows the window downwards; lift it back onto the screen.
+            settingsResizeWatch = NotificationCenter.default
+                .publisher(for: NSWindow.didResizeNotification, object: window)
+                .sink { [weak window] _ in
+                    window.map(Self.keepOnScreen)
+                }
+            return
         }
+        bringSettingsForward()
+    }
+
+    private func bringSettingsForward() {
         // A menu-bar-only app must activate itself or the window opens behind others.
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private static func keepOnScreen(_ window: NSWindow) {
+        guard let visible = window.screen?.visibleFrame,
+              let top = Core.windowTop(top: visible.maxY - window.frame.maxY, height: window.frame.height,
+                                       screen: visible.height)
+        else { return }
+        window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: visible.maxY - top))
     }
 
     private static func appearance(named name: String) -> NSAppearance? {

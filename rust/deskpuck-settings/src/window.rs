@@ -1,9 +1,9 @@
 use crate::keys::{choices, describe, modifier_label, modifiers};
-use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
+use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE, Tab};
 use crate::recorder::{Recorded, clipboard_key, record};
-use crate::viewport;
-use crate::widgets::{section, segments, toggle};
+use crate::widgets::{card, section, segments, toggle};
 use crate::{fonts, text, theme};
+use crate::{layout, viewport};
 use deskpuck_core::config::{Appearance, Mapping};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
 use std::path::PathBuf;
@@ -11,12 +11,13 @@ use std::time::{Duration, Instant};
 
 struct App {
     model: Model,
+    tab: Tab,
     start: Instant,
     close_stopped: bool,
     next_file_check: f64,
     accent: theme::AccentReader,
     focused: bool,
-    asked_height: Option<f32>,
+    asked_size: Option<egui::Vec2>,
 }
 
 const FILE_CHECK: f64 = 1.0;
@@ -49,8 +50,12 @@ fn slider_row(
 }
 
 const VALUE_WIDTH: f32 = 52.0;
-const WIDTH: f32 = 440.0;
 const MARGIN: i8 = 16;
+const FOOTER_PADDING: i8 = 10;
+const VERSION: &str = concat!("Deskpuck ", env!("CARGO_PKG_VERSION"));
+const RESTORE_QUESTION: &str =
+    "Restore all settings to their defaults? Your button mappings will be lost.";
+const FIXED_BUTTONS: &str = "R is Left click and ZR is Right click. These two cannot be changed.";
 const UPDATE_NOTE: &str = "Asks github.com for the latest version. No other data is sent.";
 
 fn to_preference(appearance: Appearance) -> egui::ThemePreference {
@@ -141,23 +146,28 @@ impl App {
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui, now: f64) {
-        section(ui, "Buttons", |card| {
-            for row in RIGHT_JOYCON {
-                card.row(row.label, |ui| {
-                    if self.model.recording == Some(row.id) {
-                        if ui.button("Cancel").clicked() {
-                            self.model.recording = None;
+        let (left, right) = RIGHT_JOYCON.split_at(RIGHT_JOYCON.len() / 2);
+        card(ui, |card| {
+            for pair in left.iter().zip(right) {
+                card.pair(|i, half| {
+                    let row = if i == 0 { pair.0 } else { pair.1 };
+                    half.row(row.label, |ui| {
+                        if self.model.recording == Some(row.id) {
+                            if ui.button("Cancel").clicked() {
+                                self.model.recording = None;
+                            }
+                            ui.label(RichText::new("Press a shortcut").weak())
+                                .on_hover_text("Esc cancels");
+                        } else {
+                            self.button_picker(ui, row.id, now);
                         }
-                        ui.label(RichText::new("Press a shortcut (Esc cancels)").weak());
-                    } else {
-                        self.button_picker(ui, row.id, now);
-                    }
+                    });
                 });
             }
-            for (button, action) in [("R", "Left click"), ("ZR", "Right click")] {
-                card.row(button, |ui| ui.label(RichText::new(action).weak()));
-            }
         });
+        ui.add_space(6.0);
+        ui.label(RichText::new(FIXED_BUTTONS).weak());
+        ui.add_space(16.0);
     }
 
     fn controls(&mut self, ui: &mut egui::Ui, now: f64) {
@@ -209,6 +219,46 @@ impl App {
         }
     }
 
+    fn tabs(&mut self, ui: &mut egui::Ui) {
+        let tab = self.tab;
+        let labels = Tab::ALL.map(Tab::label);
+        ui.vertical_centered(|ui| {
+            if let Some(i) = segments(ui, "tabs", &labels, |i| Tab::ALL[i] == tab) {
+                self.model.switch_tab(&mut self.tab, Tab::ALL[i]);
+            }
+        });
+    }
+
+    fn footer(&mut self, ui: &mut egui::Ui, now: f64) {
+        if self.model.confirming_restore {
+            ui.label(RESTORE_QUESTION);
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Restore").clicked() {
+                    self.model.confirm_restore(now);
+                }
+                if ui.button("Cancel").clicked() {
+                    self.model.cancel_restore();
+                }
+            });
+            return;
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Restore All Defaults...").clicked() {
+                self.model.ask_to_restore();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                match &self.model.save_error {
+                    Some(error) => ui.add(
+                        egui::Label::new(RichText::new(error).color(ui.visuals().error_fg_color))
+                            .truncate(),
+                    ),
+                    None => ui.label(RichText::new(VERSION).weak()),
+                }
+            });
+        });
+    }
+
     fn problems(&self, ui: &mut egui::Ui) {
         if !self.model.load_warnings.is_empty() {
             ui.label(
@@ -229,30 +279,30 @@ impl App {
         }
     }
 
-    fn fit_height(&mut self, ui: &egui::Ui, content: f32) {
+    /// Asks once per tab and content height; a request the window manager
+    /// declined is not repeated every frame.
+    fn fit(&mut self, ui: &egui::Ui, header: f32, content: f32, footer: f32) {
         let (inner, outer, monitor) = ui.input(|i| {
             let viewport = i.viewport();
             (viewport.inner_rect, viewport.outer_rect, viewport.monitor_size)
         });
-        // Leaves room for a taskbar or panel, which the monitor size includes.
-        let limit = monitor.map_or(f32::INFINITY, |m| m.y * 0.85);
-        let wanted = (content + 2.0 * f32::from(MARGIN)).min(limit).round();
-        let current = inner.map(|r| r.height().round());
-        if current == Some(wanted) || self.asked_height == Some(wanted) {
+        let wanted = layout::wanted_height(content, header, footer, monitor.map(|m| m.y));
+        let size = egui::vec2(layout::width(self.tab), wanted);
+        let current = inner.map(|r| r.size().round());
+        if current == Some(size) || self.asked_size == Some(size) {
             return;
         }
-        let first = self.asked_height.is_none();
-        self.asked_height = Some(wanted);
+        let first = self.asked_size.is_none();
+        self.asked_size = Some(size);
         let ctx = ui.ctx();
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         // The window opened centred at its first guess; centre it again at its real height.
-        if first && let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
-            let frame = outer.height() - inner.height();
-            let top = ((monitor.y - wanted - frame) / 2.0).max(0.0);
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                outer.min.x,
-                top,
-            )));
+        if let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
+            let height = wanted + outer.height() - inner.height();
+            if let Some(top) = layout::moved_top(first, outer.min.y, height, monitor.y) {
+                let to = egui::pos2(outer.min.x, top);
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(to));
+            }
         }
     }
 }
@@ -273,29 +323,43 @@ impl eframe::App for App {
             ui.ctx().set_theme(preference);
         }
         self.record_keys(ui, now);
+        let header = egui::Margin { bottom: 0, ..egui::Margin::same(MARGIN) };
+        let header = egui::Panel::top("tabs")
+            .frame(egui::Frame::central_panel(ui.style()).inner_margin(header))
+            .resizable(false)
+            .show_separator_line(false)
+            .show(ui, |ui| self.tabs(ui))
+            .response
+            .rect
+            .height();
+        let footer = egui::Panel::bottom("footer")
+            .frame(
+                egui::Frame::central_panel(ui.style())
+                    .inner_margin(egui::Margin::symmetric(MARGIN, FOOTER_PADDING)),
+            )
+            .resizable(false)
+            .show(ui, |ui| self.footer(ui, now))
+            .response
+            .rect
+            .height();
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(MARGIN);
         let content = egui::CentralPanel::default()
             .frame(frame)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
+                    .id_salt(self.tab)
                     .show(ui, |ui| {
                         self.problems(ui);
-                        self.buttons(ui, now);
-                        self.controls(ui, now);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Restore Defaults").clicked() {
-                                self.model.restore_defaults(now);
-                            }
-                            if let Some(error) = &self.model.save_error {
-                                ui.colored_label(ui.visuals().error_fg_color, error);
-                            }
-                        });
+                        match self.tab {
+                            Tab::Buttons => self.buttons(ui, now),
+                            Tab::General => self.controls(ui, now),
+                        }
                     })
                     .content_size
                     .y
             })
             .inner;
-        self.fit_height(ui, content);
+        self.fit(ui, header, content + 2.0 * f32::from(MARGIN), footer);
         if now >= self.next_file_check {
             self.next_file_check = now + FILE_CHECK;
             self.model.check_file();
@@ -325,17 +389,18 @@ impl eframe::App for App {
 pub fn run(path: Option<PathBuf>) -> Result<(), String> {
     let app = App {
         model: Model::load(path),
+        tab: Tab::default(),
         start: Instant::now(),
         close_stopped: false,
         next_file_check: FILE_CHECK,
         accent: theme::AccentReader::default(),
         focused: false,
-        asked_height: None,
+        asked_size: None,
     };
     let icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png")).ok();
     let options = eframe::NativeOptions {
-        viewport: viewport(WIDTH, icon),
+        viewport: viewport(layout::width(Tab::default()), icon),
         // Fitted to its content, it is tall; centred, it clears taskbars and panels.
         centered: true,
         ..Default::default()

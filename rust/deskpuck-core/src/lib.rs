@@ -6,3 +6,4 @@ pub mod packet;
 pub mod pairing;
 pub mod release;
 pub mod update;
+pub mod window;
