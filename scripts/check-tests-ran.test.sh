@@ -52,6 +52,7 @@ expect 3 "an unknown OS cannot be checked" Plan9 "$work/all.xml"
 
 : >"$work/summary.md"
 GITHUB_STEP_SUMMARY="$work/summary.md" CHECK_ROOT="$work/repo" CHECK_OS=Darwin "$guard" "$work/no-two.xml" >/dev/null 2>&1
+# shellcheck disable=SC2016 # the backticks are Markdown to match, not a command
 grep -q '`beta::two` | \*\*did not run\*\*' "$work/summary.md" \
     || { echo "FAIL: the summary does not name the file that did not run" >&2; failures=$((failures + 1)); }
 

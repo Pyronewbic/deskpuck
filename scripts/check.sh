@@ -11,8 +11,8 @@ cannot() { echo "CANNOT CHECK: $1" >&2; exit 3; }
 group() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::group::$1"; else echo "== $1"; fi; }
 endgroup() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::endgroup::"; fi; }
 
-for tool in cargo cargo-deny cargo-nextest; do
-    command -v "$tool" >/dev/null || cannot "$tool not found (brew install rustup cargo-deny cargo-nextest)"
+for tool in cargo cargo-deny cargo-nextest shellcheck; do
+    command -v "$tool" >/dev/null || cannot "$tool not found (brew install rustup cargo-deny cargo-nextest shellcheck)"
 done
 
 group "Format"
@@ -31,6 +31,14 @@ rm -f "$report"
 tests_ran=$?
 [ $tests_ran -eq 0 ] || fail "cargo nextest"
 (cd rust && cargo test --doc --locked --quiet) || fail "doctests"
+endgroup
+
+group "Shell scripts"
+shellcheck -x scripts/*.sh .githooks/pre-push packaging/linux/*.sh || fail "shellcheck"
+# makepkg reads the PKGBUILD's variables (SC2034), sets pkgdir, srcdir and CARCH (SC2154),
+# and runs package() with errexit, so a failed cd stops it (SC2164).
+shellcheck --shell=bash -e SC2034,SC2154,SC2164 packaging/aur/deskpuck-bin/PKGBUILD packaging/aur/deskpuck-bin/deskpuck.install ||
+    fail "shellcheck (AUR package)"
 endgroup
 
 group "Linux installer"
