@@ -297,13 +297,12 @@ impl App {
         let ctx = ui.ctx();
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         // The window opened centred at its first guess; centre it again at its real height.
-        if first && let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
-            let frame = outer.height() - inner.height();
-            let top = ((monitor.y - wanted - frame) / 2.0).max(0.0);
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                outer.min.x,
-                top,
-            )));
+        if let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
+            let height = wanted + outer.height() - inner.height();
+            if let Some(top) = layout::moved_top(first, outer.min.y, height, monitor.y) {
+                let to = egui::pos2(outer.min.x, top);
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(to));
+            }
         }
     }
 }

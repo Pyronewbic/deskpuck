@@ -1,4 +1,4 @@
-use deskpuck_settings::layout::{MIN_HEIGHT, MIN_WIDTH, wanted_height, width};
+use deskpuck_settings::layout::{MIN_HEIGHT, MIN_WIDTH, moved_top, wanted_height, width};
 use deskpuck_settings::model::Tab;
 use deskpuck_settings::viewport;
 use eframe::egui::IconData;
@@ -48,6 +48,25 @@ fn an_unknown_monitor_size_caps_nothing() {
     for monitor in [None, Some(0.0), Some(-5.0), Some(f32::NAN), Some(f32::INFINITY)] {
         assert_eq!(wanted_height(2000.0, 50.0, 60.0, monitor), 2110.0, "{monitor:?}");
     }
+}
+
+#[test]
+fn the_window_is_centred_once_then_only_lifted_to_stay_on_screen() {
+    assert_eq!(moved_top(true, 500.0, 400.0, 1000.0), Some(300.0));
+    assert_eq!(moved_top(true, 0.0, 1200.0, 1000.0), Some(0.0), "taller than the monitor");
+    assert_eq!(moved_top(false, 100.0, 400.0, 1000.0), None, "a user's placement is kept");
+    assert_eq!(moved_top(false, 600.0, 400.0, 1000.0), None, "exactly at the bottom");
+    assert_eq!(moved_top(false, 601.0, 400.0, 1000.0), Some(600.0));
+    assert_eq!(moved_top(false, 300.0, 1200.0, 1000.0), Some(0.0));
+}
+
+#[test]
+fn an_unknown_monitor_size_moves_nothing() {
+    for monitor in [0.0, -5.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(moved_top(true, 500.0, 400.0, monitor), None, "{monitor}");
+        assert_eq!(moved_top(false, 500.0, 400.0, monitor), None, "{monitor}");
+    }
+    assert_eq!(moved_top(false, 601.0, 400.0, 1000.0), Some(600.0), "a real monitor still lifts");
 }
 
 #[test]
