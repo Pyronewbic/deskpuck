@@ -106,6 +106,8 @@ pub struct Model {
     pub save_error: Option<String>,
     pub notice: Option<String>,
     pub recording: Option<&'static str>,
+    /// Restore All Defaults was clicked and waits for Restore or Cancel.
+    pub confirming_restore: bool,
     edited_at: Option<f64>,
     seen: Stamp,
     /// The file had problems, so it is copied to config.json.bak before the
@@ -122,6 +124,7 @@ impl Model {
             save_error: None,
             notice: None,
             recording: None,
+            confirming_restore: false,
             edited_at: None,
             seen: None,
             needs_backup: false,
@@ -214,6 +217,21 @@ impl Model {
         self.values.config.key_mappings.extend(hidden);
         self.recording = None;
         self.edited(now);
+    }
+
+    pub fn ask_to_restore(&mut self) {
+        self.confirming_restore = true;
+    }
+
+    pub fn cancel_restore(&mut self) {
+        self.confirming_restore = false;
+    }
+
+    /// Restores only after `ask_to_restore`, so a stray confirm resets nothing.
+    pub fn confirm_restore(&mut self, now: f64) {
+        if std::mem::take(&mut self.confirming_restore) {
+            self.restore_defaults(now);
+        }
     }
 
     pub fn save_due_in(&self, now: f64) -> Option<f64> {

@@ -51,6 +51,10 @@ fn slider_row(
 
 const VALUE_WIDTH: f32 = 52.0;
 const MARGIN: i8 = 16;
+const FOOTER_PADDING: i8 = 10;
+const VERSION: &str = concat!("Deskpuck ", env!("CARGO_PKG_VERSION"));
+const RESTORE_QUESTION: &str =
+    "Restore all settings to their defaults? Your button mappings will be lost.";
 const FIXED_BUTTONS: &str = "R is Left click and ZR is Right click. These two cannot be changed.";
 const UPDATE_NOTE: &str = "Asks github.com for the latest version. No other data is sent.";
 
@@ -225,6 +229,36 @@ impl App {
         });
     }
 
+    fn footer(&mut self, ui: &mut egui::Ui, now: f64) {
+        if self.model.confirming_restore {
+            ui.label(RESTORE_QUESTION);
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Restore").clicked() {
+                    self.model.confirm_restore(now);
+                }
+                if ui.button("Cancel").clicked() {
+                    self.model.cancel_restore();
+                }
+            });
+            return;
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Restore All Defaults...").clicked() {
+                self.model.ask_to_restore();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                match &self.model.save_error {
+                    Some(error) => ui.add(
+                        egui::Label::new(RichText::new(error).color(ui.visuals().error_fg_color))
+                            .truncate(),
+                    ),
+                    None => ui.label(RichText::new(VERSION).weak()),
+                }
+            });
+        });
+    }
+
     fn problems(&self, ui: &mut egui::Ui) {
         if !self.model.load_warnings.is_empty() {
             ui.label(
@@ -299,6 +333,16 @@ impl eframe::App for App {
             .response
             .rect
             .height();
+        let footer = egui::Panel::bottom("footer")
+            .frame(
+                egui::Frame::central_panel(ui.style())
+                    .inner_margin(egui::Margin::symmetric(MARGIN, FOOTER_PADDING)),
+            )
+            .resizable(false)
+            .show(ui, |ui| self.footer(ui, now))
+            .response
+            .rect
+            .height();
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(MARGIN);
         let content = egui::CentralPanel::default()
             .frame(frame)
@@ -311,20 +355,12 @@ impl eframe::App for App {
                             Tab::Buttons => self.buttons(ui, now),
                             Tab::General => self.controls(ui, now),
                         }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Restore Defaults").clicked() {
-                                self.model.restore_defaults(now);
-                            }
-                            if let Some(error) = &self.model.save_error {
-                                ui.colored_label(ui.visuals().error_fg_color, error);
-                            }
-                        });
                     })
                     .content_size
                     .y
             })
             .inner;
-        self.fit_height(ui, header + content);
+        self.fit_height(ui, header + content + footer);
         if now >= self.next_file_check {
             self.next_file_check = now + FILE_CHECK;
             self.model.check_file();

@@ -15,6 +15,7 @@ enum SettingsTab: String, CaseIterable {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @State private var tab = SettingsTab.buttons
+    @State private var confirmingRestore = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +29,8 @@ struct SettingsView: View {
             .fixedSize()
             .padding(.top, 16)
             content
+            Divider()
+            footer
         }
         .frame(width: tab.width)
         .fixedSize(horizontal: false, vertical: true)
@@ -49,20 +52,37 @@ struct SettingsView: View {
             case .buttons: buttons
             case .general: general
             }
-
-            Section {
-                HStack {
-                    if let error = model.saveError {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                    }
-                    Spacer()
-                    Button("Restore Defaults") { model.restoreDefaults() }
-                }
-            }
         }
         .formStyle(.grouped)
     }
+
+    private var footer: some View {
+        HStack {
+            Button("Restore All Defaults...") { confirmingRestore = true }
+            Spacer()
+            if let error = model.saveError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(error)
+            } else {
+                Text(Self.versionText)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .confirmationDialog("Restore all settings to their defaults?", isPresented: $confirmingRestore) {
+            Button("Restore", role: .destructive) { model.restoreDefaults() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your button mappings will be lost.")
+        }
+    }
+
+    private static let versionText =
+        "Deskpuck " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")
 
     // Leaving a tab ends a recording on it, which would otherwise keep
     // taking key presses from a row no longer on screen.

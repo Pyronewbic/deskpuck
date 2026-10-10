@@ -131,6 +131,37 @@ fn switching_tabs_ends_a_recording_and_changes_nothing_else() {
 }
 
 #[test]
+fn restore_all_defaults_waits_for_a_confirm() {
+    let (_dir, path) = temp();
+    let mut model = Model::load(Some(path.clone()));
+    model.set_mapping("A", None, 0.0);
+    model.values.config.pointer_speed = 2.5;
+    assert!(model.flush(1.0));
+    let edited = model.values.clone();
+
+    model.confirm_restore(2.0);
+    assert_eq!(model.values, edited, "a confirm nobody asked for restores nothing");
+    model.ask_to_restore();
+    assert!(model.confirming_restore);
+    assert_eq!(model.values, edited, "asking alone changes nothing");
+    assert!(!model.pending());
+    model.cancel_restore();
+    assert!(!model.confirming_restore);
+    model.confirm_restore(3.0);
+    assert_eq!(model.values, edited, "cancelled");
+    assert!(!model.flush(9.0));
+    assert_eq!(saved(&path).pointer_speed, 2.5);
+
+    model.recording = Some("B");
+    model.ask_to_restore();
+    model.confirm_restore(4.0);
+    assert!(!model.confirming_restore);
+    assert_eq!(model.recording, None);
+    assert!(model.flush(9.0));
+    assert_eq!(saved(&path), Config::default(), "both tabs are reset");
+}
+
+#[test]
 fn restore_defaults_saves_the_defaults() {
     let (_dir, path) = temp();
     let mut model = Model::load(Some(path.clone()));
