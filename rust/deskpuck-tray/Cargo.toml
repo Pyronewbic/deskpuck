@@ -19,6 +19,7 @@ deskpuck-core = { path = "../deskpuck-core" }
 deskpuck-inject = { path = "../deskpuck-inject" }
 deskpuck-settings = { path = "../deskpuck-settings" }
 png = "0.18.1"
+tempfile = "3.27.0"
 
 # ksni (StatusNotifierItem over D-Bus) instead of the default GTK backend,
 # whose gtk3-rs crates are unmaintained and fail cargo deny.
@@ -32,9 +33,6 @@ zbus = { version = "5.19.0", default-features = false, features = ["async-io", "
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
-
-[dev-dependencies]
-tempfile = "3.27.0"
 
 # Only builds on Windows embed the icon; a build dependency's cfg is the host's
 # (see ../icons/embed.rs).

@@ -1,7 +1,8 @@
 use crate::hook::release_hook;
 use crate::icon::{self, Look};
-use crate::model::Model;
+use crate::model::{Model, UpdateClick};
 use crate::reload::{self, summarize};
+use crate::update::{Failure, Ready};
 use crate::watch::{POLL_SECONDS, Watch};
 use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup};
 use deskpuck_core::config::Config;
@@ -25,6 +26,7 @@ enum Event {
     Click,
     Host(bool),
     Update(String),
+    Installed(Result<Ready, Failure>),
     Quit,
 }
 
@@ -69,7 +71,7 @@ pub fn run() -> ExitCode {
     let config_path = Config::default_path();
     // Held until the program ends; a second start (the menu after a login
     // start, say) leaves the running tray alone.
-    let _instance = match config_path.as_deref().map(|p| p.with_file_name("deskpuck.lock")) {
+    let instance = match config_path.as_deref().map(|p| p.with_file_name("deskpuck.lock")) {
         Some(lock) => match crate::instance::claim(&lock) {
             Ok(crate::instance::Instance::Only(file)) => Some(file),
             Ok(crate::instance::Instance::Running) => {
@@ -131,6 +133,7 @@ pub fn run() -> ExitCode {
     let mut window: Option<Child> = None;
     let mut started = false;
     let mut told_waiting = false;
+    let mut ready = None;
     platform::on_session_end(release_hook(&controller), wake.clone());
     platform::watch_host(wake.clone());
     if !deskpuck_core::update::disabled_by_env() {
@@ -156,9 +159,16 @@ pub fn run() -> ExitCode {
                 Event::Latched(modifiers) => model.latched(modifiers),
                 Event::Note(message) => model.note(message),
                 Event::Update(version) => {
-                    let managed = program.as_deref().is_some_and(crate::update::package_managed);
-                    model.update_available(&version, managed);
+                    let install = program
+                        .as_deref()
+                        .map_or(crate::update::Install::Browser, crate::update::install_kind);
+                    model.update_available(&version, install);
                 }
+                Event::Installed(Ok(done)) => {
+                    ready = Some(done);
+                    break 'run;
+                }
+                Event::Installed(Err(failure)) => model.update_failed(failure),
                 Event::Quit => break 'run,
                 Event::Host(present) => {
                     model.set_host(present);
@@ -209,8 +219,28 @@ pub fn run() -> ExitCode {
                         continue;
                     }
                     if id == *items.update.id() {
-                        if let Err(problem) = open_releases() {
-                            model.note(problem);
+                        match model.update_click() {
+                            UpdateClick::Install(version) => {
+                                let (wake, program) = (wake.clone(), program.clone());
+                                std::thread::spawn(move || {
+                                    let result = program.ok_or(Failure::Install).and_then(|p| {
+                                        let current = env!("CARGO_PKG_VERSION");
+                                        crate::update::install(
+                                            &crate::update::curl(),
+                                            &version,
+                                            current,
+                                            &p,
+                                        )
+                                    });
+                                    wake.send(Event::Installed(result));
+                                });
+                            }
+                            UpdateClick::OpenPage => {
+                                if let Err(problem) = open_releases() {
+                                    model.note(problem);
+                                }
+                            }
+                            UpdateClick::Nothing => {}
                         }
                         continue;
                     }
@@ -249,6 +279,13 @@ pub fn run() -> ExitCode {
 
     controller.borrow_mut().take();
     drop(tray);
+    // The new copy would find this one still running while the lock is held.
+    drop(instance);
+    if let Some(Ready::Relaunch(program)) = ready
+        && let Err(e) = Command::new(&program).spawn()
+    {
+        eprintln!("deskpuck: updated, but could not start {}: {e}", program.display());
+    }
     ExitCode::SUCCESS
 }
 
@@ -335,8 +372,9 @@ fn render(model: &Model, now: f64, menu: &Menu, items: &Items, tray: &TrayIcon, 
     // Just above the version line, wherever the lines above have moved it.
     let version_at = menu.items().iter().position(|item| item.id() == items.version.id());
     if let Some(at) = version_at {
-        show_line(menu, &items.update, model.update_text(), at, &mut shown.update);
+        show_line(menu, &items.update, model.update_text().as_deref(), at, &mut shown.update);
     }
+    items.update.set_enabled(model.update_enabled());
 
     let look =
         Look { connected: model.connected(), paused: model.paused(), latched: latched.is_some() };
