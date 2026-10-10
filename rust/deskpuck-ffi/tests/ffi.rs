@@ -47,7 +47,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 19, "{exported:?}");
+    assert_eq!(exported.len(), 21, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -235,6 +235,29 @@ fn release_verify_refuses_anything_unsigned() {
         take(unsafe { dp_release_verify(c_dir.as_ptr(), ptr::null(), current.as_ptr()) }).is_some()
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn window_geometry_crosses_as_the_core_decides_it() {
+    use deskpuck_core::window::{moved_top, wanted_height};
+    for (content, screen) in [(400.0, 1000.0), (5000.0, 1000.0), (2000.0, 0.0), (10.0, f64::NAN)] {
+        let core = wanted_height(content as f32, 50.0, 60.0, Some(screen as f32));
+        assert_eq!(
+            dp_window_height(content, 50.0, 60.0, screen),
+            f64::from(core),
+            "{content} {screen}"
+        );
+    }
+    let mut top = -1.0;
+    assert!(unsafe { dp_window_top(false, 601.0, 400.0, 1000.0, &mut top) });
+    assert_eq!(top, f64::from(moved_top(false, 601.0, 400.0, 1000.0).unwrap()));
+    assert!(unsafe { dp_window_top(true, 0.0, 400.0, 1000.0, &mut top) });
+    assert_eq!(top, 300.0);
+    top = -1.0;
+    assert!(!unsafe { dp_window_top(false, 100.0, 400.0, 1000.0, &mut top) });
+    assert!(!unsafe { dp_window_top(false, 601.0, 400.0, 0.0, &mut top) }, "unknown screen");
+    assert_eq!(top, -1.0, "nothing written when nothing moves");
+    assert!(unsafe { dp_window_top(false, 601.0, 400.0, 1000.0, ptr::null_mut()) });
 }
 
 #[test]

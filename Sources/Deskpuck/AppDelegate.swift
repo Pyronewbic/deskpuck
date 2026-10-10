@@ -359,9 +359,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private static func keepOnScreen(_ window: NSWindow) {
-        guard let visible = window.screen?.visibleFrame, window.frame.minY < visible.minY else { return }
-        let top = min(visible.maxY, visible.minY + window.frame.height)
-        window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
+        guard let visible = window.screen?.visibleFrame,
+              let top = Core.windowTop(top: visible.maxY - window.frame.maxY, height: window.frame.height,
+                                       screen: visible.height)
+        else { return }
+        window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: visible.maxY - top))
     }
 
     private static func appearance(named name: String) -> NSAppearance? {

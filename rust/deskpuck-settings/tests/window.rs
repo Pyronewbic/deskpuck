@@ -1,4 +1,4 @@
-use deskpuck_settings::layout::{MIN_HEIGHT, MIN_WIDTH, moved_top, wanted_height, width};
+use deskpuck_settings::layout::{MIN_HEIGHT, MIN_WIDTH, width};
 use deskpuck_settings::model::Tab;
 use deskpuck_settings::viewport;
 use eframe::egui::IconData;
@@ -16,6 +16,7 @@ fn every_size_the_window_asks_for_is_finite_and_there_is_no_maximum() {
         }
         let (min, initial) = (window.min_inner_size.unwrap(), window.inner_size.unwrap());
         assert!(min.x <= initial.x && min.y <= initial.y, "{tab:?}");
+        assert_eq!(min.y, MIN_HEIGHT, "the shortest height the core ever asks for");
         assert_eq!(window.app_id.as_deref(), Some("deskpuck"), "matches deskpuck.desktop");
     }
 }
@@ -26,47 +27,6 @@ fn the_window_can_shrink_to_the_narrowest_tab() {
     assert_eq!(narrowest, MIN_WIDTH);
     assert_eq!(viewport(width(Tab::Buttons), None).min_inner_size.unwrap().x, MIN_WIDTH);
     assert!(width(Tab::Buttons) > width(Tab::General), "two columns need more room");
-}
-
-#[test]
-fn the_height_fits_the_content_up_to_most_of_the_screen() {
-    let (header, footer) = (50.0, 60.0);
-    assert_eq!(wanted_height(400.0, header, footer, Some(1000.0)), 510.0);
-    assert_eq!(wanted_height(740.0, header, footer, Some(1000.0)), 850.0, "exactly at the cap");
-    assert_eq!(
-        wanted_height(741.0, header, footer, Some(1000.0)),
-        850.0,
-        "above it, content scrolls"
-    );
-    assert_eq!(wanted_height(5000.0, header, footer, Some(1000.0)), 850.0);
-    assert_eq!(wanted_height(400.0, header, footer, Some(100.0)), MIN_HEIGHT, "tiny monitor");
-    assert_eq!(wanted_height(10.0, 0.0, 0.0, None), MIN_HEIGHT);
-}
-
-#[test]
-fn an_unknown_monitor_size_caps_nothing() {
-    for monitor in [None, Some(0.0), Some(-5.0), Some(f32::NAN), Some(f32::INFINITY)] {
-        assert_eq!(wanted_height(2000.0, 50.0, 60.0, monitor), 2110.0, "{monitor:?}");
-    }
-}
-
-#[test]
-fn the_window_is_centred_once_then_only_lifted_to_stay_on_screen() {
-    assert_eq!(moved_top(true, 500.0, 400.0, 1000.0), Some(300.0));
-    assert_eq!(moved_top(true, 0.0, 1200.0, 1000.0), Some(0.0), "taller than the monitor");
-    assert_eq!(moved_top(false, 100.0, 400.0, 1000.0), None, "a user's placement is kept");
-    assert_eq!(moved_top(false, 600.0, 400.0, 1000.0), None, "exactly at the bottom");
-    assert_eq!(moved_top(false, 601.0, 400.0, 1000.0), Some(600.0));
-    assert_eq!(moved_top(false, 300.0, 1200.0, 1000.0), Some(0.0));
-}
-
-#[test]
-fn an_unknown_monitor_size_moves_nothing() {
-    for monitor in [0.0, -5.0, f32::NAN, f32::INFINITY] {
-        assert_eq!(moved_top(true, 500.0, 400.0, monitor), None, "{monitor}");
-        assert_eq!(moved_top(false, 500.0, 400.0, monitor), None, "{monitor}");
-    }
-    assert_eq!(moved_top(false, 601.0, 400.0, 1000.0), Some(600.0), "a real monitor still lifts");
 }
 
 #[test]

@@ -6,13 +6,13 @@ use deskpuck_ble::controller::{
 use deskpuck_core::config::Config;
 use deskpuck_core::pairing::PairedDevice;
 use deskpuck_core::release::{self, Package, Release};
-use deskpuck_core::update;
+use deskpuck_core::{update, window};
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
 
-pub const DP_ABI_VERSION: u32 = 6;
+pub const DP_ABI_VERSION: u32 = 7;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -403,6 +403,38 @@ pub unsafe extern "C" fn dp_controller_free(controller: *mut DpController) {
             }
         },
     )
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn dp_window_height(
+    content: f64,
+    header: f64,
+    footer: f64,
+    screen_height: f64,
+) -> f64 {
+    let (content, header, footer) = (content as f32, header as f32, footer as f32);
+    f64::from(window::wanted_height(content, header, footer, Some(screen_height as f32)))
+}
+
+/// # Safety
+/// `new_top` must be NULL or valid for one write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_window_top(
+    first: bool,
+    top: f64,
+    height: f64,
+    screen_height: f64,
+    new_top: *mut f64,
+) -> bool {
+    let Some(moved) = window::moved_top(first, top as f32, height as f32, screen_height as f32)
+    else {
+        return false;
+    };
+    if !new_top.is_null() {
+        // SAFETY: non-null and writable per the caller's contract.
+        unsafe { new_top.write(f64::from(moved)) };
+    }
+    true
 }
 
 #[cfg(test)]

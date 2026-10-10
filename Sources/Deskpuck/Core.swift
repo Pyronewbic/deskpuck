@@ -148,6 +148,17 @@ enum Core {
         url.path.withCString { dp_update_allowed($0) }
     }
 
+    /// The settings window's inner height; 0 for an unknown screen caps nothing.
+    static func windowHeight(content: CGFloat, chrome: CGFloat, screen: CGFloat) -> CGFloat {
+        CGFloat(dp_window_height(Double(content), Double(chrome), 0, Double(screen)))
+    }
+
+    /// Where a resized window's top goes, measured down from the screen's top, or nil to leave it.
+    static func windowTop(top: CGFloat, height: CGFloat, screen: CGFloat) -> CGFloat? {
+        var moved = 0.0
+        return dp_window_top(false, Double(top), Double(height), Double(screen), &moved) ? CGFloat(moved) : nil
+    }
+
     static func save(_ config: DeskpuckConfig, to url: URL) throws {
         let message = json(config).withCString { config in
             url.path.withCString { path in take(dp_config_save(config, path)) }

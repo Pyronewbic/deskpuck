@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 6
+#define DP_ABI_VERSION 7
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -49,6 +49,15 @@ bool dp_release_redirect_allowed(const char *url);
 // NULL once dir's SHA256SUMS is signed with the release key and lists the
 // package with a matching hash; else why not. Install nothing on a message.
 char *dp_release_verify(const char *dir, const char *version, const char *current);
+
+// The settings window, in points, sized and placed as on Linux and Windows.
+// Its inner height for content between a header and a footer, up to 0.85 of
+// screen_height; a screen_height that is not positive and finite caps nothing.
+double dp_window_height(double content, double header, double footer, double screen_height);
+// Whether to move a window whose top is top below the screen's and which is
+// height tall: centred when first, else only lifted to keep its bottom on the
+// screen. On true, *new_top (unless NULL) is where its top goes.
+bool dp_window_top(bool first, double top, double height, double screen_height, double *new_top);
 
 typedef enum {
     DP_STATUS_BLUETOOTH_OFF = 0,

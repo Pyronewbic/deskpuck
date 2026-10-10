@@ -38,7 +38,8 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .measured(ContentHeight.self)
             }
-            .frame(height: min(contentHeight, contentCap))
+            .frame(height: max(0, Core.windowHeight(content: contentHeight, chrome: chromeHeight,
+                                                    screen: screenHeight) - chromeHeight))
             VStack(spacing: 0) {
                 Divider()
                 footer
@@ -56,13 +57,8 @@ struct SettingsView: View {
         }
     }
 
-    // 0.85 of the screen for the whole window; an unknown screen caps nothing.
-    private var contentCap: CGFloat {
-        max(screenHeight * 0.85 - chromeHeight, 120)
-    }
-
     private static func visibleScreenHeight() -> CGFloat {
-        NSScreen.main?.visibleFrame.height ?? .infinity
+        NSScreen.main?.visibleFrame.height ?? 0
     }
 
     private var content: some View {
