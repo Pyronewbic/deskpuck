@@ -1,6 +1,5 @@
-//! One-click update: which files to fetch for a newer release, and whether what arrived
-//! is the maintainer's. Downloads are attacker bytes until the minisign signature over
-//! SHA256SUMS and the package's line in it both check out.
+//! One-click update: what to fetch for a newer release, and whether it is the maintainer's. Downloads
+//! are attacker bytes until the signature over SHA256SUMS and the package's line in it check out.
 
 use crate::update::{Version, parse};
 use minisign_verify::{PublicKey, Signature};

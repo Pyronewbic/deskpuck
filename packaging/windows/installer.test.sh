@@ -1,8 +1,6 @@
 #!/bin/bash
-# Usage: packaging/windows/installer.test.sh SETUP_EXE (Git Bash on Windows, for CI runners:
-# it installs and uninstalls Deskpuck for this user). Installs with the flags the one-click
-# update uses, checks the installed copy starts, installs again over the running copy, then
-# uninstalls. Exit 0 every case behaves, 1 a case failed, 2 bad usage, 3 could not run.
+# Usage: packaging/windows/installer.test.sh SETUP_EXE (CI runners: installs for this user): installs as the update does, checks it starts,
+# reinstalls over the running copy, uninstalls. Exit 0 every case behaves, 1 a case failed, 2 bad usage, 3 could not run.
 set -uo pipefail
 # Git Bash would rewrite the installer's /FLAGS and reg.exe's /v into paths.
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'

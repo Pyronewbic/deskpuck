@@ -401,9 +401,8 @@ mod tests {
         concat!(env!("CARGO_MANIFEST_DIR"), "/../deskpuck-core/tests/fixtures/release");
     const ASSET_HOST: &str = "https://release-assets.githubusercontent.com/";
 
-    /// A stand-in curl for release downloads: a HEAD request is redirected to `redirect`
-    /// plus the file's name, and a download prints that file from `serve`. Each call's
-    /// arguments go to `log`, one call per line.
+    /// A stand-in curl: HEAD redirects to `redirect` plus the file name, a download prints that
+    /// file from `serve`, and each call's arguments go to `log`.
     fn release_curl(dir: &Path, redirect: &str, serve: &Path) -> PathBuf {
         let program = dir.join("curl");
         std::fs::write(
@@ -623,12 +622,8 @@ mod install_tests {
     }
 }
 
-/// The shipped download, verify and install against a published release (v0.3.0, the first
-/// signed with the release key, or DESKPUCK_LIVE_UPDATE_VERSION), with no test-only address.
-/// It changes this machine, so it runs only when asked:
-/// `DESKPUCK_LIVE_UPDATE_TEST=1 cargo test -p deskpuck-tray live -- --ignored`, as the Release
-/// checks workflow does. On Linux it installs into XDG_BIN_HOME and XDG_DATA_HOME, which must
-/// name scratch folders.
+/// The shipped updater against a published release (v0.3.0 or DESKPUCK_LIVE_UPDATE_VERSION). It installs
+/// on this machine, so it needs DESKPUCK_LIVE_UPDATE_TEST=1, and on Linux scratch XDG_BIN_HOME and XDG_DATA_HOME.
 #[cfg(all(test, any(target_os = "linux", windows)))]
 mod live_tests {
     use super::*;

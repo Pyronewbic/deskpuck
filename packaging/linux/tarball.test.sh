@@ -1,8 +1,6 @@
 #!/bin/bash
-# Usage: packaging/linux/tarball.test.sh TARBALL (Linux; needs dbus-daemon and cargo).
-# Installs a built release tarball into scratch folders as a user would, runs the installed tray
-# through the D-Bus test, installs again over it while it runs (as the one-click update does),
-# then uninstalls. Exit 0 every case behaves, 1 a case failed, 2 bad usage, 3 could not run.
+# Usage: packaging/linux/tarball.test.sh TARBALL (Linux, dbus-daemon, cargo): installs, runs, reinstalls over the running tray, uninstalls.
+# Exit 0 every case behaves, 1 a case failed, 2 bad usage, 3 could not run.
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)" || exit 3

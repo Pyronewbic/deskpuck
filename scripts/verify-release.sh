@@ -1,9 +1,6 @@
 #!/bin/bash
-# Usage: scripts/verify-release.sh TAG [KEY] | scripts/verify-release.sh --dir DIR [KEY]
-# Checks a release as the apps do before updating: the minisign signature over SHA256SUMS
-# with KEY (default packaging/minisign.pub), then every file it lists against its hash.
-# TAG downloads the published release; --dir checks files already in DIR.
-# Exit 0 verified, 1 a check failed, 2 bad usage, 3 could not check.
+# Usage: scripts/verify-release.sh TAG|--dir DIR [KEY]: the apps' check, the minisign signature over SHA256SUMS (KEY default
+# packaging/minisign.pub) then each listed file's hash. Exit 0 verified, 1 a check failed, 2 bad usage, 3 could not check.
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)" || exit 3

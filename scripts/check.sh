@@ -45,9 +45,8 @@ group "Linux installer"
 packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
 endgroup
 
-# A pre-push hook run from a worktree exports GIT_DIR, and a self-test that inherits it
-# re-initialises the real repository. Those that make a throwaway repo run with GIT_DIR
-# naming a decoy, which must come back byte for byte.
+# A worktree's pre-push hook exports GIT_DIR, which a self-test would re-initialise; those that make a
+# throwaway repo run with GIT_DIR naming a decoy, which must come back unchanged.
 decoy=$(mktemp -d) || cannot "no temporary folder for the decoy repository"
 trap 'rm -rf "$decoy"' EXIT
 env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE git init -q "$decoy" ||

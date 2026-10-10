@@ -1,6 +1,5 @@
 #!/bin/bash
-# Self-test for release.sh --artifacts and --sign, in a throwaway repo with stub gh and minisign.
-# Exit 0 when every case behaves, 1 otherwise.
+# Self-test for release.sh --artifacts and --sign, in a throwaway repo with stub gh and minisign. Exit 0 when every case behaves, 1 otherwise.
 # Checks are single-quoted conditions eval'd by check().
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail

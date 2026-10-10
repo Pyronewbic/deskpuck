@@ -1,8 +1,7 @@
 name: Release checks
 
-# What a one-click update relies on, against the live release: its signature and files, and the
-# shipped updater installing it. Network-bound, so weekly, after each release, and only on the
-# PRs that change the check or the updater.
+# What a one-click update relies on, against the live release: its signature and files, and the shipped
+# updater installing it. Network-bound: weekly, after each release, and on PRs that change either.
 on:
   pull_request:
     paths:
