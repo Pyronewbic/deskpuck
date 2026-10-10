@@ -13,7 +13,7 @@ pub const DISABLE_ENV: &str = "DESKPUCK_NO_UPDATE_CHECK";
 const TAG_PREFIX: &str = "https://github.com/Pyronewbic/deskpuck/releases/tag/v";
 const MAX_COMPONENT_DIGITS: usize = 6;
 
-type Version = (u32, u32, u32);
+pub(crate) type Version = (u32, u32, u32);
 
 /// `Some(version)` only when `location` is the latest-release tag page of this
 /// repository for a version strictly newer than `current`; anything else is unknown.
@@ -35,7 +35,8 @@ pub fn disabled_by_env() -> bool {
     std::env::var_os(DISABLE_ENV).is_some_and(|value| !value.is_empty())
 }
 
-fn parse(version: &str) -> Option<Version> {
+/// `major.minor.patch` in plain bounded digits, nothing else.
+pub(crate) fn parse(version: &str) -> Option<Version> {
     let mut parts = version.split('.');
     let version = (component(parts.next()?)?, component(parts.next()?)?, component(parts.next()?)?);
     parts.next().is_none().then_some(version)

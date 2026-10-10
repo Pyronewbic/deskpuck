@@ -4,4 +4,5 @@ pub mod files;
 pub mod mapping;
 pub mod packet;
 pub mod pairing;
+pub mod release;
 pub mod update;
