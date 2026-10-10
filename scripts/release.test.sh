@@ -96,7 +96,7 @@ sign env; status=$?
 check "signing exits 0" '[ $status -eq 0 ] && signature'
 check "with the given key" 'grep -qx -- "-S -s /keys/release.key -m dist/SHA256SUMS -t Deskpuck 9.8.7" "$work/log"'
 check "then checks it against the key the apps carry" \
-    'grep -qx -- "-V -p packaging/minisign.pub -m dist/SHA256SUMS" "$work/log"'
+    'grep -qx -- "-V -H -p packaging/minisign.pub -m dist/SHA256SUMS" "$work/log"'
 
 sign env STUB_SIGN=1; status=$?
 check "a failed signing exits 1" '[ $status -eq 1 ]'
