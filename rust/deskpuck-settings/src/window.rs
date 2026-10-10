@@ -279,14 +279,14 @@ impl App {
         }
     }
 
-    fn fit_height(&mut self, ui: &egui::Ui, content: f32) {
+    /// Asks once per tab and content height; a request the window manager
+    /// declined is not repeated every frame.
+    fn fit(&mut self, ui: &egui::Ui, header: f32, content: f32, footer: f32) {
         let (inner, outer, monitor) = ui.input(|i| {
             let viewport = i.viewport();
             (viewport.inner_rect, viewport.outer_rect, viewport.monitor_size)
         });
-        // Leaves room for a taskbar or panel, which the monitor size includes.
-        let limit = monitor.map_or(f32::INFINITY, |m| m.y * 0.85);
-        let wanted = (content + 2.0 * f32::from(MARGIN)).min(limit).round();
+        let wanted = layout::wanted_height(content, header, footer, monitor.map(|m| m.y));
         let size = egui::vec2(layout::width(self.tab), wanted);
         let current = inner.map(|r| r.size().round());
         if current == Some(size) || self.asked_size == Some(size) {
@@ -360,7 +360,7 @@ impl eframe::App for App {
                     .y
             })
             .inner;
-        self.fit_height(ui, header + content + footer);
+        self.fit(ui, header, content + 2.0 * f32::from(MARGIN), footer);
         if now >= self.next_file_check {
             self.next_file_check = now + FILE_CHECK;
             self.model.check_file();

@@ -16,6 +16,9 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @State private var tab = SettingsTab.buttons
     @State private var confirmingRestore = false
+    @State private var contentHeight: CGFloat = 0
+    @State private var chromeHeight: CGFloat = 0
+    @State private var screenHeight = Self.visibleScreenHeight()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,12 +31,38 @@ struct SettingsView: View {
             .labelsHidden()
             .fixedSize()
             .padding(.top, 16)
-            content
-            Divider()
-            footer
+            .measured(ChromeHeight.self)
+            // Only the content scrolls; the window is as tall as it, up to the cap.
+            ScrollView {
+                content
+                    .fixedSize(horizontal: false, vertical: true)
+                    .measured(ContentHeight.self)
+            }
+            .frame(height: min(contentHeight, contentCap))
+            VStack(spacing: 0) {
+                Divider()
+                footer
+            }
+            .measured(ChromeHeight.self)
         }
         .frame(width: tab.width)
-        .fixedSize(horizontal: false, vertical: true)
+        .onPreferenceChange(ContentHeight.self) { contentHeight = $0 }
+        .onPreferenceChange(ChromeHeight.self) { chromeHeight = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { _ in
+            screenHeight = Self.visibleScreenHeight()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screenHeight = Self.visibleScreenHeight()
+        }
+    }
+
+    // 0.85 of the screen for the whole window; an unknown screen caps nothing.
+    private var contentCap: CGFloat {
+        max(screenHeight * 0.85 - chromeHeight, 120)
+    }
+
+    private static func visibleScreenHeight() -> CGFloat {
+        NSScreen.main?.visibleFrame.height ?? .infinity
     }
 
     private var content: some View {
@@ -222,5 +251,23 @@ struct SettingsView: View {
         let current = KeyChoice(mapping: model.mapping(for: button))
         let extra = KeyChoice.all.contains(current) ? [] : [current]
         return KeyChoice.all + extra + [.record]
+    }
+}
+
+private struct ContentHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
+}
+
+private struct ChromeHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
+}
+
+private extension View {
+    func measured<Key: PreferenceKey>(_ key: Key.Type) -> some View where Key.Value == CGFloat {
+        background(GeometryReader { proxy in
+            Color.clear.preference(key: key, value: proxy.size.height)
+        })
     }
 }
