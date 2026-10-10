@@ -1,0 +1,75 @@
+name: Install
+
+# The built Linux tarball and Windows installer, installed and run for real, including over a
+# running copy as the one-click update does. release-artifacts.yml runs the same before upload.
+on:
+  pull_request:
+    paths:
+      - packaging/**
+      - scripts/package.sh
+      - rust/deskpuck-tray/**
+      - rust/Cargo.lock
+      - .github/workflows/install.yml
+  push:
+    branches: [main]
+    paths:
+      - packaging/**
+      - scripts/package.sh
+      - rust/deskpuck-tray/**
+      - rust/Cargo.lock
+      - .github/workflows/install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config dbus
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-about@0.9.2
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: scripts/package.sh linux
+      - run: packaging/linux/tarball.test.sh dist/Deskpuck-*-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-about@0.9.2
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: scripts/package.sh windows
+        env:
+          ISCC: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+      - run: packaging/windows/installer.test.sh dist/Deskpuck-*-setup.exe

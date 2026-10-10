@@ -11,8 +11,8 @@ cannot() { echo "CANNOT CHECK: $1" >&2; exit 3; }
 group() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::group::$1"; else echo "== $1"; fi; }
 endgroup() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::endgroup::"; fi; }
 
-for tool in cargo cargo-deny cargo-nextest; do
-    command -v "$tool" >/dev/null || cannot "$tool not found (brew install rustup cargo-deny cargo-nextest)"
+for tool in cargo cargo-deny cargo-nextest shellcheck; do
+    command -v "$tool" >/dev/null || cannot "$tool not found (brew install rustup cargo-deny cargo-nextest shellcheck)"
 done
 
 group "Format"
@@ -33,13 +33,40 @@ tests_ran=$?
 (cd rust && cargo test --doc --locked --quiet) || fail "doctests"
 endgroup
 
+group "Shell scripts"
+shellcheck -x scripts/*.sh .githooks/pre-push packaging/linux/*.sh packaging/windows/*.sh || fail "shellcheck"
+# makepkg reads the PKGBUILD's variables (SC2034), sets pkgdir, srcdir and CARCH (SC2154),
+# and runs package() with errexit, so a failed cd stops it (SC2164).
+shellcheck --shell=bash -e SC2034,SC2154,SC2164 packaging/aur/deskpuck-bin/PKGBUILD packaging/aur/deskpuck-bin/deskpuck.install ||
+    fail "shellcheck (AUR package)"
+endgroup
+
 group "Linux installer"
 packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
 endgroup
 
+# A worktree's pre-push hook exports GIT_DIR, which a self-test would re-initialise; those that make a
+# throwaway repo run with GIT_DIR naming a decoy, which must come back unchanged.
+decoy=$(mktemp -d) || cannot "no temporary folder for the decoy repository"
+trap 'rm -rf "$decoy"' EXIT
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE git init -q "$decoy" ||
+    cannot "could not make the decoy repository"
+decoy_files() { (cd "$decoy/.git" && find . -type f -exec cksum {} + | sort); }
+isolated() {
+    local before status
+    before=$(decoy_files)
+    GIT_DIR="$decoy/.git" "$@"
+    status=$?
+    if [ "$(decoy_files)" != "$before" ]; then
+        echo "$1 wrote to the repository named by GIT_DIR" >&2
+        return 1
+    fi
+    return $status
+}
+
 if [ "$(uname)" = Darwin ]; then
     group "Release script"
-    scripts/release.test.sh || fail "release.sh self-test"
+    isolated scripts/release.test.sh || fail "release.sh self-test"
     endgroup
 fi
 
@@ -49,7 +76,7 @@ case "$(uname)" in
     MINGW* | MSYS* | CYGWIN*) ;;
     *)
         group "AUR package script"
-        scripts/aur-update.test.sh || fail "aur-update.sh self-test"
+        isolated scripts/aur-update.test.sh || fail "aur-update.sh self-test"
         endgroup
         ;;
 esac

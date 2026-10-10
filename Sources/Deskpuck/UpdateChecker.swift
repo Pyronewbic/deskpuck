@@ -33,9 +33,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 
-/// One-click update: fetches the files the Rust core names, has the core verify them,
-/// then swaps in the new app only if it is signed like this one. Any failure leaves the
-/// running app as it was.
+/// One-click update: the Rust core names and verifies the downloads, and the new app must be signed
+/// like this one. Any failure leaves the running app as it was.
 enum Installer {
     enum Failure: Error {
         case download, verify, install
@@ -159,9 +158,8 @@ enum Installer {
     }
 }
 
-/// One download streamed into a file, cancelled as soon as it passes its cap (the async
-/// download(for:delegate:) never reports progress, so it could not be capped). github.com
-/// redirects each release download; the core decides where it may go.
+/// One download streamed to a file and cancelled past its cap: async download(for:delegate:) reports
+/// no progress, so it could not be capped. Redirects go only where the core allows.
 private final class CappedDownload: NSObject, URLSessionDataDelegate {
     private let handle: FileHandle
     private let maxBytes: Int64

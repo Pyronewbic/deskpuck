@@ -30,12 +30,12 @@ for size in 32 64 128; do
     sips -z "$size" "$size" "$tmp/logo.png" --out "rust/icons/deskpuck-$size.png" >/dev/null ||
         fail "could not write the $size px icon"
 done
-ico_sizes="16 24 32 48 64 128 256"
-for size in $ico_sizes; do
+ico_sizes=(16 24 32 48 64 128 256)
+for size in "${ico_sizes[@]}"; do
     sips -z "$size" "$size" "$tmp/logo.png" --out "$tmp/ico-$size.png" >/dev/null ||
         fail "could not make the $size px .ico entry"
 done
-python3 - "$tmp" rust/icons/deskpuck.ico $ico_sizes <<'PY' || fail "could not write deskpuck.ico"
+python3 - "$tmp" rust/icons/deskpuck.ico "${ico_sizes[@]}" <<'PY' || fail "could not write deskpuck.ico"
 import struct, sys
 tmp, out, sizes = sys.argv[1], sys.argv[2], [int(s) for s in sys.argv[3:]]
 images = [open(f"{tmp}/ico-{size}.png", "rb").read() for size in sizes]

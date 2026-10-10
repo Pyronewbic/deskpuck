@@ -270,7 +270,7 @@ mod platform {
     use super::{Failure, Ready, Release};
     use std::path::Path;
 
-    const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{F0FA84CD-5402-434B-9A3E-9C18C110CD17}_is1";
+    pub const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{F0FA84CD-5402-434B-9A3E-9C18C110CD17}_is1";
 
     pub fn relaunch_path(program: &Path) -> std::path::PathBuf {
         program.to_owned()
@@ -401,9 +401,8 @@ mod tests {
         concat!(env!("CARGO_MANIFEST_DIR"), "/../deskpuck-core/tests/fixtures/release");
     const ASSET_HOST: &str = "https://release-assets.githubusercontent.com/";
 
-    /// A stand-in curl for release downloads: a HEAD request is redirected to `redirect`
-    /// plus the file's name, and a download prints that file from `serve`. Each call's
-    /// arguments go to `log`, one call per line.
+    /// A stand-in curl: HEAD redirects to `redirect` plus the file name, a download prints that
+    /// file from `serve`, and each call's arguments go to `log`.
     fn release_curl(dir: &Path, redirect: &str, serve: &Path) -> PathBuf {
         let program = dir.join("curl");
         std::fs::write(
@@ -620,5 +619,87 @@ mod install_tests {
         let run = iss.lines().find(|line| line.starts_with(r#"Filename: "{app}\deskpuck.exe""#));
         let run = run.expect("a [Run] entry starts Deskpuck");
         assert!(!run.contains("skipifsilent"), "a silent update must start the new copy: {run}");
+    }
+}
+
+/// The shipped updater against a published release (v0.3.0 or DESKPUCK_LIVE_UPDATE_VERSION). It installs
+/// on this machine, so it needs DESKPUCK_LIVE_UPDATE_TEST=1, and on Linux scratch XDG_BIN_HOME and XDG_DATA_HOME.
+#[cfg(all(test, any(target_os = "linux", windows)))]
+mod live_tests {
+    use super::*;
+
+    fn published() -> String {
+        std::env::var("DESKPUCK_LIVE_UPDATE_VERSION").unwrap_or_else(|_| "0.3.0".into())
+    }
+
+    fn asked() {
+        assert_eq!(
+            std::env::var("DESKPUCK_LIVE_UPDATE_TEST").as_deref(),
+            Ok("1"),
+            "installs a release on this machine; set DESKPUCK_LIVE_UPDATE_TEST=1 to mean it"
+        );
+    }
+
+    #[cfg(windows)]
+    fn eventually<T>(what: &str, seconds: u64, mut probe: impl FnMut() -> Option<T>) -> T {
+        let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+        loop {
+            if let Some(value) = probe() {
+                return value;
+            }
+            assert!(std::time::Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "downloads and installs the published release; see the module comment"]
+    fn live_update_installs_the_published_release() {
+        use std::os::unix::fs::PermissionsExt;
+        asked();
+        let scratch = |name| PathBuf::from(std::env::var_os(name).expect("a scratch folder"));
+        let (bin, data) = (scratch("XDG_BIN_HOME"), scratch("XDG_DATA_HOME"));
+        let target = bin.join("deskpuck");
+        assert!(!target.exists(), "XDG_BIN_HOME must start empty: {}", bin.display());
+
+        let result = install(&curl(), &published(), "0.0.1", Path::new("/nonexistent/deskpuck"));
+        assert_eq!(result, Ok(Ready::Relaunch(target.clone())));
+        for program in ["deskpuck", "deskpuck-cli"] {
+            let mode = std::fs::metadata(bin.join(program)).expect(program).permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "{program} is executable");
+        }
+        let entry = std::fs::read_to_string(data.join("applications/deskpuck.desktop")).unwrap();
+        assert!(entry.contains(&format!("Exec=\"{}\"", target.display())), "{entry}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "downloads and installs the published release; see the module comment"]
+    fn live_update_installs_the_published_release() {
+        asked();
+        let program = Path::new(r"C:\nonexistent\deskpuck.exe");
+        assert_eq!(install(&curl(), &published(), "0.0.1", program), Ok(Ready::Exit));
+
+        // The installer runs on after install() returns, then starts the new copy itself.
+        let read = |name| crate::login::read_registry(platform::UNINSTALL_KEY, name);
+        eventually("the installer to record the version", 300, || {
+            (read("DisplayVersion") == Some(published())).then_some(())
+        });
+        let folder = read("InstallLocation").expect("the install folder");
+        let installed = Path::new(&folder).join("deskpuck.exe");
+        assert!(installed.is_file(), "{}", installed.display());
+        // 0.3.0's installer predates deskpuck.iss starting Deskpuck after a silent install.
+        if published() == "0.3.0" {
+            return;
+        }
+        eventually("the installer to start the new copy", 120, || {
+            let output = Command::new("powershell")
+                .args(["-NoProfile", "-Command", "(Get-Process deskpuck -ErrorAction Ignore).Path"])
+                .output()
+                .ok()?;
+            let paths = String::from_utf8_lossy(&output.stdout).into_owned();
+            paths.lines().any(|path| Path::new(path.trim()) == installed).then_some(())
+        });
     }
 }

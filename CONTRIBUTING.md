@@ -6,7 +6,7 @@ Bug reports and pull requests are welcome. For anything larger than a fix, open 
 
 - Rust through rustup: `rust/rust-toolchain.toml` pins the version, which rustup installs on first use. On Linux it also needs `libdbus-1-dev` and `pkg-config` for Bluetooth.
 - For the Mac app: Xcode command line tools with Swift 5.9 or later, and Xcode 26 for `scripts/make-app.sh` (it compiles the app icon with `actool`).
-- `gitleaks`, `cargo-deny` and `cargo-nextest`, for the checks before a push (`brew install gitleaks cargo-deny cargo-nextest`).
+- `gitleaks`, `cargo-deny`, `cargo-nextest` and `shellcheck`, for the checks before a push (`brew install gitleaks cargo-deny cargo-nextest shellcheck`).
 
 ## Build and run
 

@@ -1,6 +1,5 @@
 #!/bin/bash
 # Usage: scripts/release.sh [--artifacts | --sign | --publish]; signing stays on this Mac. --artifacts and --publish need GH_TOKEN.
-# --sign signs an existing dist/SHA256SUMS with the minisign key at $DESKPUCK_MINISIGN_KEY (default ~/.minisign/deskpuck.key).
 # Exit 0 done, 1 a check failed, 2 bad usage, 3 a check could not run.
 set -uo pipefail
 
@@ -78,7 +77,8 @@ sign_sums() {
         rm -f dist/SHA256SUMS.minisig
         fail "could not sign dist/SHA256SUMS"
     fi
-    if ! minisign -V -p packaging/minisign.pub -m dist/SHA256SUMS >/dev/null; then
+    # -H: the apps refuse a legacy (unhashed) signature, which minisign -V alone accepts.
+    if ! minisign -V -H -p packaging/minisign.pub -m dist/SHA256SUMS >/dev/null; then
         rm -f dist/SHA256SUMS.minisig
         fail "the signature does not verify with packaging/minisign.pub; the apps would refuse this release"
     fi

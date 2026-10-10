@@ -1,0 +1,86 @@
+name: Release checks
+
+# What a one-click update relies on, against the live release: its signature and files, and the shipped
+# updater installing it. Network-bound: weekly, after each release, and on PRs that change either.
+on:
+  pull_request:
+    paths:
+      - scripts/verify-release.sh
+      - scripts/verify-release.test.sh
+      - rust/deskpuck-core/src/release.rs
+      - rust/deskpuck-core/src/update.rs
+      - rust/deskpuck-tray/src/update.rs
+      - .github/workflows/release-checks.yml
+  schedule:
+    - cron: "0 7 * * 1"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to check, such as v0.3.0 (default the latest)
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  signature:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: Self-test, so the check below is known to fail when it should
+        run: scripts/verify-release.test.sh
+      - name: Signature and files of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          tag=$TAG
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName) || exit 3
+          fi
+          scripts/verify-release.sh "$tag"
+
+  live-update:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-nextest@0.9.146
+      - name: Rust toolchain from rust/rust-toolchain.toml
+        working-directory: rust
+        run: rustup toolchain install
+      - name: The shipped updater installs the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          DESKPUCK_LIVE_UPDATE_TEST: "1"
+        run: |
+          tag=$TAG
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName) || exit 3
+          fi
+          scratch=$(mktemp -d)
+          mkdir "$scratch/bin" "$scratch/data"
+          export DESKPUCK_LIVE_UPDATE_VERSION="${tag#v}" XDG_BIN_HOME="$scratch/bin" XDG_DATA_HOME="$scratch/data"
+          cd rust
+          cargo nextest run --locked -p deskpuck-tray --run-ignored only --no-tests=fail \
+            -E 'test(live_update_installs_the_published_release)'

@@ -1,9 +1,12 @@
 #!/bin/bash
-# Self-test for release.sh --artifacts and --sign, in a throwaway repo with stub gh and minisign.
-# Exit 0 when every case behaves, 1 otherwise.
+# Self-test for release.sh --artifacts and --sign, in a throwaway repo with stub gh and minisign. Exit 0 when every case behaves, 1 otherwise.
 # Checks are single-quoted conditions eval'd by check().
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
+
+# A pre-push hook in a worktree exports GIT_DIR; inherited, it would turn the throwaway
+# repo below (and the script under test) into the real one.
+while IFS= read -r variable; do unset "$variable"; done < <(git rev-parse --local-env-vars)
 
 release="$(cd "$(dirname "$0")" && pwd)/release.sh"
 work=$(mktemp -d) || exit 3
@@ -96,7 +99,7 @@ sign env; status=$?
 check "signing exits 0" '[ $status -eq 0 ] && signature'
 check "with the given key" 'grep -qx -- "-S -s /keys/release.key -m dist/SHA256SUMS -t Deskpuck 9.8.7" "$work/log"'
 check "then checks it against the key the apps carry" \
-    'grep -qx -- "-V -p packaging/minisign.pub -m dist/SHA256SUMS" "$work/log"'
+    'grep -qx -- "-V -H -p packaging/minisign.pub -m dist/SHA256SUMS" "$work/log"'
 
 sign env STUB_SIGN=1; status=$?
 check "a failed signing exits 1" '[ $status -eq 1 ]'
