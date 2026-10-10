@@ -1,9 +1,9 @@
 use crate::keys::{choices, describe, modifier_label, modifiers};
 use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE, Tab};
 use crate::recorder::{Recorded, clipboard_key, record};
-use crate::viewport;
-use crate::widgets::{section, segments, toggle};
+use crate::widgets::{card, section, segments, toggle};
 use crate::{fonts, text, theme};
+use crate::{layout, viewport};
 use deskpuck_core::config::{Appearance, Mapping};
 use eframe::egui::{self, RichText, Slider, SliderClamping};
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ struct App {
     next_file_check: f64,
     accent: theme::AccentReader,
     focused: bool,
-    asked_height: Option<f32>,
+    asked_size: Option<egui::Vec2>,
 }
 
 const FILE_CHECK: f64 = 1.0;
@@ -50,8 +50,8 @@ fn slider_row(
 }
 
 const VALUE_WIDTH: f32 = 52.0;
-const WIDTH: f32 = 440.0;
 const MARGIN: i8 = 16;
+const FIXED_BUTTONS: &str = "R is Left click and ZR is Right click. These two cannot be changed.";
 const UPDATE_NOTE: &str = "Asks github.com for the latest version. No other data is sent.";
 
 fn to_preference(appearance: Appearance) -> egui::ThemePreference {
@@ -142,23 +142,28 @@ impl App {
     }
 
     fn buttons(&mut self, ui: &mut egui::Ui, now: f64) {
-        section(ui, "Buttons", |card| {
-            for row in RIGHT_JOYCON {
-                card.row(row.label, |ui| {
-                    if self.model.recording == Some(row.id) {
-                        if ui.button("Cancel").clicked() {
-                            self.model.recording = None;
+        let (left, right) = RIGHT_JOYCON.split_at(RIGHT_JOYCON.len() / 2);
+        card(ui, |card| {
+            for pair in left.iter().zip(right) {
+                card.pair(|i, half| {
+                    let row = if i == 0 { pair.0 } else { pair.1 };
+                    half.row(row.label, |ui| {
+                        if self.model.recording == Some(row.id) {
+                            if ui.button("Cancel").clicked() {
+                                self.model.recording = None;
+                            }
+                            ui.label(RichText::new("Press a shortcut").weak())
+                                .on_hover_text("Esc cancels");
+                        } else {
+                            self.button_picker(ui, row.id, now);
                         }
-                        ui.label(RichText::new("Press a shortcut (Esc cancels)").weak());
-                    } else {
-                        self.button_picker(ui, row.id, now);
-                    }
+                    });
                 });
             }
-            for (button, action) in [("R", "Left click"), ("ZR", "Right click")] {
-                card.row(button, |ui| ui.label(RichText::new(action).weak()));
-            }
         });
+        ui.add_space(6.0);
+        ui.label(RichText::new(FIXED_BUTTONS).weak());
+        ui.add_space(16.0);
     }
 
     fn controls(&mut self, ui: &mut egui::Ui, now: f64) {
@@ -248,14 +253,15 @@ impl App {
         // Leaves room for a taskbar or panel, which the monitor size includes.
         let limit = monitor.map_or(f32::INFINITY, |m| m.y * 0.85);
         let wanted = (content + 2.0 * f32::from(MARGIN)).min(limit).round();
-        let current = inner.map(|r| r.height().round());
-        if current == Some(wanted) || self.asked_height == Some(wanted) {
+        let size = egui::vec2(layout::width(self.tab), wanted);
+        let current = inner.map(|r| r.size().round());
+        if current == Some(size) || self.asked_size == Some(size) {
             return;
         }
-        let first = self.asked_height.is_none();
-        self.asked_height = Some(wanted);
+        let first = self.asked_size.is_none();
+        self.asked_size = Some(size);
         let ctx = ui.ctx();
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(WIDTH, wanted)));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         // The window opened centred at its first guess; centre it again at its real height.
         if first && let (Some(outer), Some(inner), Some(monitor)) = (outer, inner, monitor) {
             let frame = outer.height() - inner.height();
@@ -354,12 +360,12 @@ pub fn run(path: Option<PathBuf>) -> Result<(), String> {
         next_file_check: FILE_CHECK,
         accent: theme::AccentReader::default(),
         focused: false,
-        asked_height: None,
+        asked_size: None,
     };
     let icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png")).ok();
     let options = eframe::NativeOptions {
-        viewport: viewport(WIDTH, icon),
+        viewport: viewport(layout::width(Tab::default()), icon),
         // Fitted to its content, it is tall; centred, it clears taskbars and panels.
         centered: true,
         ..Default::default()

@@ -1,5 +1,6 @@
 pub mod fonts;
 pub mod keys;
+pub mod layout;
 pub mod model;
 pub mod recorder;
 pub mod text;
@@ -27,7 +28,7 @@ pub fn viewport(width: f32, icon: Option<IconData>) -> ViewportBuilder {
         .with_title("Deskpuck Settings")
         .with_app_id("deskpuck")
         .with_inner_size([width, 720.0])
-        .with_min_inner_size([width, 240.0]);
+        .with_min_inner_size([layout::MIN_WIDTH, layout::MIN_HEIGHT]);
     match icon {
         Some(icon) => viewport.with_icon(icon),
         None => viewport,

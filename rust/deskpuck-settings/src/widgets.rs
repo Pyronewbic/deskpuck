@@ -6,12 +6,18 @@ use eframe::egui::{
 
 pub const ROW_HEIGHT: f32 = 32.0;
 const ROW_PADDING: i8 = 14;
+const COLUMN_GAP: f32 = 28.0;
 const SEGMENT_HEIGHT: f32 = 26.0;
 const SEGMENT_PADDING: f32 = 12.0;
 
 pub fn section(ui: &mut Ui, title: &str, add_rows: impl FnOnce(&mut Card<'_>)) {
     ui.label(RichText::new(title).text_style(TextStyle::Heading).weak());
     ui.add_space(2.0);
+    card(ui, add_rows);
+    ui.add_space(16.0);
+}
+
+pub fn card(ui: &mut Ui, add_rows: impl FnOnce(&mut Card<'_>)) {
     let colors = palette(ui.ctx().theme());
     Frame::new()
         .fill(colors.card)
@@ -23,7 +29,6 @@ pub fn section(ui: &mut Ui, title: &str, add_rows: impl FnOnce(&mut Card<'_>)) {
             ui.spacing_mut().item_spacing.y = 0.0;
             add_rows(&mut Card { ui, rows: 0 });
         });
-    ui.add_space(16.0);
 }
 
 pub struct Card<'a> {
@@ -39,12 +44,7 @@ impl Card<'_> {
         label: impl Into<WidgetText>,
         control: impl FnOnce(&mut Ui) -> R,
     ) -> R {
-        if self.rows > 0 {
-            let y = self.ui.cursor().top();
-            let line = Stroke::new(1.0, palette(self.ui.ctx().theme()).separator);
-            self.ui.painter().hline(self.ui.max_rect().x_range(), y, line);
-        }
-        self.rows += 1;
+        self.separate();
         let width = self.ui.available_width();
         let row = Layout::left_to_right(Align::Center);
         self.ui
@@ -54,6 +54,36 @@ impl Card<'_> {
                 ui.with_layout(Layout::right_to_left(Align::Center), control).inner
             })
             .inner
+    }
+
+    /// Two rows side by side, each made by `half` in its own half of the card.
+    pub fn pair(&mut self, mut half: impl FnMut(usize, &mut Card<'_>)) {
+        self.separate();
+        let width = self.ui.available_width();
+        let each = (width - COLUMN_GAP) / 2.0;
+        let row = Layout::left_to_right(Align::Center);
+        self.ui.allocate_ui_with_layout(vec2(width, ROW_HEIGHT), row, |ui| {
+            ui.spacing_mut().item_spacing.x = COLUMN_GAP;
+            for i in 0..2 {
+                ui.allocate_ui_with_layout(
+                    vec2(each, ROW_HEIGHT),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.set_width(each);
+                        half(i, &mut Card { ui, rows: 0 });
+                    },
+                );
+            }
+        });
+    }
+
+    fn separate(&mut self) {
+        if self.rows > 0 {
+            let y = self.ui.cursor().top();
+            let line = Stroke::new(1.0, palette(self.ui.ctx().theme()).separator);
+            self.ui.painter().hline(self.ui.max_rect().x_range(), y, line);
+        }
+        self.rows += 1;
     }
 }
 

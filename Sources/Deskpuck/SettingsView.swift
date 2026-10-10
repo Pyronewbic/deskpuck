@@ -3,6 +3,13 @@ import SwiftUI
 enum SettingsTab: String, CaseIterable {
     case buttons = "Buttons"
     case general = "General"
+
+    var width: CGFloat {
+        switch self {
+        case .buttons: 600
+        case .general: 440
+        }
+    }
 }
 
 struct SettingsView: View {
@@ -22,7 +29,7 @@ struct SettingsView: View {
             .padding(.top, 16)
             content
         }
-        .frame(width: 440)
+        .frame(width: tab.width)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -72,31 +79,42 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var buttons: some View {
+        let rows = ButtonRow.rightJoyCon
+        let half = rows.count / 2
         Section {
-            ForEach(ButtonRow.rightJoyCon, id: \.self) { row in
-                if model.recordingButton == row.id {
-                    LabeledContent(row.label) {
-                        ShortcutRecorder(
-                            onRecord: { mapping in
-                                model.setMapping(mapping, for: row.id)
-                                model.recordingButton = nil
-                            },
-                            onCancel: { model.recordingButton = nil }
-                        )
-                    }
-                } else {
-                    Picker(row.label, selection: binding(for: row.id)) {
-                        ForEach(choices(for: row.id), id: \.self) { choice in
-                            Text(choice.name).tag(choice)
-                        }
-                    }
+            ForEach(0..<half, id: \.self) { i in
+                HStack(spacing: 28) {
+                    buttonCell(rows[i])
+                    buttonCell(rows[i + half])
                 }
             }
-            LabeledContent("R", value: "Left click")
-            LabeledContent("ZR", value: "Right click")
-        } header: {
-            Text("Buttons")
+        } footer: {
+            Text("R is Left click and ZR is Right click. These two cannot be changed.")
         }
+    }
+
+    private func buttonCell(_ row: ButtonRow) -> some View {
+        HStack {
+            Text(row.label)
+            Spacer(minLength: 8)
+            if model.recordingButton == row.id {
+                ShortcutRecorder(
+                    onRecord: { mapping in
+                        model.setMapping(mapping, for: row.id)
+                        model.recordingButton = nil
+                    },
+                    onCancel: { model.recordingButton = nil }
+                )
+            } else {
+                Picker(row.label, selection: binding(for: row.id)) {
+                    ForEach(choices(for: row.id), id: \.self) { choice in
+                        Text(choice.name).tag(choice)
+                    }
+                }
+                .labelsHidden()
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var general: some View {
