@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 4
+#define DP_ABI_VERSION 5
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -27,6 +27,17 @@ char *dp_config_load(const char *path);
 char *dp_config_problems(const char *config_json);
 // NULL on success, else a message.
 char *dp_config_save(const char *config_json, const char *path);
+
+// Fetched without following its redirect, and the page to open for an update.
+#define DP_LATEST_RELEASE_URL "https://github.com/Pyronewbic/deskpuck/releases/latest"
+// Any non-empty value turns the update check off.
+#define DP_UPDATE_DISABLE_ENV "DESKPUCK_NO_UPDATE_CHECK"
+// location: the Location header of the latest-release redirect; current: the
+// running version. The newer version ("0.4.0"), or NULL for anything else.
+char *dp_update_evaluate(const char *location, const char *current);
+// Whether the settings file allows the check now: a missing file does (the
+// default), one that cannot be read does not.
+bool dp_update_allowed(const char *config_path);
 
 typedef enum {
     DP_STATUS_BLUETOOTH_OFF = 0,

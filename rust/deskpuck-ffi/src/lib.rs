@@ -5,12 +5,13 @@ use deskpuck_ble::controller::{
 };
 use deskpuck_core::config::Config;
 use deskpuck_core::pairing::PairedDevice;
+use deskpuck_core::update;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
 
-pub const DP_ABI_VERSION: u32 = 4;
+pub const DP_ABI_VERSION: u32 = 5;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -159,6 +160,38 @@ pub unsafe extern "C" fn dp_config_save(
                     Err(e) => into_c(e.to_string()),
                 },
             }
+        },
+    )
+}
+
+/// # Safety
+/// Both arguments must be NULL or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_update_evaluate(
+    location: *const c_char,
+    current: *const c_char,
+) -> *mut c_char {
+    guard(ptr::null_mut, || {
+        // SAFETY: forwarded from the caller's contract.
+        match unsafe { (from_c(location), from_c(current)) } {
+            (Ok(location), Ok(current)) => {
+                update::evaluate(location, current).map_or(ptr::null_mut(), into_c)
+            }
+            _ => ptr::null_mut(),
+        }
+    })
+}
+
+/// # Safety
+/// `config_path` must be NULL or a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_update_allowed(config_path: *const c_char) -> bool {
+    guard(
+        || false,
+        || {
+            // SAFETY: forwarded from the caller's contract.
+            unsafe { from_c(config_path) }
+                .is_ok_and(|path| update::allowed_by_config(Path::new(path)))
         },
     )
 }

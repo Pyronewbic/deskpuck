@@ -26,7 +26,8 @@ const REPEAT_DELAY: &str = "repeatDelay";
 const REPEAT_INTERVAL: &str = "repeatInterval";
 const SCROLL_ENABLED: &str = "scrollEnabled";
 const APPEARANCE: &str = "appearance";
-const KNOWN_KEYS: [&str; 7] = [
+const CHECK_UPDATES: &str = "checkUpdates";
+const KNOWN_KEYS: [&str; 8] = [
     VERSION,
     KEY_MAPPINGS,
     POINTER_SPEED,
@@ -34,6 +35,7 @@ const KNOWN_KEYS: [&str; 7] = [
     REPEAT_INTERVAL,
     SCROLL_ENABLED,
     APPEARANCE,
+    CHECK_UPDATES,
 ];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -138,6 +140,8 @@ pub struct Config {
     pub repeat_interval: f64,
     pub scroll_enabled: bool,
     pub appearance: Appearance,
+    /// Ask github.com once a day whether a newer release exists.
+    pub check_updates: bool,
 }
 
 impl Default for Config {
@@ -164,6 +168,7 @@ impl Default for Config {
             repeat_interval: defaults.repeat_interval,
             scroll_enabled: defaults.scroll_enabled,
             appearance: Appearance::default(),
+            check_updates: true,
         }
     }
 }
@@ -271,6 +276,16 @@ impl Config {
             Some(_) => warnings.push("scrollEnabled must be true or false; using true.".to_owned()),
         }
 
+        match dict.get(CHECK_UPDATES) {
+            None => {}
+            Some(Value::Bool(enabled)) => config.check_updates = *enabled,
+            // Off, unlike other bad values: a mistyped "false" must not mean checking.
+            Some(_) => {
+                config.check_updates = false;
+                warnings.push("checkUpdates must be true or false; using false.".to_owned());
+            }
+        }
+
         match dict.get(APPEARANCE) {
             None => {}
             Some(value) => match value.as_str().and_then(Appearance::from_name) {
@@ -321,6 +336,7 @@ impl Config {
             REPEAT_INTERVAL: self.repeat_interval,
             SCROLL_ENABLED: self.scroll_enabled,
             APPEARANCE: self.appearance.name(),
+            CHECK_UPDATES: self.check_updates,
         })
     }
 

@@ -51,6 +51,7 @@ fn slider_row(
 const VALUE_WIDTH: f32 = 52.0;
 const WIDTH: f32 = 440.0;
 const MARGIN: i8 = 16;
+const UPDATE_NOTE: &str = "Asks github.com for the latest version. No other data is sent.";
 
 fn to_preference(appearance: Appearance) -> egui::ThemePreference {
     match appearance {
@@ -194,6 +195,13 @@ impl App {
                     values.config.appearance = all[i];
                     changed = true;
                 }
+            });
+        });
+        section(ui, "Updates", |card| {
+            changed |= card.row("Check for updates daily", |ui| {
+                toggle(ui, &mut values.config.check_updates, "Check for updates daily")
+                    .on_hover_text(UPDATE_NOTE)
+                    .changed()
             });
         });
         if changed {

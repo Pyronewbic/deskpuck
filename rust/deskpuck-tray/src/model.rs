@@ -18,6 +18,7 @@ pub struct Model {
     note_from_settings: bool,
     failure: Option<String>,
     host: bool,
+    update: Option<String>,
 }
 
 impl Default for Model {
@@ -33,6 +34,7 @@ impl Default for Model {
             note_from_settings: false,
             failure: None,
             host: false,
+            update: None,
         }
     }
 }
@@ -180,6 +182,20 @@ impl Model {
 
     pub fn note_text(&self) -> Option<&str> {
         self.note.as_deref()
+    }
+
+    /// Unlike a note, it stays until the program restarts. A package manager
+    /// that installed Deskpuck also owns its updates.
+    pub fn update_available(&mut self, version: &str, package_managed: bool) {
+        self.update = Some(if package_managed {
+            format!("Update Available: {version} (use your package manager)")
+        } else {
+            format!("Update Available: {version}...")
+        });
+    }
+
+    pub fn update_text(&self) -> Option<&str> {
+        self.update.as_deref()
     }
 
     pub fn tooltip(&self, now: f64) -> String {
@@ -365,5 +381,19 @@ mod tests {
         assert!(model.tooltip(0.0).contains("pointer_speed"));
         model.status(LinkStatus::Connected, None);
         assert_eq!(model.note_text(), None);
+    }
+
+    #[test]
+    fn an_update_line_outlasts_connection_changes() {
+        let mut model = shown();
+        assert_eq!(model.update_text(), None);
+        model.update_available("0.4.0", false);
+        for status in [LinkStatus::Connected, LinkStatus::Searching, LinkStatus::Connected] {
+            model.status(status, None);
+        }
+        model.settings_note(None);
+        assert_eq!(model.update_text(), Some("Update Available: 0.4.0..."));
+        model.update_available("0.5.0", true);
+        assert_eq!(model.update_text(), Some("Update Available: 0.5.0 (use your package manager)"));
     }
 }

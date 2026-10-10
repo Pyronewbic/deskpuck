@@ -24,6 +24,7 @@ enum Event {
     Menu(MenuId),
     Click,
     Host(bool),
+    Update(String),
     Quit,
 }
 
@@ -52,12 +53,15 @@ struct Items {
     open_settings: MenuItem,
     reload: MenuItem,
     login: CheckMenuItem,
+    update: MenuItem,
+    version: MenuItem,
     quit: MenuItem,
 }
 
 struct Shown {
     latched: bool,
     note: bool,
+    update: bool,
     look: Option<Look>,
 }
 
@@ -104,7 +108,7 @@ pub fn run() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let mut shown = Shown { latched: false, note: false, look: None };
+    let mut shown = Shown { latched: false, note: false, update: false, look: None };
     {
         let wake = wake.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
@@ -129,6 +133,10 @@ pub fn run() -> ExitCode {
     let mut told_waiting = false;
     platform::on_session_end(release_hook(&controller), wake.clone());
     platform::watch_host(wake.clone());
+    if !deskpuck_core::update::disabled_by_env() {
+        let wake = wake.clone();
+        crate::update::watch(config_path.clone(), move |version| wake.send(Event::Update(version)));
+    }
 
     'run: loop {
         render(&model, start.elapsed().as_secs_f64(), &menu, &items, &tray, &mut shown);
@@ -147,6 +155,10 @@ pub fn run() -> ExitCode {
                 Event::Status(status, name) => model.status(status, name),
                 Event::Latched(modifiers) => model.latched(modifiers),
                 Event::Note(message) => model.note(message),
+                Event::Update(version) => {
+                    let managed = program.as_deref().is_some_and(crate::update::package_managed);
+                    model.update_available(&version, managed);
+                }
                 Event::Quit => break 'run,
                 Event::Host(present) => {
                     model.set_host(present);
@@ -193,6 +205,12 @@ pub fn run() -> ExitCode {
                                 model.note(problem);
                             }
                             items.login.set_checked(crate::login::is_on(program));
+                        }
+                        continue;
+                    }
+                    if id == *items.update.id() {
+                        if let Err(problem) = open_releases() {
+                            model.note(problem);
                         }
                         continue;
                     }
@@ -283,9 +301,10 @@ fn build_menu() -> (Menu, Items) {
         open_settings: MenuItem::new("Open Settings File", true, None),
         reload: MenuItem::new("Reload Settings", true, None),
         login: CheckMenuItem::new("Start at Login", true, false, None),
+        update: MenuItem::new("", true, None),
+        version: disabled(&format!("Deskpuck {}", env!("CARGO_PKG_VERSION"))),
         quit: MenuItem::new("Quit Deskpuck", true, None),
     };
-    let version = disabled(&format!("Deskpuck {}", env!("CARGO_PKG_VERSION")));
     let menu = Menu::new();
     let _ = menu.append_items(&[
         &items.status,
@@ -297,7 +316,7 @@ fn build_menu() -> (Menu, Items) {
         &items.reload,
         &items.login,
         &PredefinedMenuItem::separator(),
-        &version,
+        &items.version,
         &items.quit,
     ]);
     (menu, items)
@@ -313,6 +332,11 @@ fn render(model: &Model, now: f64, menu: &Menu, items: &Items, tray: &TrayIcon, 
     show_line(menu, &items.latched, latched.as_deref(), 1, &mut shown.latched);
     let note_at = 1 + usize::from(shown.latched);
     show_line(menu, &items.note, model.note_text(), note_at, &mut shown.note);
+    // Just above the version line, wherever the lines above have moved it.
+    let version_at = menu.items().iter().position(|item| item.id() == items.version.id());
+    if let Some(at) = version_at {
+        show_line(menu, &items.update, model.update_text(), at, &mut shown.update);
+    }
 
     let look =
         Look { connected: model.connected(), paused: model.paused(), latched: latched.is_some() };
@@ -361,6 +385,16 @@ fn reload_file(
     if let Some(settings) = outcome.apply {
         controller.apply_settings(settings);
     }
+}
+
+/// The address is a constant; nothing from the update check reaches the browser.
+fn open_releases() -> Result<(), String> {
+    let mut child = platform::browser(deskpuck_core::update::LATEST_URL)
+        .spawn()
+        .map_err(|e| format!("Could not open the browser: {e}"))?;
+    // Reaped on a thread so it never lingers as a zombie.
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 fn open_own_window(path: Option<&Path>, window: &mut Option<Child>) -> Result<(), String> {
@@ -463,6 +497,12 @@ mod platform {
     pub fn editor(path: &Path) -> Command {
         let mut command = Command::new("xdg-open");
         command.arg(path);
+        command
+    }
+
+    pub fn browser(url: &str) -> Command {
+        let mut command = Command::new("xdg-open");
+        command.arg(url);
         command
     }
 
@@ -605,6 +645,14 @@ mod platform {
     pub fn editor(path: &Path) -> Command {
         let mut command = Command::new("notepad.exe");
         command.arg(path);
+        command
+    }
+
+    /// By absolute path, so an explorer.exe in the working folder cannot stand in.
+    pub fn browser(url: &str) -> Command {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        let mut command = Command::new(Path::new(&root).join("explorer.exe"));
+        command.arg(url);
         command
     }
 

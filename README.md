@@ -73,6 +73,8 @@ Change the key mappings, pointer speed, scrolling, key repeat and theme in **Set
 
 **Pause Mouse Control** stops all input from the Joy-Con but keeps it connected, so resuming is instant; quit Deskpuck to release it completely. **Start at Login** starts Deskpuck when you log in. To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces the paired one.
 
+Once a day Deskpuck asks github.com for the latest release, sending only its version number (github.com sees your IP address, as with any request), and shows **Update Available** in the menu when there is a newer one; choosing it opens the release page. Turn it off under **Updates** in Settings, or set `DESKPUCK_NO_UPDATE_CHECK=1`.
+
 ## Troubleshooting
 
 - **The pointer does not move (Mac):** check that Deskpuck is on in **System Settings > Privacy & Security > Accessibility**. If it is on but still nothing happens, reset the permission and allow it again: `tccutil reset Accessibility com.pyronewbic.deskpuck`

@@ -11,6 +11,7 @@ final class SettingsModel: ObservableObject {
     // Keys per second while held; stored as repeatInterval = 1 / rate.
     @Published var repeatRate: Double { didSet { commit() } }
     @Published var appearance: String { didSet { commit() } }
+    @Published var checkUpdates: Bool { didSet { commit() } }
 
     @Published private(set) var loadWarnings: [String]
     @Published private(set) var saveError: String?
@@ -33,6 +34,7 @@ final class SettingsModel: ObservableObject {
         repeatDelay = 0.4
         repeatRate = Self.defaultRepeatRate
         appearance = "system"
+        checkUpdates = true
         load(config)
     }
 
@@ -56,7 +58,8 @@ final class SettingsModel: ObservableObject {
             repeatDelay: repeatDelay,
             repeatInterval: repeatEnabled ? 1.0 / repeatRate : 0,
             scrollEnabled: scrollEnabled,
-            appearance: appearance
+            appearance: appearance,
+            checkUpdates: checkUpdates
         )
     }
 
@@ -69,6 +72,7 @@ final class SettingsModel: ObservableObject {
         repeatEnabled = config.repeatInterval > 0
         repeatRate = config.repeatInterval > 0 ? 1.0 / config.repeatInterval : Self.defaultRepeatRate
         appearance = config.appearance
+        checkUpdates = config.checkUpdates
         loading = false
     }
 

@@ -48,6 +48,7 @@ struct DeskpuckConfig: Codable, Equatable {
     var repeatInterval: Double
     var scrollEnabled: Bool
     var appearance: String
+    var checkUpdates: Bool
 }
 
 struct CoreError: LocalizedError {
@@ -87,7 +88,7 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system")
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true)
     }
 
     static func load(from url: URL) -> (DeskpuckConfig, [String]) {
@@ -101,6 +102,18 @@ enum Core {
 
     static func problems(_ config: DeskpuckConfig) -> [String] {
         json(config).withCString { decode([String].self, take(dp_config_problems($0))) } ?? ["Settings could not be checked."]
+    }
+
+    /// The newer version named by the latest-release redirect's Location, or nil.
+    static func newerVersion(location: String, current: String) -> String? {
+        location.withCString { location in
+            current.withCString { current in take(dp_update_evaluate(location, current)) }
+        }
+    }
+
+    /// A missing settings file allows the update check; one that cannot be read does not.
+    static func updateAllowed(by url: URL) -> Bool {
+        url.path.withCString { dp_update_allowed($0) }
     }
 
     static func save(_ config: DeskpuckConfig, to url: URL) throws {
