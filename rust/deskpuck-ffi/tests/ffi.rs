@@ -47,7 +47,7 @@ fn header_matches_the_exports() {
         .filter_map(|rest| rest.split('(').next())
         .filter(|name| name.starts_with("dp_"))
         .collect();
-    assert_eq!(exported.len(), 16, "{exported:?}");
+    assert_eq!(exported.len(), 19, "{exported:?}");
     assert_eq!(declared, exported);
     assert!(HEADER.contains(&format!("#define DP_ABI_VERSION {DP_ABI_VERSION}\n")));
     assert_eq!(dp_abi_version(), DP_ABI_VERSION);
@@ -170,6 +170,71 @@ fn update_evaluate_crosses_and_tolerates_null() {
     assert_eq!(take(unsafe { dp_update_evaluate(newer.as_ptr(), ptr::null()) }), None);
     let not_utf8 = CString::new(vec![0xFF, 0xFE]).expect("no NUL");
     assert_eq!(take(unsafe { dp_update_evaluate(not_utf8.as_ptr(), current.as_ptr()) }), None);
+}
+
+#[test]
+fn release_plan_is_the_mac_package_at_fixed_addresses() {
+    let (version, current) = (c("0.4.0"), c("0.3.0"));
+    let plan = json(unsafe { dp_release_plan(version.as_ptr(), current.as_ptr()) });
+    assert_eq!(plan["version"], "0.4.0");
+    assert_eq!(plan["package"], "Deskpuck-0.4.0-macos-arm64.zip");
+    let base = "https://github.com/Pyronewbic/deskpuck/releases/download/v0.4.0/";
+    let downloads = plan["downloads"].as_array().expect("downloads");
+    let names: Vec<_> = downloads.iter().map(|d| d["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["SHA256SUMS", "SHA256SUMS.minisig", "Deskpuck-0.4.0-macos-arm64.zip"]);
+    for download in downloads {
+        assert_eq!(download["url"], format!("{base}{}", download["name"].as_str().unwrap()));
+        assert!(download["maxBytes"].as_u64().is_some_and(|max| max > 0));
+    }
+    for (version, current) in [("0.3.0", "0.3.0"), ("0.2.0", "0.3.0"), ("0.4.0/../x", "0.3.0")] {
+        let (version, current) = (c(version), c(current));
+        assert_eq!(take(unsafe { dp_release_plan(version.as_ptr(), current.as_ptr()) }), None);
+    }
+    assert_eq!(take(unsafe { dp_release_plan(ptr::null(), current.as_ptr()) }), None);
+    assert_eq!(take(unsafe { dp_release_plan(version.as_ptr(), ptr::null()) }), None);
+}
+
+#[test]
+fn release_redirects_cross_and_tolerate_null() {
+    let asset =
+        c("https://release-assets.githubusercontent.com/github-production-release-asset/1?sp=r");
+    let foreign = c("https://evil.example/github-production-release-asset/1");
+    assert!(unsafe { dp_release_redirect_allowed(asset.as_ptr()) });
+    assert!(!unsafe { dp_release_redirect_allowed(foreign.as_ptr()) });
+    assert!(!unsafe { dp_release_redirect_allowed(ptr::null()) });
+}
+
+#[test]
+fn release_verify_refuses_anything_unsigned() {
+    let dir = std::env::temp_dir().join(format!("dp-ffi-release-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/../deskpuck-core/tests/fixtures/release");
+    // Signed, but with the test key: the release key must refuse it.
+    std::fs::copy(format!("{fixtures}/SHA256SUMS"), dir.join("SHA256SUMS")).unwrap();
+    std::fs::copy(format!("{fixtures}/SHA256SUMS.minisig"), dir.join("SHA256SUMS.minisig"))
+        .unwrap();
+    let package = "Deskpuck-0.4.0-macos-arm64.zip";
+    std::fs::copy(format!("{fixtures}/assets/{package}"), dir.join(package)).unwrap();
+    let (c_dir, version, current) = (c(dir.to_str().unwrap()), c("0.4.0"), c("0.3.0"));
+    let message =
+        take(unsafe { dp_release_verify(c_dir.as_ptr(), version.as_ptr(), current.as_ptr()) });
+    assert_eq!(
+        message.as_deref(),
+        Some("The update could not be verified: SHA256SUMS is not signed with the release key.")
+    );
+    let same = c("0.4.0");
+    assert!(
+        take(unsafe { dp_release_verify(c_dir.as_ptr(), version.as_ptr(), same.as_ptr()) })
+            .is_some()
+    );
+    assert!(
+        take(unsafe { dp_release_verify(ptr::null(), version.as_ptr(), current.as_ptr()) })
+            .is_some()
+    );
+    assert!(
+        take(unsafe { dp_release_verify(c_dir.as_ptr(), ptr::null(), current.as_ptr()) }).is_some()
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]

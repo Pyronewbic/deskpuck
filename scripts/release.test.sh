@@ -1,5 +1,6 @@
 #!/bin/bash
-# Self-test for release.sh --artifacts, in a throwaway repo with a stub gh. Exit 0 when every case behaves, 1 otherwise.
+# Self-test for release.sh --artifacts and --sign, in a throwaway repo with stub gh and minisign.
+# Exit 0 when every case behaves, 1 otherwise.
 # Checks are single-quoted conditions eval'd by check().
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
@@ -38,6 +39,18 @@ esac
 STUB
 chmod +x "$work/bin/gh"
 
+# Signs by writing <file>.minisig unless STUB_SIGN fails it; STUB_VERIFY fails -V.
+cat >"$work/bin/minisign" <<'STUB'
+#!/bin/bash
+echo "$*" >>"$STUB_LOG"
+case "$1" in
+    -S) echo partial >"$5.minisig"; exit "${STUB_SIGN:-0}" ;;
+    -V) exit "${STUB_VERIFY:-0}" ;;
+esac
+exit 99
+STUB
+chmod +x "$work/bin/minisign"
+
 failures=0
 check() {
     if ! eval "$2"; then
@@ -51,6 +64,14 @@ run() {
     (cd "$repo" && PATH="$work/bin:$PATH" GH_TOKEN=stub STUB_LOG="$work/log" "$@" scripts/release.sh --artifacts) \
         >"$work/out" 2>&1
 }
+sign() {
+    rm -rf "$repo/dist" "$work/log"
+    mkdir -p "$repo/dist"
+    [ -n "${NO_SUMS:-}" ] || echo sums >"$repo/dist/SHA256SUMS"
+    (cd "$repo" && PATH="$work/bin:$PATH" DESKPUCK_MINISIGN_KEY=/keys/release.key STUB_LOG="$work/log" "$@" \
+        scripts/release.sh --sign) >"$work/out" 2>&1
+}
+signature() { [ -f "$repo/dist/SHA256SUMS.minisig" ]; }
 copied() { find "$repo/dist" -maxdepth 1 -name 'Deskpuck-*' 2>/dev/null | grep -c .; }
 
 run env; status=$?
@@ -70,6 +91,25 @@ check "and copies nothing" '[ "$(copied)" -eq 0 ]'
 run env STUB_CORRUPT=1; status=$?
 check "a file that does not match its checksum exits 1" '[ $status -eq 1 ]'
 check "before its attestation is checked" '[ ! -s "$work/log" ] && [ "$(copied)" -eq 0 ]'
+
+sign env; status=$?
+check "signing exits 0" '[ $status -eq 0 ] && signature'
+check "with the given key" 'grep -qx -- "-S -s /keys/release.key -m dist/SHA256SUMS -t Deskpuck 9.8.7" "$work/log"'
+check "then checks it against the key the apps carry" \
+    'grep -qx -- "-V -p packaging/minisign.pub -m dist/SHA256SUMS" "$work/log"'
+
+sign env STUB_SIGN=1; status=$?
+check "a failed signing exits 1" '[ $status -eq 1 ]'
+check "and leaves no signature" '! signature'
+
+sign env STUB_VERIFY=1; status=$?
+check "a signature the apps would refuse exits 1" '[ $status -eq 1 ]'
+check "it says so" 'grep -q "does not verify with packaging/minisign.pub" "$work/out"'
+check "and removes the signature" '! signature'
+
+NO_SUMS=1 sign env; status=$?
+check "nothing to sign exits 1" '[ $status -eq 1 ] && grep -q "no dist/SHA256SUMS" "$work/out"'
+check "before signing anything" '[ ! -s "$work/log" ]'
 
 if [ $failures -ne 0 ]; then
     exit 1

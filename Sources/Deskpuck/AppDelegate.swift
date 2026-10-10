@@ -16,7 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var pairItem: NSMenuItem?
     private var menuTimer: Timer?
     private var updateTimer: Timer?
-    private var availableUpdate: String?
+    private var update: UpdateState?
+
+    /// Mirrors the tray's update line (deskpuck-tray's model.rs).
+    private enum UpdateState {
+        case available(String)
+        case downloading(String)
+        case failed(String, Installer.Failure)
+    }
 
     override init() {
         Core.checkLibrary()
@@ -89,8 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
-        if let availableUpdate {
-            menu.addItem(item("Update Available: \(availableUpdate)...", action: #selector(openReleases)))
+        if let update {
+            menu.addItem(updateItem(update))
         }
         let version = NSMenuItem(title: versionText(), action: nil, keyEquivalent: "")
         version.isEnabled = false
@@ -121,6 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     // The menu enables items by validation, so isEnabled alone would be ignored.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(installUpdate) {
+            if case .downloading = update { return false }
+            return true
+        }
         if menuItem.action == #selector(startPairing) {
             // Pausing stops all connecting, so a window opened now could never pair.
             return !controller.isPaused
@@ -196,10 +207,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         scheduleUpdateCheck(after: 24 * 60 * 60 + .random(in: 0...(60 * 60)))
         // The file, not the window's state: an unreadable file leaves the choice unknown.
         guard Core.updateAllowed(by: Core.defaultFileURL),
-              let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              let current = currentVersion,
               let newer = await UpdateChecker.newerVersion(than: current)
         else { return }
-        availableUpdate = newer
+        // A download under way finishes first; a failed one is replaced only by a newer version.
+        switch update {
+        case .downloading: return
+        case .failed(let version, _) where version == newer: return
+        default: update = .available(newer)
+        }
+    }
+
+    private var currentVersion: String? {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+
+    private func updateItem(_ state: UpdateState) -> NSMenuItem {
+        let inPlace = Installer.canInstallInPlace
+        switch state {
+        case .available(let version) where inPlace:
+            return item("Update to \(version)", action: #selector(installUpdate))
+        case .available(let version):
+            return item("Update Available: \(version)...", action: #selector(openReleases))
+        case .downloading(let version):
+            return item("Downloading \(version)...", action: #selector(installUpdate))
+        case .failed(let version, .download):
+            return item("Could not download \(version): try again", action: #selector(installUpdate))
+        case .failed(let version, .verify):
+            return item("Update \(version) failed to verify: update manually...", action: #selector(openReleases))
+        case .failed(let version, .install):
+            return item("Update \(version) could not install: update manually...", action: #selector(openReleases))
+        }
+    }
+
+    @objc private func installUpdate() {
+        let version: String
+        switch update {
+        case .available(let available): version = available
+        case .failed(let failed, .download): version = failed
+        default: return
+        }
+        guard let current = currentVersion else { return }
+        update = .downloading(version)
+        Task { @MainActor in
+            do {
+                let (app, folder) = try await Installer.prepare(version: version, current: current)
+                try await relaunch(into: app, cleaning: folder)
+            } catch {
+                update = .failed(version, error as? Installer.Failure ?? .install)
+            }
+        }
+    }
+
+    /// Swaps the verified app in and starts it; the Joy-Con is released first so the new
+    /// copy can connect. If the new app does not start, the old one goes back and resumes.
+    private func relaunch(into app: URL, cleaning folder: URL) async throws {
+        let aside: URL
+        do {
+            aside = try Installer.swap(in: app)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        try? FileManager.default.removeItem(at: folder)
+        controller.stop()
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        do {
+            _ = try await NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
+        } catch {
+            Installer.restore(aside)
+            controller.start()
+            throw Installer.Failure.install
+        }
+        try? FileManager.default.removeItem(at: aside)
+        NSApp.terminate(nil)
     }
 
     // The address is a constant; nothing from the update check reaches the browser.

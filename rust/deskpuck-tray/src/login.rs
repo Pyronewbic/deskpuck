@@ -160,6 +160,8 @@ mod platform {
     }
 }
 
+#[cfg(windows)]
+pub use platform::read as read_registry;
 #[cfg(any(target_os = "linux", windows))]
 pub use platform::{is_on, set};
 

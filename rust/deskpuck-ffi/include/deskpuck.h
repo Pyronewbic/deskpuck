@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 5
+#define DP_ABI_VERSION 6
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -38,6 +38,17 @@ char *dp_update_evaluate(const char *location, const char *current);
 // Whether the settings file allows the check now: a missing file does (the
 // default), one that cannot be read does not.
 bool dp_update_allowed(const char *config_path);
+
+// One-click update of the Mac app. version: what dp_update_evaluate returned;
+// current: the running version. For a strictly newer version, the files to fetch
+// into one folder: {"version", "package": <file name>, "downloads": [{"name",
+// "url", "maxBytes"}...]}; else NULL.
+char *dp_release_plan(const char *version, const char *current);
+// Whether a download may follow a redirect to url.
+bool dp_release_redirect_allowed(const char *url);
+// NULL once dir's SHA256SUMS is signed with the release key and lists the
+// package with a matching hash; else why not. Install nothing on a message.
+char *dp_release_verify(const char *dir, const char *version, const char *current);
 
 typedef enum {
     DP_STATUS_BLUETOOTH_OFF = 0,

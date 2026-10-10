@@ -54,7 +54,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
     ValueName: "Deskpuck"; ValueData: """{app}\deskpuck.exe"""; Tasks: startatlogin
 
 [Run]
-Filename: "{app}\deskpuck.exe"; Description: "Start Deskpuck"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\deskpuck.exe"; Description: "Start Deskpuck"; Flags: nowait postinstall
 
 [Code]
 // The tray can also set Start at Login, so remove the Run value whoever wrote it.

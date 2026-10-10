@@ -1,3 +1,4 @@
+use crate::update::{Failure, Install};
 use deskpuck_ble::controller::LinkStatus;
 use deskpuck_ble::receiver::PAIRING_WINDOW;
 use deskpuck_core::mapping::Modifiers;
@@ -18,7 +19,22 @@ pub struct Model {
     note_from_settings: bool,
     failure: Option<String>,
     host: bool,
-    update: Option<String>,
+    update: Option<Update>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Update {
+    Available(String, Install),
+    Downloading(String),
+    Failed(String, Failure),
+}
+
+/// What choosing the update line does.
+#[derive(Debug, PartialEq, Eq)]
+pub enum UpdateClick {
+    Install(String),
+    OpenPage,
+    Nothing,
 }
 
 impl Default for Model {
@@ -184,18 +200,60 @@ impl Model {
         self.note.as_deref()
     }
 
-    /// Unlike a note, it stays until the program restarts. A package manager
-    /// that installed Deskpuck also owns its updates.
-    pub fn update_available(&mut self, version: &str, package_managed: bool) {
-        self.update = Some(if package_managed {
-            format!("Update Available: {version} (use your package manager)")
-        } else {
-            format!("Update Available: {version}...")
-        });
+    /// Unlike a note, it stays until the program restarts. A download under way
+    /// finishes first; a failed one is replaced only by a newer version.
+    pub fn update_available(&mut self, version: &str, install: Install) {
+        match &self.update {
+            Some(Update::Downloading(_)) => {}
+            Some(Update::Failed(failed, _)) if failed == version => {}
+            _ => self.update = Some(Update::Available(version.to_owned(), install)),
+        }
     }
 
-    pub fn update_text(&self) -> Option<&str> {
-        self.update.as_deref()
+    pub fn update_text(&self) -> Option<String> {
+        Some(match self.update.as_ref()? {
+            Update::Available(version, Install::InPlace) => format!("Update to {version}"),
+            Update::Available(version, Install::Browser) => {
+                format!("Update Available: {version}...")
+            }
+            Update::Available(version, Install::PackageManager) => {
+                format!("Update Available: {version} (use your package manager)")
+            }
+            Update::Downloading(version) => format!("Downloading {version}..."),
+            Update::Failed(version, Failure::Download) => {
+                format!("Could not download {version}: try again")
+            }
+            Update::Failed(version, Failure::Verify) => {
+                format!("Update {version} failed to verify: update manually...")
+            }
+            Update::Failed(version, Failure::Install) => {
+                format!("Update {version} could not install: update manually...")
+            }
+        })
+    }
+
+    pub fn update_enabled(&self) -> bool {
+        !matches!(self.update, Some(Update::Downloading(_)))
+    }
+
+    /// An in-place install starts downloading; a download that failed is retried.
+    pub fn update_click(&mut self) -> UpdateClick {
+        match &self.update {
+            Some(Update::Available(version, Install::InPlace))
+            | Some(Update::Failed(version, Failure::Download)) => {
+                let version = version.clone();
+                self.update = Some(Update::Downloading(version.clone()));
+                UpdateClick::Install(version)
+            }
+            Some(Update::Downloading(_)) | None => UpdateClick::Nothing,
+            Some(_) => UpdateClick::OpenPage,
+        }
+    }
+
+    pub fn update_failed(&mut self, failure: Failure) {
+        if let Some(Update::Downloading(version)) = &self.update {
+            self.update = Some(Update::Failed(version.clone(), failure));
+        }
     }
 
     pub fn tooltip(&self, now: f64) -> String {
@@ -387,13 +445,54 @@ mod tests {
     fn an_update_line_outlasts_connection_changes() {
         let mut model = shown();
         assert_eq!(model.update_text(), None);
-        model.update_available("0.4.0", false);
+        assert_eq!(model.update_click(), UpdateClick::Nothing);
+        model.update_available("0.4.0", Install::Browser);
         for status in [LinkStatus::Connected, LinkStatus::Searching, LinkStatus::Connected] {
             model.status(status, None);
         }
         model.settings_note(None);
-        assert_eq!(model.update_text(), Some("Update Available: 0.4.0..."));
-        model.update_available("0.5.0", true);
-        assert_eq!(model.update_text(), Some("Update Available: 0.5.0 (use your package manager)"));
+        assert_eq!(model.update_text().as_deref(), Some("Update Available: 0.4.0..."));
+        assert_eq!(model.update_click(), UpdateClick::OpenPage);
+        model.update_available("0.5.0", Install::PackageManager);
+        assert_eq!(
+            model.update_text().as_deref(),
+            Some("Update Available: 0.5.0 (use your package manager)")
+        );
+        assert_eq!(model.update_click(), UpdateClick::OpenPage);
+    }
+
+    #[test]
+    fn an_in_place_update_downloads_once_and_only_retries_a_failed_download() {
+        let mut model = shown();
+        model.update_available("0.4.0", Install::InPlace);
+        assert_eq!(model.update_text().as_deref(), Some("Update to 0.4.0"));
+        assert_eq!(model.update_click(), UpdateClick::Install("0.4.0".into()));
+        assert_eq!(model.update_text().as_deref(), Some("Downloading 0.4.0..."));
+        assert!(!model.update_enabled());
+        assert_eq!(model.update_click(), UpdateClick::Nothing, "a second click starts nothing");
+        model.update_available("0.5.0", Install::InPlace);
+        assert_eq!(model.update_text().as_deref(), Some("Downloading 0.4.0..."), "not interrupted");
+
+        model.update_failed(Failure::Download);
+        assert!(model.update_enabled());
+        assert_eq!(model.update_text().as_deref(), Some("Could not download 0.4.0: try again"));
+        assert_eq!(model.update_click(), UpdateClick::Install("0.4.0".into()));
+
+        model.update_failed(Failure::Verify);
+        assert_eq!(
+            model.update_text().as_deref(),
+            Some("Update 0.4.0 failed to verify: update manually...")
+        );
+        assert_eq!(model.update_click(), UpdateClick::OpenPage, "never retried");
+        model.update_available("0.4.0", Install::InPlace);
+        assert_eq!(model.update_click(), UpdateClick::OpenPage, "the same version stays refused");
+        model.update_available("0.4.1", Install::InPlace);
+        assert_eq!(model.update_click(), UpdateClick::Install("0.4.1".into()));
+        model.update_failed(Failure::Install);
+        assert_eq!(
+            model.update_text().as_deref(),
+            Some("Update 0.4.1 could not install: update manually...")
+        );
+        assert_eq!(model.update_click(), UpdateClick::OpenPage);
     }
 }

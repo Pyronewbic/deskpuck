@@ -51,6 +51,18 @@ struct DeskpuckConfig: Codable, Equatable {
     var checkUpdates: Bool
 }
 
+struct ReleasePlan: Decodable {
+    struct Download: Decodable {
+        let name: String
+        let url: String
+        let maxBytes: Int64
+    }
+
+    let version: String
+    let package: String
+    let downloads: [Download]
+}
+
 struct CoreError: LocalizedError {
     let errorDescription: String?
 }
@@ -108,6 +120,26 @@ enum Core {
     static func newerVersion(location: String, current: String) -> String? {
         location.withCString { location in
             current.withCString { current in take(dp_update_evaluate(location, current)) }
+        }
+    }
+
+    /// The files to fetch for a one-click update to a strictly newer version, or nil.
+    static func releasePlan(version: String, current: String) -> ReleasePlan? {
+        version.withCString { version in
+            current.withCString { current in decode(ReleasePlan.self, take(dp_release_plan(version, current))) }
+        }
+    }
+
+    static func redirectAllowed(_ url: URL) -> Bool {
+        url.absoluteString.withCString { dp_release_redirect_allowed($0) }
+    }
+
+    /// nil once the folder's downloads are the maintainer's signed release, else why not.
+    static func verifyRelease(in folder: URL, version: String, current: String) -> String? {
+        folder.path.withCString { folder in
+            version.withCString { version in
+                current.withCString { current in take(dp_release_verify(folder, version, current)) }
+            }
         }
     }
 
