@@ -45,9 +45,29 @@ group "Linux installer"
 packaging/linux/install.test.sh || fail "packaging/linux/install.sh self-test"
 endgroup
 
+# A pre-push hook run from a worktree exports GIT_DIR, and a self-test that inherits it
+# re-initialises the real repository. Those that make a throwaway repo run with GIT_DIR
+# naming a decoy, which must come back byte for byte.
+decoy=$(mktemp -d) || cannot "no temporary folder for the decoy repository"
+trap 'rm -rf "$decoy"' EXIT
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE git init -q "$decoy" ||
+    cannot "could not make the decoy repository"
+decoy_files() { (cd "$decoy/.git" && find . -type f -exec cksum {} + | sort); }
+isolated() {
+    local before status
+    before=$(decoy_files)
+    GIT_DIR="$decoy/.git" "$@"
+    status=$?
+    if [ "$(decoy_files)" != "$before" ]; then
+        echo "$1 wrote to the repository named by GIT_DIR" >&2
+        return 1
+    fi
+    return $status
+}
+
 if [ "$(uname)" = Darwin ]; then
     group "Release script"
-    scripts/release.test.sh || fail "release.sh self-test"
+    isolated scripts/release.test.sh || fail "release.sh self-test"
     endgroup
 fi
 
@@ -57,7 +77,7 @@ case "$(uname)" in
     MINGW* | MSYS* | CYGWIN*) ;;
     *)
         group "AUR package script"
-        scripts/aur-update.test.sh || fail "aur-update.sh self-test"
+        isolated scripts/aur-update.test.sh || fail "aur-update.sh self-test"
         endgroup
         ;;
 esac

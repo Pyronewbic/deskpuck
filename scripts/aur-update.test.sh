@@ -4,6 +4,10 @@
 # shellcheck disable=SC2016,SC2034
 set -uo pipefail
 
+# A pre-push hook in a worktree exports GIT_DIR; inherited, it would turn the throwaway
+# repo below (and the script under test) into the real one.
+while IFS= read -r variable; do unset "$variable"; done < <(git rev-parse --local-env-vars)
+
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work=$(mktemp -d) || exit 3
 trap 'rm -rf "$work"' EXIT
