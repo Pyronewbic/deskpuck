@@ -5,13 +5,14 @@ use deskpuck_ble::controller::{
 };
 use deskpuck_core::config::Config;
 use deskpuck_core::pairing::PairedDevice;
+use deskpuck_core::release::{self, Package, Release};
 use deskpuck_core::update;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
 
-pub const DP_ABI_VERSION: u32 = 5;
+pub const DP_ABI_VERSION: u32 = 6;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -192,6 +193,81 @@ pub unsafe extern "C" fn dp_update_allowed(config_path: *const c_char) -> bool {
             // SAFETY: forwarded from the caller's contract.
             unsafe { from_c(config_path) }
                 .is_ok_and(|path| update::allowed_by_config(Path::new(path)))
+        },
+    )
+}
+
+/// The Mac app's package only: this library is the Mac app's.
+///
+/// # Safety
+/// Both arguments must be NULL or valid NUL-terminated strings.
+unsafe fn mac_release(version: *const c_char, current: *const c_char) -> Option<Release> {
+    // SAFETY: forwarded from the caller's contract.
+    let (version, current) = unsafe { (from_c(version).ok()?, from_c(current).ok()?) };
+    Release::new(version, current, Package::MacZip)
+}
+
+/// # Safety
+/// Both arguments must be NULL or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_release_plan(
+    version: *const c_char,
+    current: *const c_char,
+) -> *mut c_char {
+    guard(ptr::null_mut, || {
+        // SAFETY: forwarded from the caller's contract.
+        let Some(release) = (unsafe { mac_release(version, current) }) else {
+            return ptr::null_mut();
+        };
+        let downloads: Vec<_> = release
+            .downloads()
+            .iter()
+            .map(|d| serde_json::json!({ "name": d.name, "url": d.url, "maxBytes": d.max_bytes }))
+            .collect();
+        into_c(
+            serde_json::json!({
+                "version": release.version(),
+                "package": release.package(),
+                "downloads": downloads,
+            })
+            .to_string(),
+        )
+    })
+}
+
+/// # Safety
+/// `url` must be NULL or a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_release_redirect_allowed(url: *const c_char) -> bool {
+    guard(
+        || false,
+        || {
+            // SAFETY: forwarded from the caller's contract.
+            unsafe { from_c(url) }.is_ok_and(release::redirect_allowed)
+        },
+    )
+}
+
+/// # Safety
+/// All arguments must be NULL or valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dp_release_verify(
+    dir: *const c_char,
+    version: *const c_char,
+    current: *const c_char,
+) -> *mut c_char {
+    guard(
+        || into_c("The update could not be verified.".into()),
+        || {
+            // SAFETY: forwarded from the caller's contract.
+            let (dir, release) = match unsafe { (from_c(dir), mac_release(version, current)) } {
+                (Ok(dir), Some(release)) => (dir, release),
+                _ => return into_c("Not a newer release.".into()),
+            };
+            match release::verify(Path::new(dir), &release) {
+                Ok(_) => ptr::null_mut(),
+                Err(refusal) => into_c(format!("The update could not be verified: {refusal}.")),
+            }
         },
     )
 }
