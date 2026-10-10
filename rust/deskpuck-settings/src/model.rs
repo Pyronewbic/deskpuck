@@ -22,6 +22,24 @@ pub const RIGHT_JOYCON: [ButtonRow; 10] = [
     ButtonRow { id: "SR", label: "SR" },
 ];
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Tab {
+    #[default]
+    Buttons,
+    General,
+}
+
+impl Tab {
+    pub const ALL: [Self; 2] = [Self::Buttons, Self::General];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Buttons => "Buttons",
+            Self::General => "General",
+        }
+    }
+}
+
 pub const SPEED_RANGE: (f64, f64, f64) = (0.25, 4.0, 0.25);
 pub const DELAY_RANGE: (f64, f64, f64) = (0.15, 1.0, 0.05);
 pub const RATE_RANGE: (f64, f64, f64) = (4.0, 30.0, 1.0);
@@ -165,6 +183,15 @@ impl Model {
                 modifiers.with(modifier)
             };
             self.set_mapping(button, Some(Mapping::Shortcut(Shortcut { key, modifiers })), now);
+        }
+    }
+
+    /// Leaving a tab ends a recording on it, which would otherwise keep
+    /// taking key presses from a row no longer on screen.
+    pub fn switch_tab(&mut self, tab: &mut Tab, to: Tab) {
+        if *tab != to {
+            *tab = to;
+            self.recording = None;
         }
     }
 

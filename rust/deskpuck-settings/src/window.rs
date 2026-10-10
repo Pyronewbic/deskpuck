@@ -1,5 +1,5 @@
 use crate::keys::{choices, describe, modifier_label, modifiers};
-use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE};
+use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE, Tab};
 use crate::recorder::{Recorded, clipboard_key, record};
 use crate::viewport;
 use crate::widgets::{section, segments, toggle};
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 struct App {
     model: Model,
+    tab: Tab,
     start: Instant,
     close_stopped: bool,
     next_file_check: f64,
@@ -209,6 +210,16 @@ impl App {
         }
     }
 
+    fn tabs(&mut self, ui: &mut egui::Ui) {
+        let tab = self.tab;
+        let labels = Tab::ALL.map(Tab::label);
+        ui.vertical_centered(|ui| {
+            if let Some(i) = segments(ui, "tabs", &labels, |i| Tab::ALL[i] == tab) {
+                self.model.switch_tab(&mut self.tab, Tab::ALL[i]);
+            }
+        });
+    }
+
     fn problems(&self, ui: &mut egui::Ui) {
         if !self.model.load_warnings.is_empty() {
             ui.label(
@@ -273,15 +284,27 @@ impl eframe::App for App {
             ui.ctx().set_theme(preference);
         }
         self.record_keys(ui, now);
+        let header = egui::Margin { bottom: 0, ..egui::Margin::same(MARGIN) };
+        let header = egui::Panel::top("tabs")
+            .frame(egui::Frame::central_panel(ui.style()).inner_margin(header))
+            .resizable(false)
+            .show_separator_line(false)
+            .show(ui, |ui| self.tabs(ui))
+            .response
+            .rect
+            .height();
         let frame = egui::Frame::central_panel(ui.style()).inner_margin(MARGIN);
         let content = egui::CentralPanel::default()
             .frame(frame)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
+                    .id_salt(self.tab)
                     .show(ui, |ui| {
                         self.problems(ui);
-                        self.buttons(ui, now);
-                        self.controls(ui, now);
+                        match self.tab {
+                            Tab::Buttons => self.buttons(ui, now),
+                            Tab::General => self.controls(ui, now),
+                        }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.button("Restore Defaults").clicked() {
                                 self.model.restore_defaults(now);
@@ -295,7 +318,7 @@ impl eframe::App for App {
                     .y
             })
             .inner;
-        self.fit_height(ui, content);
+        self.fit_height(ui, header + content);
         if now >= self.next_file_check {
             self.next_file_check = now + FILE_CHECK;
             self.model.check_file();
@@ -325,6 +348,7 @@ impl eframe::App for App {
 pub fn run(path: Option<PathBuf>) -> Result<(), String> {
     let app = App {
         model: Model::load(path),
+        tab: Tab::default(),
         start: Instant::now(),
         close_stopped: false,
         next_file_check: FILE_CHECK,
