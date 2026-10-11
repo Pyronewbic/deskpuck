@@ -11,3 +11,16 @@ pub fn width(tab: Tab) -> f32 {
         Tab::General => MIN_WIDTH,
     }
 }
+
+/// A size the window asked for, and whether it knew the screen then.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ask {
+    pub size: [f32; 2],
+    pub screen_known: bool,
+}
+
+/// Wayland reports no screen until the window is mapped, and the compositor's first
+/// configure can override a resize sent before that, so it is sent again then.
+pub fn ask_again(current: Option<[f32; 2]>, asked: Option<Ask>, wanted: Ask) -> bool {
+    current != Some(wanted.size) && asked != Some(wanted)
+}

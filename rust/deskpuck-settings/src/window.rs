@@ -17,7 +17,7 @@ struct App {
     next_file_check: f64,
     accent: theme::AccentReader,
     focused: bool,
-    asked_size: Option<egui::Vec2>,
+    asked: Option<layout::Ask>,
 }
 
 const FILE_CHECK: f64 = 1.0;
@@ -279,8 +279,8 @@ impl App {
         }
     }
 
-    /// Asks once per tab and content height; a request the window manager
-    /// declined is not repeated every frame.
+    /// Asks once per size (and once more when the screen becomes known); a request
+    /// the window manager declined is not repeated every frame.
     fn fit(&mut self, ui: &egui::Ui, header: f32, content: f32, footer: f32) {
         let (inner, outer, monitor) = ui.input(|i| {
             let viewport = i.viewport();
@@ -288,12 +288,13 @@ impl App {
         });
         let wanted = layout::wanted_height(content, header, footer, monitor.map(|m| m.y));
         let size = egui::vec2(layout::width(self.tab), wanted);
-        let current = inner.map(|r| r.size().round());
-        if current == Some(size) || self.asked_size == Some(size) {
+        let ask = layout::Ask { size: size.into(), screen_known: monitor.is_some() };
+        let current = inner.map(|r| r.size().round().into());
+        if !layout::ask_again(current, self.asked, ask) {
             return;
         }
-        let first = self.asked_size.is_none();
-        self.asked_size = Some(size);
+        let first = self.asked.is_none();
+        self.asked = Some(ask);
         let ctx = ui.ctx();
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         // The window opened centred at its first guess; centre it again at its real height.
@@ -395,7 +396,7 @@ pub fn run(path: Option<PathBuf>) -> Result<(), String> {
         next_file_check: FILE_CHECK,
         accent: theme::AccentReader::default(),
         focused: false,
-        asked_size: None,
+        asked: None,
     };
     let icon =
         eframe::icon_data::from_png_bytes(include_bytes!("../../icons/deskpuck-128.png")).ok();
