@@ -12,6 +12,7 @@ final class SettingsModel: ObservableObject {
     @Published var repeatRate: Double { didSet { commit() } }
     @Published var appearance: String { didSet { commit() } }
     @Published var checkUpdates: Bool { didSet { commit() } }
+    @Published var buttonReconnect: Bool { didSet { commit() } }
 
     @Published private(set) var loadWarnings: [String]
     @Published private(set) var saveError: String?
@@ -35,6 +36,7 @@ final class SettingsModel: ObservableObject {
         repeatRate = Self.defaultRepeatRate
         appearance = "system"
         checkUpdates = true
+        buttonReconnect = false
         load(config)
     }
 
@@ -59,7 +61,8 @@ final class SettingsModel: ObservableObject {
             repeatInterval: repeatEnabled ? 1.0 / repeatRate : 0,
             scrollEnabled: scrollEnabled,
             appearance: appearance,
-            checkUpdates: checkUpdates
+            checkUpdates: checkUpdates,
+            buttonReconnect: buttonReconnect
         )
     }
 
@@ -73,6 +76,7 @@ final class SettingsModel: ObservableObject {
         repeatRate = config.repeatInterval > 0 ? 1.0 / config.repeatInterval : Self.defaultRepeatRate
         appearance = config.appearance
         checkUpdates = config.checkUpdates
+        buttonReconnect = config.buttonReconnect
         loading = false
     }
 

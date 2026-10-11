@@ -17,6 +17,16 @@ pub fn section(ui: &mut Ui, title: &str, add_rows: impl FnOnce(&mut Card<'_>)) {
     ui.add_space(16.0);
 }
 
+/// A section with a note under its card, for what a row's label cannot say.
+pub fn section_noted(ui: &mut Ui, title: &str, note: &str, add_rows: impl FnOnce(&mut Card<'_>)) {
+    ui.label(RichText::new(title).text_style(TextStyle::Heading).weak());
+    ui.add_space(2.0);
+    card(ui, add_rows);
+    ui.add_space(6.0);
+    ui.label(RichText::new(note).weak());
+    ui.add_space(16.0);
+}
+
 pub fn card(ui: &mut Ui, add_rows: impl FnOnce(&mut Card<'_>)) {
     let colors = palette(ui.ctx().theme());
     Frame::new()

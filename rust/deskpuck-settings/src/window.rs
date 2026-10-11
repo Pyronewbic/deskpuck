@@ -1,7 +1,7 @@
 use crate::keys::{choices, describe, modifier_label, modifiers};
 use crate::model::{DELAY_RANGE, Model, RATE_RANGE, RIGHT_JOYCON, SPEED_RANGE, Tab};
 use crate::recorder::{Recorded, clipboard_key, record};
-use crate::widgets::{card, section, segments, toggle};
+use crate::widgets::{card, section, section_noted, segments, toggle};
 use crate::{fonts, text, theme};
 use crate::{layout, viewport};
 use deskpuck_core::config::{Appearance, Mapping};
@@ -57,6 +57,9 @@ const RESTORE_QUESTION: &str =
     "Restore all settings to their defaults? Your button mappings will be lost.";
 const FIXED_BUTTONS: &str = "R is Left click and ZR is Right click. These two cannot be changed.";
 const UPDATE_NOTE: &str = "Asks github.com for the latest version. No other data is sent.";
+const RECONNECT_NOTE: &str = "Takes effect when you pair a Joy-Con. It then reconnects when you \
+                              press a button, without SYNC, but is unpaired from a Switch 2: \
+                              attach it to the console to use it there again.";
 
 fn to_preference(appearance: Appearance) -> egui::ThemePreference {
     match appearance {
@@ -205,6 +208,12 @@ impl App {
                     values.config.appearance = all[i];
                     changed = true;
                 }
+            });
+        });
+        section_noted(ui, "Joy-Con", RECONNECT_NOTE, |card| {
+            changed |= card.row("Reconnect with a button press", |ui| {
+                toggle(ui, &mut values.config.button_reconnect, "Reconnect with a button press")
+                    .changed()
             });
         });
         section(ui, "Updates", |card| {

@@ -49,6 +49,7 @@ struct DeskpuckConfig: Codable, Equatable {
     var scrollEnabled: Bool
     var appearance: String
     var checkUpdates: Bool
+    var buttonReconnect: Bool
 }
 
 struct ReleasePlan: Decodable {
@@ -100,7 +101,7 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true)
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true, buttonReconnect: false)
     }
 
     static func load(from url: URL) -> (DeskpuckConfig, [String]) {

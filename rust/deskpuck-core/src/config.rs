@@ -27,7 +27,8 @@ const REPEAT_INTERVAL: &str = "repeatInterval";
 const SCROLL_ENABLED: &str = "scrollEnabled";
 const APPEARANCE: &str = "appearance";
 const CHECK_UPDATES: &str = "checkUpdates";
-const KNOWN_KEYS: [&str; 8] = [
+const BUTTON_RECONNECT: &str = "buttonReconnect";
+const KNOWN_KEYS: [&str; 9] = [
     VERSION,
     KEY_MAPPINGS,
     POINTER_SPEED,
@@ -36,6 +37,7 @@ const KNOWN_KEYS: [&str; 8] = [
     SCROLL_ENABLED,
     APPEARANCE,
     CHECK_UPDATES,
+    BUTTON_RECONNECT,
 ];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -142,6 +144,8 @@ pub struct Config {
     pub appearance: Appearance,
     /// Ask github.com once a day whether a newer release exists.
     pub check_updates: bool,
+    /// Pairing also makes the Joy-Con reconnect on a button press, which unpairs it from a Switch 2.
+    pub button_reconnect: bool,
 }
 
 impl Default for Config {
@@ -169,6 +173,7 @@ impl Default for Config {
             scroll_enabled: defaults.scroll_enabled,
             appearance: Appearance::default(),
             check_updates: true,
+            button_reconnect: false,
         }
     }
 }
@@ -286,6 +291,15 @@ impl Config {
             }
         }
 
+        match dict.get(BUTTON_RECONNECT) {
+            None => {}
+            Some(Value::Bool(enabled)) => config.button_reconnect = *enabled,
+            Some(_) => {
+                config.button_reconnect = false;
+                warnings.push("buttonReconnect must be true or false; using false.".to_owned());
+            }
+        }
+
         match dict.get(APPEARANCE) {
             None => {}
             Some(value) => match value.as_str().and_then(Appearance::from_name) {
@@ -337,6 +351,7 @@ impl Config {
             SCROLL_ENABLED: self.scroll_enabled,
             APPEARANCE: self.appearance.name(),
             CHECK_UPDATES: self.check_updates,
+            BUTTON_RECONNECT: self.button_reconnect,
         })
     }
 
