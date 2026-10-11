@@ -19,6 +19,7 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 - **Restore Defaults** could be cut off on a 13 to 14 inch screen. It is now **Restore All Defaults...**, always visible at the bottom, and asks first.
 - The Mac settings window opens centred.
+- On Linux and Windows, quitting or updating Deskpuck also closes its settings window, which before stayed open on the old version.
 
 ## [0.3.0] - 2026-10-08
 
