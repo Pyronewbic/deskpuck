@@ -41,8 +41,17 @@ pub fn uuid_le(uuid: &str) -> Option<[u8; 16]> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    Discovered { write: bool, notify: bool },
+    /// `response`: the reply characteristic and its descriptor were found.
+    Discovered {
+        write: bool,
+        notify: bool,
+        response: bool,
+    },
     Notification(Vec<u8>),
+    /// A value of the reply characteristic.
+    Response(Vec<u8>),
+    /// The Joy-Con acknowledged enabling replies, so a command sent now can be answered.
+    ResponseSubscribed,
     Log(String),
 }
 
@@ -51,6 +60,15 @@ pub struct Handles {
     pub write: Option<u16>,
     pub notify: Option<u16>,
     pub cccd: Option<u16>,
+    pub response: Option<u16>,
+    pub response_cccd: Option<u16>,
+}
+
+/// Which notifying characteristic a descriptor search or descriptor write is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Target {
+    Input,
+    Response,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,33 +77,31 @@ enum Step {
     Mtu,
     Services { from: u16 },
     Characteristics { from: u16, end: u16 },
-    Descriptors { from: u16, end: u16 },
+    Descriptors { from: u16, end: u16, target: Target },
     Done,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct Declaration {
-    handle: u16,
-    value: u16,
 }
 
 pub struct Client {
     service: [u8; 16],
     notify_uuid: [u8; 16],
     write_uuid: [u8; 16],
+    response_uuid: Option<[u8; 16]>,
     mtu: u16,
     step: Step,
     waiting: Option<(u8, f64)>,
     queued: VecDeque<Vec<u8>>,
     outgoing: Vec<Vec<u8>>,
     handles: Handles,
-    /// The characteristic declaration after the notify one, which bounds its descriptors.
-    notify_declaration: Option<Declaration>,
-    next_declaration: Option<u16>,
+    /// Every characteristic declaration in the service: the next one bounds a value's descriptors.
+    declarations: Vec<u16>,
+    service_end: u16,
+    /// What each descriptor write in flight or queued is for, in request order.
+    descriptor_writes: VecDeque<Target>,
     failed: Option<String>,
     /// Values are passed on only once notifications were asked for, as a
     /// GATT stack would, so a device that never passed discovery sends nothing.
     subscribed: bool,
+    response_subscribed: bool,
 }
 
 impl Client {
@@ -94,17 +110,25 @@ impl Client {
             service,
             notify_uuid: notify,
             write_uuid: write,
+            response_uuid: None,
             mtu: DEFAULT_MTU,
             step: Step::Idle,
             waiting: None,
             queued: VecDeque::new(),
             outgoing: Vec::new(),
             handles: Handles::default(),
-            notify_declaration: None,
-            next_declaration: None,
+            declarations: Vec::new(),
+            service_end: 0,
+            descriptor_writes: VecDeque::new(),
             failed: None,
             subscribed: false,
+            response_subscribed: false,
         }
+    }
+
+    /// Also finds this notifying characteristic, whose values arrive as `Event::Response`.
+    pub fn with_response(self, uuid: [u8; 16]) -> Self {
+        Self { response_uuid: Some(uuid), ..self }
     }
 
     pub fn mtu(&self) -> u16 {
@@ -143,12 +167,29 @@ impl Client {
         let Some(cccd) = self.handles.cccd else {
             return vec![Event::Log("cannot enable notifications: no descriptor found".into())];
         };
+        self.enable(cccd, Target::Input, now);
+        self.subscribed = true;
+        Vec::new()
+    }
+
+    pub fn subscribe_response(&mut self, now: f64) -> Vec<Event> {
+        let Some(cccd) = self.handles.response_cccd else {
+            return vec![Event::Log("cannot enable replies: no descriptor found".into())];
+        };
+        self.enable(cccd, Target::Response, now);
+        self.response_subscribed = true;
+        Vec::new()
+    }
+
+    fn enable(&mut self, cccd: u16, target: Target, now: f64) {
+        if self.failed.is_some() {
+            return;
+        }
         let mut pdu = vec![WRITE_REQUEST];
         pdu.extend(cccd.to_le_bytes());
         pdu.extend(1u16.to_le_bytes());
+        self.descriptor_writes.push_back(target);
         self.request(pdu, now);
-        self.subscribed = true;
-        Vec::new()
     }
 
     pub fn write(&mut self, data: &[u8]) -> Vec<Event> {
@@ -187,8 +228,14 @@ impl Client {
                 if opcode == HANDLE_VALUE_INDICATION {
                     self.outgoing.push(vec![HANDLE_VALUE_CONFIRMATION]);
                 }
-                if self.subscribed && pdu.len() >= 3 && Some(le16(pdu, 1)) == self.handles.notify {
+                let handle = (pdu.len() >= 3).then(|| le16(pdu, 1));
+                if self.subscribed && handle.is_some() && handle == self.handles.notify {
                     events.push(Event::Notification(pdu[3..].to_vec()));
+                } else if self.response_subscribed
+                    && handle.is_some()
+                    && handle == self.handles.response
+                {
+                    events.push(Event::Response(pdu[3..].to_vec()));
                 }
             }
             EXCHANGE_MTU_REQUEST => {
@@ -238,9 +285,12 @@ impl Client {
             READ_BY_GROUP_TYPE_REQUEST => self.on_services(pdu, error_code, now, events),
             READ_BY_TYPE_REQUEST => self.on_characteristics(pdu, error_code, now, events),
             FIND_INFORMATION_REQUEST => self.on_descriptors(pdu, error_code, now, events),
-            WRITE_REQUEST => match error_code {
-                None => events.push(Event::Log("notifications enabled".into())),
-                Some(code) => events.push(Event::Log(format!(
+            WRITE_REQUEST => match (self.descriptor_writes.pop_front(), error_code) {
+                (Some(Target::Response), None) => events.push(Event::ResponseSubscribed),
+                (Some(Target::Response), Some(code)) => events
+                    .push(Event::Log(format!("enabling replies failed: ATT error 0x{code:02X}"))),
+                (_, None) => events.push(Event::Log("notifications enabled".into())),
+                (_, Some(code)) => events.push(Event::Log(format!(
                     "enabling notifications failed: ATT error 0x{code:02X}"
                 ))),
             },
@@ -288,6 +338,7 @@ impl Client {
             }
             if entry[4..] == self.service {
                 events.push(Event::Log(format!("service at 0x{start:04X}-0x{end:04X}")));
+                self.service_end = end;
                 return self.find_characteristics(start, end, now);
             }
             last = last.max(end);
@@ -333,16 +384,14 @@ impl Client {
                 return self.finish(events, "malformed characteristic list");
             }
             last = handle;
-            if self.notify_declaration.is_some_and(|n| handle > n.handle) {
-                self.next_declaration.get_or_insert(handle);
-            }
+            self.declarations.push(handle);
             let uuid = &entry[5..];
             if uuid == self.write_uuid {
                 self.handles.write = Some(value);
             } else if uuid == self.notify_uuid {
                 self.handles.notify = Some(value);
-                self.notify_declaration = Some(Declaration { handle, value });
-                self.next_declaration = None;
+            } else if self.response_uuid.is_some_and(|r| uuid == r) {
+                self.handles.response = Some(value);
             }
         }
         match last.checked_add(1) {
@@ -351,19 +400,40 @@ impl Client {
         }
     }
 
-    fn characteristics_done(&mut self, service_end: u16, now: f64, events: &mut Vec<Event>) {
-        let Some(notify) = self.notify_declaration else {
-            return self.finish(events, "notify characteristic not found");
-        };
-        let end = self.next_declaration.map_or(service_end, |next| next - 1);
-        if notify.value >= end {
-            return self.finish(events, "notify characteristic has no descriptors");
-        }
-        self.find_descriptors(notify.value + 1, end, now);
+    /// From after the value to before the next declaration, or `None` if that range is empty.
+    fn descriptor_range(&self, value: u16) -> Option<(u16, u16)> {
+        let next = self.declarations.iter().copied().filter(|&d| d > value).min();
+        let end = next.map_or(self.service_end, |next| next - 1);
+        (value < end).then(|| (value + 1, end))
     }
 
-    fn find_descriptors(&mut self, from: u16, end: u16, now: f64) {
-        self.step = Step::Descriptors { from, end };
+    fn characteristics_done(&mut self, service_end: u16, now: f64, events: &mut Vec<Event>) {
+        self.service_end = service_end;
+        let Some(notify) = self.handles.notify else {
+            return self.finish(events, "notify characteristic not found");
+        };
+        let Some((from, end)) = self.descriptor_range(notify) else {
+            return self.finish(events, "notify characteristic has no descriptors");
+        };
+        self.find_descriptors(from, end, Target::Input, now);
+    }
+
+    /// The reply characteristic is optional: without it the input still streams.
+    fn input_done(&mut self, now: f64, events: &mut Vec<Event>) {
+        if self.response_uuid.is_none() {
+            return self.finish(events, "");
+        }
+        let Some(response) = self.handles.response else {
+            return self.finish(events, "reply characteristic not found");
+        };
+        match self.descriptor_range(response) {
+            Some((from, end)) => self.find_descriptors(from, end, Target::Response, now),
+            None => self.finish(events, "reply characteristic has no descriptors"),
+        }
+    }
+
+    fn find_descriptors(&mut self, from: u16, end: u16, target: Target, now: f64) {
+        self.step = Step::Descriptors { from, end, target };
         let mut pdu = vec![FIND_INFORMATION_REQUEST];
         pdu.extend(from.to_le_bytes());
         pdu.extend(end.to_le_bytes());
@@ -371,9 +441,13 @@ impl Client {
     }
 
     fn on_descriptors(&mut self, pdu: &[u8], error: Option<u8>, now: f64, events: &mut Vec<Event>) {
-        let Step::Descriptors { from, end } = self.step else { return };
+        let Step::Descriptors { from, end, target } = self.step else { return };
+        let not_found = match target {
+            Target::Input => "notify descriptor not found",
+            Target::Response => "reply descriptor not found",
+        };
         if error.is_some() {
-            return self.finish(events, "notify descriptor not found");
+            return self.finish(events, not_found);
         }
         // Format 1: handle and 16-bit UUID pairs; format 2: 128-bit UUIDs.
         let width = match pdu.get(1) {
@@ -393,13 +467,21 @@ impl Client {
             }
             last = handle;
             if width == 4 && le16(entry, 2) == CLIENT_CHARACTERISTIC_CONFIGURATION {
-                self.handles.cccd = Some(handle);
-                return self.finish(events, "");
+                return match target {
+                    Target::Input => {
+                        self.handles.cccd = Some(handle);
+                        self.input_done(now, events)
+                    }
+                    Target::Response => {
+                        self.handles.response_cccd = Some(handle);
+                        self.finish(events, "")
+                    }
+                };
             }
         }
         match last.checked_add(1) {
-            Some(next) if next <= end => self.find_descriptors(next, end, now),
-            _ => self.finish(events, "notify descriptor not found"),
+            Some(next) if next <= end => self.find_descriptors(next, end, target, now),
+            _ => self.finish(events, not_found),
         }
     }
 
@@ -411,14 +493,17 @@ impl Client {
         let h = self.handles;
         let show = |handle: Option<u16>| handle.map_or("none".into(), |h| format!("0x{h:04X}"));
         events.push(Event::Log(format!(
-            "handles: write {}, notify {}, descriptor {}",
+            "handles: write {}, notify {}, descriptor {}, reply {}, reply descriptor {}",
             show(h.write),
             show(h.notify),
-            show(h.cccd)
+            show(h.cccd),
+            show(h.response),
+            show(h.response_cccd)
         )));
         events.push(Event::Discovered {
             write: h.write.is_some(),
             notify: h.notify.is_some() && h.cccd.is_some(),
+            response: h.response.is_some() && h.response_cccd.is_some(),
         });
     }
 }

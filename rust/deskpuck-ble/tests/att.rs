@@ -1,5 +1,6 @@
 use deskpuck_ble::att::{Client, Event, Handles, MAX_MTU, REQUEST_TIMEOUT, uuid_le};
 use deskpuck_ble::receiver::{NOTIFY_CHARACTERISTIC, SERVICE, WRITE_CHARACTERISTIC};
+use deskpuck_ble::vendor::RESPONSE_CHARACTERISTIC;
 
 #[derive(Clone, Copy)]
 enum Attr {
@@ -40,7 +41,7 @@ fn client() -> Client {
 
 impl FakeJoyCon {
     /// Layout a real Joy-Con 2 (R) reported: service 0x0008-0x002A, notify value 0x000A
-    /// with descriptor 0x000B, write value 0x0014.
+    /// with descriptor 0x000B, write value 0x0014, reply value 0x001A with descriptor 0x001B.
     fn real() -> Self {
         Self::at(0x0008, 0x002A)
     }
@@ -81,6 +82,16 @@ impl FakeJoyCon {
                 },
             ),
             (0x0014, Attr::Value),
+            (
+                0x0019,
+                Attr::Characteristic {
+                    props: 0x10,
+                    value: 0x001A,
+                    uuid: uuid(RESPONSE_CHARACTERISTIC),
+                },
+            ),
+            (0x001A, Attr::Value),
+            (0x001B, Attr::Descriptor(0x2902)),
             (0x0020, Attr::Characteristic { props: 0x0A, value: 0x0021, uuid: other_uuid(5) }),
             (0x0021, Attr::Value),
             (end - o, Attr::Value),
@@ -241,13 +252,19 @@ fn discovered(events: &[Event]) -> Vec<(bool, bool)> {
     events
         .iter()
         .filter_map(|e| match e {
-            Event::Discovered { write, notify } => Some((*write, *notify)),
+            Event::Discovered { write, notify, .. } => Some((*write, *notify)),
             _ => None,
         })
         .collect()
 }
 
-const REAL: Handles = Handles { write: Some(0x0014), notify: Some(0x000A), cccd: Some(0x000B) };
+const REAL: Handles = Handles {
+    write: Some(0x0014),
+    notify: Some(0x000A),
+    cccd: Some(0x000B),
+    response: None,
+    response_cccd: None,
+};
 
 #[test]
 fn uuids_go_on_the_wire_little_endian() {
@@ -300,7 +317,12 @@ fn finds_the_characteristics_by_uuid_wherever_they_are() {
     assert_eq!(discovered(&events), [(true, true)]);
     assert_eq!(
         client.handles(),
-        Handles { write: Some(0x004C), notify: Some(0x0042), cccd: Some(0x0043) }
+        Handles {
+            write: Some(0x004C),
+            notify: Some(0x0042),
+            cccd: Some(0x0043),
+            ..Handles::default()
+        }
     );
 }
 
@@ -596,4 +618,94 @@ fn a_device_without_the_descriptor_never_streams() {
     assert_eq!(client.subscribe(1.0).len(), 1, "refused and logged");
     assert!(client.receive(&[0x1B, 0x0A, 0x00, 1, 2, 3], 2.0).is_empty());
     assert!(client.receive(&[0x1D, 0x0A, 0x00, 1, 2, 3], 2.0).is_empty());
+}
+
+fn replying() -> Client {
+    client().with_response(uuid(RESPONSE_CHARACTERISTIC))
+}
+
+fn replies_found(events: &[Event]) -> Vec<bool> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Discovered { response, .. } => Some(*response),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn finds_the_reply_characteristic_a_real_joycon_reported() {
+    for per_response in [usize::MAX, 1] {
+        let mut server = FakeJoyCon::real().paged(per_response);
+        let mut client = replying();
+        client.discover(0.0);
+        let events = exchange(&mut client, &mut server, 0.0);
+        assert_eq!(discovered(&events), [(true, true)], "per_response {per_response}");
+        assert_eq!(replies_found(&events), [true]);
+        let want = Handles { response: Some(0x001A), response_cccd: Some(0x001B), ..REAL };
+        assert_eq!(client.handles(), want, "per_response {per_response}");
+        let searched: Vec<_> = server.requests.iter().filter(|r| r[0] == 0x04).collect();
+        assert!(searched.iter().any(|r| get16(r, 1) == 0x001B && get16(r, 3) == 0x001F));
+    }
+
+    let mut plain = client();
+    plain.discover(0.0);
+    let mut server = FakeJoyCon::real();
+    let events = exchange(&mut plain, &mut server, 0.0);
+    assert_eq!(replies_found(&events), [false], "not asked for, not searched");
+    assert!(server.requests.iter().all(|r| r[0] != 0x04 || get16(r, 1) < 0x0010));
+}
+
+#[test]
+fn a_missing_reply_characteristic_still_streams_input() {
+    let cases: [(&[u16], &str); 2] = [
+        (&[0x0019, 0x001A, 0x001B], "reply characteristic not found"),
+        (&[0x001B], "reply descriptor"),
+    ];
+    for (removed, why) in cases {
+        let mut server = FakeJoyCon::real();
+        server.attrs.retain(|(h, _)| !removed.contains(h));
+        let mut client = replying();
+        client.discover(0.0);
+        let events = exchange(&mut client, &mut server, 0.0);
+        assert_eq!(discovered(&events), [(true, true)], "{why}");
+        assert_eq!(replies_found(&events), [false], "{why}");
+        assert!(events.iter().any(|e| matches!(e, Event::Log(m) if m.contains(why))), "{events:?}");
+        assert_eq!(client.subscribe_response(1.0).len(), 1, "refused and logged");
+    }
+}
+
+#[test]
+fn replies_flow_only_after_they_are_enabled_and_the_ack_is_reported() {
+    let mut server = FakeJoyCon::real();
+    let mut client = replying();
+    client.discover(0.0);
+    exchange(&mut client, &mut server, 0.0);
+    let reply = [0x1B, 0x1A, 0x00, 0x15, 0x01];
+    assert!(client.receive(&reply, 0.5).is_empty(), "not yet enabled");
+
+    assert!(client.subscribe_response(1.0).is_empty());
+    assert!(client.subscribe(1.0).is_empty());
+    let sent = client.take_outgoing();
+    assert_eq!(sent, [vec![0x12, 0x1B, 0x00, 0x01, 0x00]], "replies first, input queued");
+    assert_eq!(client.receive(&[0x13], 1.1), [Event::ResponseSubscribed]);
+    assert_eq!(client.take_outgoing(), [vec![0x12, 0x0B, 0x00, 0x01, 0x00]]);
+    assert_eq!(client.receive(&[0x13], 1.2), [Event::Log("notifications enabled".into())]);
+
+    assert_eq!(client.receive(&reply, 2.0), [Event::Response(vec![0x15, 0x01])]);
+    let input = [0x1B, 0x0A, 0x00, 7];
+    assert_eq!(client.receive(&input, 2.0), [Event::Notification(vec![7])], "kept apart");
+}
+
+#[test]
+fn a_refused_reply_subscription_is_logged_not_reported_as_done() {
+    let mut server = FakeJoyCon::real();
+    let mut client = replying();
+    client.discover(0.0);
+    exchange(&mut client, &mut server, 0.0);
+    client.subscribe_response(1.0);
+    client.take_outgoing();
+    let events = client.receive(&[0x01, 0x12, 0x1B, 0x00, 0x03], 1.1);
+    assert_eq!(events, [Event::Log("enabling replies failed: ATT error 0x03".into())]);
 }

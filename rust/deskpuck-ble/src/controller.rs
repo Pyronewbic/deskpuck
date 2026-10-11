@@ -811,10 +811,11 @@ async fn direct_link(
     let client = Client::new(u(SERVICE), u(NOTIFY_CHARACTERISTIC), u(WRITE_CHARACTERISTIC));
     let why = crate::l2cap::run(socket, client, commands, |event| {
         let back = match event {
-            Event::Discovered { write, notify } => {
+            Event::Discovered { write, notify, .. } => {
                 Input::CharacteristicsFound { id: id.clone(), write, notify }.into()
             }
             Event::Notification(data) => Input::Notification { id: id.clone(), data }.into(),
+            Event::Response(_) | Event::ResponseSubscribed => return,
             Event::Log(message) => Back::Log(format!("{id}: {message}")),
         };
         let _ = tx.send(back);

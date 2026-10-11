@@ -314,7 +314,10 @@ mod tests {
         let why = why.await;
         joycon.join().unwrap();
         assert_eq!(why, "the Joy-Con closed the link");
-        assert!(events.contains(&Event::Discovered { write: true, notify: true }), "{events:?}");
+        assert!(
+            events.contains(&Event::Discovered { write: true, notify: true, response: false }),
+            "{events:?}"
+        );
         assert_eq!(events.last(), Some(&Event::Notification(vec![7, 8, 9])));
     }
 
