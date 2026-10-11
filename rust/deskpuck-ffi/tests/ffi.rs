@@ -2,6 +2,7 @@
 //! paths that fail before the controller thread exists.
 
 use deskpuck_ble::controller::LinkStatus;
+use deskpuck_core::pairing::HostAddress;
 use deskpuck_ffi::*;
 use std::collections::BTreeSet;
 use std::ffi::{CStr, CString, c_char, c_void};
@@ -264,7 +265,9 @@ fn window_geometry_crosses_as_the_core_decides_it() {
 fn controller_functions_tolerate_null() {
     unsafe {
         dp_controller_set_paused(ptr::null_mut(), true);
-        dp_controller_start_pairing(ptr::null_mut());
+        dp_controller_start_pairing(ptr::null_mut(), ptr::null());
+        let host = c("FC:B2:14:D1:5C:A1");
+        dp_controller_start_pairing(ptr::null_mut(), host.as_ptr());
         dp_controller_cancel_pairing(ptr::null_mut());
         assert!(!dp_controller_is_paused(ptr::null()));
         let config = c(r#"{"version": 1}"#);
@@ -351,4 +354,28 @@ fn latch_changes_reach_the_callback() {
     .expect("thread");
     assert_eq!(*LATCHES.lock().unwrap(), [(0xBEEF, 12), (0xBEEF, 0)]);
     assert!(latch_hook(None, 0).is_none());
+}
+
+#[test]
+fn only_a_well_formed_nonzero_host_address_reaches_pairing() {
+    let mac = HostAddress::parse("FC:B2:14:D1:5C:A1").unwrap();
+    let request = |text: Option<&[u8]>| {
+        let owned = text.map(|t| CString::new(t).unwrap());
+        let ptr = owned.as_ref().map_or(ptr::null(), |s| s.as_ptr());
+        unsafe { pairing_request(true, ptr) }
+    };
+    assert_eq!(request(Some(b"FC:B2:14:D1:5C:A1")).host, Some(mac));
+    assert!(request(Some(b"FC:B2:14:D1:5C:A1")).button_reconnect);
+    for unknown in [
+        None,
+        Some(&b"00:00:00:00:00:00"[..]),
+        Some(b""),
+        Some(b"FC-B2-14-D1-5C-A1"),
+        Some(b"FC:B2:14:D1:5C:A1 "),
+        Some(b"\xFF\xFE"),
+    ] {
+        assert_eq!(request(unknown).host, None, "{unknown:?}");
+    }
+    let off = unsafe { pairing_request(false, c("FC:B2:14:D1:5C:A1").as_ptr()) };
+    assert!(!off.button_reconnect, "the setting is passed through, not decided here");
 }

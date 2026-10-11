@@ -4,7 +4,7 @@ use deskpuck_ble::controller::{
     Controller, Hooks, LatchHook, LinkStatus, PairingRequest, PairingSetup, StatusHook,
 };
 use deskpuck_core::config::Config;
-use deskpuck_core::pairing::PairedDevice;
+use deskpuck_core::pairing::{HostAddress, PairedDevice};
 use deskpuck_core::release::{self, Package, Release};
 use deskpuck_core::{update, window};
 use std::ffi::{CStr, CString, c_char, c_void};
@@ -13,7 +13,7 @@ use std::path::Path;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub const DP_ABI_VERSION: u32 = 7;
+pub const DP_ABI_VERSION: u32 = 8;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -340,16 +340,33 @@ pub unsafe extern "C" fn dp_controller_is_paused(controller: *const DpController
 }
 
 /// # Safety
-/// `controller` must be NULL or a live pointer from `dp_controller_start`.
+/// `host_address` must be NULL or a NUL-terminated string valid for the call.
+pub unsafe fn pairing_request(
+    button_reconnect: bool,
+    host_address: *const c_char,
+) -> PairingRequest {
+    // SAFETY: forwarded from the caller's contract; NULL is an error here.
+    let host = unsafe { from_c(host_address) }.ok().and_then(HostAddress::parse);
+    PairingRequest { button_reconnect, host }
+}
+
+/// # Safety
+/// `controller` must be NULL or a live pointer from `dp_controller_start`;
+/// `host_address` as for `pairing_request`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn dp_controller_start_pairing(controller: *mut DpController) {
+pub unsafe extern "C" fn dp_controller_start_pairing(
+    controller: *mut DpController,
+    host_address: *const c_char,
+) {
     guard(
         || (),
         || {
             // SAFETY: live per the caller's contract.
             if let Some(c) = unsafe { controller.as_ref() } {
                 let button_reconnect = c.button_reconnect.load(Ordering::SeqCst);
-                c.controller.start_pairing(PairingRequest { button_reconnect, host: None });
+                // SAFETY: forwarded from the caller's contract.
+                c.controller
+                    .start_pairing(unsafe { pairing_request(button_reconnect, host_address) });
             }
         },
     )

@@ -1,5 +1,6 @@
 import DeskpuckFFI
 import Foundation
+import IOBluetooth
 
 /// What a button does, as config.json stores it: a bare key code, a
 /// shortcut {"key", "modifiers"}, or a modifier button {"modifier", "latch"}.
@@ -264,7 +265,13 @@ final class Controller {
         guard handle != nil, !paused else { return }
         pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
         isPairing = true
-        dp_controller_start_pairing(handle)
+        // CoreBluetooth never tells the address, and button reconnect needs it; the Rust side
+        // treats nil or zeros (Bluetooth off) as unknown.
+        if let host = IOBluetoothHostController.default()?.addressAsString() {
+            dp_controller_start_pairing(handle, host)
+        } else {
+            dp_controller_start_pairing(handle, nil)
+        }
     }
 
     func cancelPairing() {

@@ -20,6 +20,7 @@ let package = Package(
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("Foundation"),
+                .linkedFramework("IOBluetooth"),
                 .linkedLibrary("iconv"),
                 .linkedLibrary("objc"),
             ]

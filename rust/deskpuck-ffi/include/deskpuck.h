@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 7
+#define DP_ABI_VERSION 8
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -94,8 +94,11 @@ dp_controller *dp_controller_start(const char *config_json, dp_status_callback o
 void dp_controller_set_paused(dp_controller *controller, bool paused);
 bool dp_controller_is_paused(const dp_controller *controller);
 // Disconnects the current Joy-Con; the next one to connect replaces the saved
-// pairing. Ignored while paused.
-void dp_controller_start_pairing(dp_controller *controller);
+// pairing. Ignored while paused. host_address: this Mac's Bluetooth address
+// ("AA:BB:CC:DD:EE:FF"), or NULL; with buttonReconnect on, the Joy-Con learns
+// it and reconnects on a button press. Anything else, all zeros included, is
+// unknown and pairs for SYNC only.
+void dp_controller_start_pairing(dp_controller *controller, const char *host_address);
 void dp_controller_cancel_pairing(dp_controller *controller);
 // NULL on success, else the problems.
 char *dp_controller_apply_config(dp_controller *controller, const char *config_json);
