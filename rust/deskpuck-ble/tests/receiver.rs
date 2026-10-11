@@ -2,6 +2,7 @@ mod common;
 
 use common::capture::{self, ALLY, MAC};
 use deskpuck_ble::receiver::*;
+use deskpuck_ble::vendor::Addressee;
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, encode_report};
 use deskpuck_core::pairing::HostAddress;
 
@@ -15,6 +16,7 @@ fn discovered(id: u32) -> Input<u32> {
         id,
         name: Some("Joy-Con 2 (R)".into()),
         manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee: Addressee::Unknown,
     }
 }
 
@@ -28,7 +30,7 @@ fn has(out: &[Output<u32>], want: &Output<u32>) -> bool {
 
 fn paired() -> R {
     let mut r = R::default();
-    r.set_paired(Some(JOYCON.to_string()));
+    r.set_paired(Some(JOYCON.to_string()), None);
     r
 }
 
@@ -138,11 +140,24 @@ fn pause_and_resume() {
 #[test]
 fn only_joycons_are_connected_one_at_a_time() {
     let mut r = ready(false);
-    let not_nintendo = Input::Discovered { id: OTHER, name: None, manufacturer_ids: vec![0x004C] };
+    let not_nintendo = Input::Discovered {
+        id: OTHER,
+        name: None,
+        manufacturer_ids: vec![0x004C],
+        addressee: Addressee::Unknown,
+    };
     assert!(r.handle(not_nintendo, 0.0).is_empty());
     assert!(
-        r.handle(Input::Discovered { id: OTHER, name: None, manufacturer_ids: vec![] }, 0.0)
-            .is_empty()
+        r.handle(
+            Input::Discovered {
+                id: OTHER,
+                name: None,
+                manufacturer_ids: vec![],
+                addressee: Addressee::Unknown
+            },
+            0.0
+        )
+        .is_empty()
     );
 
     let out = r.handle(discovered(JOYCON), 0.0);
@@ -360,6 +375,7 @@ fn control_characters_are_removed_from_device_names() {
                 id: JOYCON,
                 name: Some(advertised.into()),
                 manufacturer_ids: vec![MANUFACTURER_ID],
+                addressee: Addressee::Unknown,
             },
             0.5,
         );
@@ -690,7 +706,12 @@ fn advertised_names_are_cleaned_and_capped() {
     let mut r = ready(false);
     let long = format!("Joy\u{202E}Con\u{200B}{}", "x".repeat(300));
     let out = r.handle(
-        Input::Discovered { id: JOYCON, name: Some(long), manufacturer_ids: vec![MANUFACTURER_ID] },
+        Input::Discovered {
+            id: JOYCON,
+            name: Some(long),
+            manufacturer_ids: vec![MANUFACTURER_ID],
+            addressee: Addressee::Unknown,
+        },
         1.0,
     );
     let shown = out.iter().find_map(|o| match o {
@@ -941,4 +962,75 @@ fn a_pairing_that_outlives_its_window_still_finishes() {
     }
     let out = r.handle(reply(&MAC, 3), PAIRING_WINDOW + 0.2);
     assert_eq!(paired_host(&out), Some(Some(HostAddress::parse(MAC.host).unwrap())));
+}
+
+fn advert(id: u32, addressee: Addressee) -> Input<u32> {
+    Input::Discovered { id, name: None, manufacturer_ids: vec![MANUFACTURER_ID], addressee }
+}
+
+fn host(t: &capture::Transcript) -> Addressee {
+    Addressee::Host(HostAddress::parse(t.host).unwrap())
+}
+
+fn connects(r: &mut R, input: Input<u32>) -> bool {
+    r.handle(input, 1.0).iter().any(|o| matches!(o, Output::Connect(_)))
+}
+
+fn vendor_paired_to(t: &capture::Transcript) -> R {
+    let mut r = R::default();
+    r.set_paired(Some(JOYCON.to_string()), Some(HostAddress::parse(t.host).unwrap()));
+    r.handle(Input::AdapterPoweredOn, 0.0);
+    r.start();
+    r
+}
+
+#[test]
+fn a_vendor_paired_joycon_connects_when_it_calls_this_host_or_is_in_sync_mode() {
+    for (addressee, want) in [
+        (host(&MAC), true),
+        (Addressee::Anyone, true),
+        (Addressee::Unknown, true),
+        (host(&ALLY), false),
+    ] {
+        let mut r = vendor_paired_to(&MAC);
+        assert_eq!(connects(&mut r, advert(JOYCON, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn a_plainly_paired_joycon_calling_some_host_is_left_alone() {
+    for (addressee, want) in [(host(&MAC), false), (Addressee::Anyone, true)] {
+        let mut r = ready(false);
+        assert_eq!(connects(&mut r, advert(JOYCON, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn a_pairing_window_takes_only_joycons_in_sync_mode() {
+    for (addressee, want) in [(host(&ALLY), false), (Addressee::Anyone, true)] {
+        let mut r = unpaired();
+        r.start_pairing(0.0, None);
+        assert_eq!(connects(&mut r, advert(OTHER, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn pairing_sets_or_clears_the_host_adverts_are_checked_against() {
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    for step in 0..4 {
+        r.handle(reply(&MAC, step), 3.2);
+    }
+    r.handle(Input::Disconnected(OTHER), 10.0);
+    r.tick(10.0 + RESCAN_AFTER_DISCONNECT);
+    assert!(connects(&mut r, advert(OTHER, host(&MAC))), "the new host is used at once");
+
+    let mut r = vendor_paired_to(&MAC);
+    r.start_pairing(0.0, None);
+    r.handle(advert(OTHER, Addressee::Anyone), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    r.handle(found(OTHER, true), 3.0);
+    r.handle(Input::Disconnected(OTHER), 10.0);
+    r.tick(10.0 + RESCAN_AFTER_DISCONNECT);
+    assert!(!connects(&mut r, advert(OTHER, host(&MAC))), "a plain pairing has no host");
 }

@@ -101,3 +101,26 @@ fn secrets_never_reach_debug_output() {
     assert!(!shown.contains(&format!("{:?}", block(MAC.a1))), "{shown}");
     assert!(!shown.contains(&format!("{:?}", block(MAC.a2))), "{shown}");
 }
+
+const SYNC_ADVERT: &str = "01 00 03 7e 05 66 20 00 01 00 00 00 00 00 00 00 0f 00 00 00 00 00 00 00";
+const MAC_ADVERT: &str = "01 00 03 7e 05 66 20 00 01 00 a1 5c d1 14 b2 fc 0f 00 00 00 00 00 00 00";
+const ALLY_ADVERT: &str = "01 00 03 7e 05 66 20 00 01 00 ea 4c 2b 60 ac 14 0f 00 00 00 00 00 00 00";
+
+#[test]
+fn reads_whom_a_real_advertisement_is_for() {
+    let host = |s| Addressee::Host(deskpuck_core::pairing::HostAddress::parse(s).unwrap());
+    assert_eq!(addressee(&bytes(SYNC_ADVERT)), Addressee::Anyone);
+    assert_eq!(addressee(&bytes(MAC_ADVERT)), host(MAC.host));
+    assert_eq!(addressee(&bytes(ALLY_ADVERT)), host(ALLY.host));
+}
+
+#[test]
+fn short_or_foreign_advertisements_say_nothing() {
+    let mac = bytes(MAC_ADVERT);
+    assert_eq!(addressee(&mac[..15]), Addressee::Unknown);
+    assert_eq!(addressee(&mac[..16]), addressee(&mac), "control: 16 bytes are enough");
+    assert_eq!(addressee(&[]), Addressee::Unknown);
+    let mut foreign = mac.clone();
+    foreign[3] = 0x4C;
+    assert_eq!(addressee(&foreign), Addressee::Unknown, "not Nintendo's vendor id");
+}

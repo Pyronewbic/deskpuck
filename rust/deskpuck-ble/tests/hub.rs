@@ -3,7 +3,7 @@ mod common;
 use common::capture::{self, MAC};
 use deskpuck_ble::controller::{Hooks, Hub, LinkStatus, PairingRequest};
 use deskpuck_ble::receiver::{Input, MANUFACTURER_ID, Output};
-use deskpuck_ble::vendor::expected_answer;
+use deskpuck_ble::vendor::{Addressee, expected_answer};
 use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::{Report, encode_report};
@@ -71,6 +71,7 @@ fn discovered() -> Input<u32> {
         id: JOYCON,
         name: Some("Joy-Con 2 (R)".into()),
         manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee: Addressee::Unknown,
     }
 }
 
@@ -189,6 +190,7 @@ fn pair_new(hub: &mut Hub<u32, RecordingSink>) {
             id: NEW,
             name: Some("New\x07Pad".into()),
             manufacturer_ids: vec![MANUFACTURER_ID],
+            addressee: Addressee::Unknown,
         },
         2.0,
     );
@@ -219,7 +221,12 @@ fn pairing_is_saved_and_survives_a_restart() {
     again.start(0.0);
     assert_eq!(again.input(Input::AdapterPoweredOn, 0.0), [Output::StartScan]);
     assert!(again.input(discovered(), 1.0).is_empty(), "the old Joy-Con is not paired");
-    let new = Input::Discovered { id: NEW, name: None, manufacturer_ids: vec![MANUFACTURER_ID] };
+    let new = Input::Discovered {
+        id: NEW,
+        name: None,
+        manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee: Addressee::Unknown,
+    };
     assert_eq!(again.input(new, 1.0), [Output::StopScan, Output::Connect(NEW)]);
     assert_eq!(rec2.statuses.lock().unwrap()[0], (LinkStatus::Searching, None));
 }
@@ -318,7 +325,12 @@ fn vendor_pair(hub: &mut Hub<u32, RecordingSink>) -> [u8; 16] {
     hub.start(0.0);
     hub.input(Input::AdapterPoweredOn, 0.0);
     hub.start_pairing(1.0, PairingRequest { button_reconnect: true, host: Some(mac_host()) });
-    let new = Input::Discovered { id: NEW, name: None, manufacturer_ids: vec![MANUFACTURER_ID] };
+    let new = Input::Discovered {
+        id: NEW,
+        name: None,
+        manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee: Addressee::Unknown,
+    };
     hub.input(new, 2.0);
     hub.input(Input::Connected(NEW), 3.0);
     let found = Input::CharacteristicsFound { id: NEW, write: true, notify: true, response: true };
@@ -370,8 +382,12 @@ fn button_reconnect_needs_the_setting_and_a_known_host() {
         hub.start(0.0);
         hub.input(Input::AdapterPoweredOn, 0.0);
         hub.start_pairing(1.0, request);
-        let new =
-            Input::Discovered { id: NEW, name: None, manufacturer_ids: vec![MANUFACTURER_ID] };
+        let new = Input::Discovered {
+            id: NEW,
+            name: None,
+            manufacturer_ids: vec![MANUFACTURER_ID],
+            addressee: Addressee::Unknown,
+        };
         hub.input(new, 2.0);
         hub.input(Input::Connected(NEW), 3.0);
         let found =
@@ -381,4 +397,24 @@ fn button_reconnect_needs_the_setting_and_a_known_host() {
         let saved = PairedDevice::load(&rec.pairing_file()).unwrap().expect("plain pairing saved");
         assert_eq!(saved.host, None, "{request:?}");
     }
+}
+
+#[test]
+fn the_saved_host_decides_which_reconnect_adverts_connect() {
+    let dir = tempfile::tempdir().unwrap();
+    let device = PairedDevice::new(&JOYCON.to_string(), None).unwrap().with_host(Some(mac_host()));
+    device.save(&dir.path().join("pairing.json")).unwrap();
+    let (mut hub, _) = hub_in(dir);
+    hub.start(0.0);
+    hub.input(Input::AdapterPoweredOn, 0.0);
+    let advert = |addressee| Input::Discovered {
+        id: JOYCON,
+        name: None,
+        manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee,
+    };
+    let other = HostAddress::parse(capture::ALLY.host).unwrap();
+    assert!(hub.input(advert(Addressee::Host(other)), 1.0).is_empty());
+    let out = hub.input(advert(Addressee::Host(mac_host())), 1.0);
+    assert_eq!(out, [Output::StopScan, Output::Connect(JOYCON)]);
 }

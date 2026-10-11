@@ -1,7 +1,7 @@
 //! The Joy-Con 2 connection logic as a state machine with no I/O: feed it inputs and the time.
 //! Timers are deadlines checked by `tick`, so tests can drive every timeout directly.
 
-use crate::vendor::{Pairing, Progress, Secrets};
+use crate::vendor::{Addressee, Pairing, Progress, Secrets};
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
 use deskpuck_core::pairing::{HostAddress, clean_name};
 use std::collections::HashMap;
@@ -77,6 +77,7 @@ pub enum Input<Id> {
         id: Id,
         name: Option<String>,
         manufacturer_ids: Vec<u16>,
+        addressee: Addressee,
     },
     Connected(Id),
     ConnectFailed(Id),
@@ -170,6 +171,8 @@ pub struct Receiver<Id> {
     link: Option<Link<Id>>,
     rescan_at: Option<f64>,
     paired: Option<String>,
+    /// Where the paired Joy-Con was vendor-paired to; it answers no other host.
+    paired_host: Option<HostAddress>,
     pairing_until: Option<f64>,
     /// Spent by the first Joy-Con to pair in this window, so its blocks are never reused.
     vendor_offer: Option<Secrets>,
@@ -186,6 +189,7 @@ impl<Id> Default for Receiver<Id> {
             link: None,
             rescan_at: None,
             paired: None,
+            paired_host: None,
             pairing_until: None,
             vendor_offer: None,
             held_elsewhere: false,
@@ -201,8 +205,9 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out
     }
 
-    pub fn set_paired(&mut self, id: Option<String>) {
+    pub fn set_paired(&mut self, id: Option<String>, host: Option<HostAddress>) {
         self.paired = id;
+        self.paired_host = host;
     }
 
     pub fn paired(&self) -> Option<&str> {
@@ -352,10 +357,16 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                 self.powered = false;
                 Self::status(&mut out, Status::BluetoothOff, None);
             }
-            Input::Discovered { id, name, manufacturer_ids } => {
+            Input::Discovered { id, name, manufacturer_ids, addressee } => {
                 // A discovery queued before the scan stopped must not start a connection.
                 let busy = self.link.is_some() || !self.connecting.is_empty();
                 if self.suspended || busy || !manufacturer_ids.contains(&MANUFACTURER_ID) {
+                    return out;
+                }
+                // A Joy-Con calling another host would refuse this one.
+                if let Addressee::Host(host) = addressee
+                    && Some(host) != self.paired_host
+                {
                     return out;
                 }
                 // Outside a pairing window only the paired Joy-Con may connect.
@@ -507,6 +518,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             self.pairing_until = None;
             self.vendor_offer = None;
             self.paired = Some(id.to_string());
+            self.paired_host = host;
             out.push(Output::Paired { id: id.clone(), name: link.name.clone(), host });
         }
         out.push(Output::Subscribe(id));

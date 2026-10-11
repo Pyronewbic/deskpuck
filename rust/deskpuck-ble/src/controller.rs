@@ -6,7 +6,7 @@ use crate::receiver::{
     Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, SERVICE, Status,
     WRITE_CHARACTERISTIC, device_name,
 };
-use crate::vendor::{RESPONSE_CHARACTERISTIC, Secrets};
+use crate::vendor::{Addressee, RESPONSE_CHARACTERISTIC, Secrets, addressee};
 use btleplug::api::{
     Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
     RetrievePeripheralsOptions, ScanFilter, WriteType,
@@ -96,7 +96,10 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         };
         if let Some(path) = &hub.pairing_file {
             match PairedDevice::load(path) {
-                Ok(device) => hub.receiver.set_paired(device.map(|d| d.id)),
+                Ok(device) => {
+                    let host = device.as_ref().and_then(|d| d.host);
+                    hub.receiver.set_paired(device.map(|d| d.id), host);
+                }
                 Err(problem) => (hub.hooks.error)(&format!("{problem}; pair the Joy-Con again.")),
             }
         }
@@ -572,8 +575,10 @@ impl Driver {
                     if let Ok(Some(props)) = peripheral.properties().await {
                         let manufacturer_ids = props.manufacturer_data.keys().copied().collect();
                         let data = props.manufacturer_data.get(&MANUFACTURER_ID);
+                        let addressee = data.map_or(Addressee::Unknown, |d| addressee(d));
                         let name = device_name(props.local_name, data.map(Vec::as_slice));
-                        let _ = tx.send(Input::Discovered { id, name, manufacturer_ids }.into());
+                        let input = Input::Discovered { id, name, manufacturer_ids, addressee };
+                        let _ = tx.send(input.into());
                     }
                 });
                 None
@@ -941,7 +946,15 @@ mod tests {
         hub.start_pairing(0.0, PairingRequest::default());
         hub.start(0.0);
         hub.input(Input::AdapterPoweredOn, 0.0);
-        hub.input(Input::Discovered { id: 7, name: None, manufacturer_ids: vec![0x0553] }, 0.1);
+        hub.input(
+            Input::Discovered {
+                id: 7,
+                name: None,
+                manufacturer_ids: vec![0x0553],
+                addressee: Addressee::Unknown,
+            },
+            0.1,
+        );
         hub.input(Input::Connected(7), 1.0);
         if let Some(input) = bluez_disconnected(7, &links) {
             hub.input(input, 1.1);

@@ -9,6 +9,32 @@ use std::fmt;
 /// Replies to command 0x15 arrive here, not on the input characteristic.
 pub const RESPONSE_CHARACTERISTIC: &str = "c765a961-d9d8-4d36-a20a-5315b111836a";
 
+/// Whom a Joy-Con 2's advertisement is for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Addressee {
+    /// Too short, or not Nintendo's: decide as if the field were absent.
+    #[default]
+    Unknown,
+    /// SYNC mode: any host may connect.
+    Anyone,
+    /// After a button press: the host it was vendor-paired to, the only one it accepts.
+    Host(HostAddress),
+}
+
+/// From manufacturer data as btleplug gives it, without the company id: the vendor id at 3,
+/// then the host address least significant byte first at 10..16, all zeros in SYNC mode.
+pub fn addressee(data: &[u8]) -> Addressee {
+    let (Some(vendor), Some(host)) = (data.get(3..5), data.get(10..16)) else {
+        return Addressee::Unknown;
+    };
+    if vendor != [0x7E, 0x05] {
+        return Addressee::Unknown;
+    }
+    let mut wire = [0u8; 6];
+    wire.copy_from_slice(host);
+    HostAddress::from_wire(wire).map_or(Addressee::Anyone, Addressee::Host)
+}
+
 const COMMAND: u8 = 0x15;
 const REPLY_HEADER: usize = 8;
 const OK: u8 = 0x01;
