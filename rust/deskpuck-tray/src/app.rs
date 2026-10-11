@@ -4,7 +4,7 @@ use crate::model::{Model, UpdateClick};
 use crate::reload::{self, summarize};
 use crate::update::{Failure, Ready};
 use crate::watch::{POLL_SECONDS, Watch};
-use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingSetup};
+use deskpuck_ble::controller::{Controller, Hooks, LinkStatus, PairingRequest, PairingSetup};
 use deskpuck_core::config::Config;
 use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::mapping::Modifiers;
@@ -257,7 +257,12 @@ pub fn run() -> ExitCode {
                             model.cancel_pairing();
                             controller.cancel_pairing();
                         } else if model.start_pairing(now) {
-                            controller.start_pairing();
+                            // Read at the click, so a change in the settings window counts.
+                            let button_reconnect = config_path
+                                .as_deref()
+                                .is_some_and(|path| Config::load(path).0.button_reconnect);
+                            controller
+                                .start_pairing(PairingRequest { button_reconnect, host: None });
                         }
                     } else if id == *items.pause.id() {
                         let paused = !model.paused();
@@ -323,7 +328,7 @@ fn start_controller<S: deskpuck_inject::Sink + Send + 'static>(
         error: Box::new(move |message| error.send(Event::Note(message.to_owned()))),
         latched: Some(Box::new(move |m| latched.send(Event::Latched(m)))),
     };
-    let pairing = PairingSetup { file: PairedDevice::default_path(), pair_at_start: false };
+    let pairing = PairingSetup { file: PairedDevice::default_path(), pair_at_start: None };
     Controller::start(settings, sink, hooks, pairing).map_err(|e| format!("Could not start: {e}"))
 }
 

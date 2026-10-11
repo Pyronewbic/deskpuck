@@ -1,8 +1,9 @@
 //! The Joy-Con 2 connection logic as a state machine with no I/O: feed it inputs and the time.
 //! Timers are deadlines checked by `tick`, so tests can drive every timeout directly.
 
+use crate::vendor::{Pairing, Progress, Secrets};
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, parse_report};
-use deskpuck_core::pairing::clean_name;
+use deskpuck_core::pairing::{HostAddress, clean_name};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -35,6 +36,8 @@ pub const INIT_SPACING: f64 = 0.5;
 /// Mac app always has; some connections only start streaming on the second.
 pub const RESUBSCRIBE_DELAY: f64 = 2.0;
 pub const PAIRING_WINDOW: f64 = 60.0;
+/// A real Joy-Con answers each vendor pairing step within 0.1 s.
+pub const VENDOR_STEP_TIMEOUT: f64 = 3.0;
 
 /// A name from manufacturer data (Nintendo's vendor id, then the product id), for before the
 /// scan response carrying the advertised name arrives.
@@ -70,12 +73,31 @@ pub enum Status {
 pub enum Input<Id> {
     AdapterPoweredOn,
     AdapterPoweredOff,
-    Discovered { id: Id, name: Option<String>, manufacturer_ids: Vec<u16> },
+    Discovered {
+        id: Id,
+        name: Option<String>,
+        manufacturer_ids: Vec<u16>,
+    },
     Connected(Id),
     ConnectFailed(Id),
     Disconnected(Id),
-    CharacteristicsFound { id: Id, write: bool, notify: bool },
-    Notification { id: Id, data: Vec<u8> },
+    /// `response`: the characteristic the Joy-Con answers commands on.
+    CharacteristicsFound {
+        id: Id,
+        write: bool,
+        notify: bool,
+        response: bool,
+    },
+    Notification {
+        id: Id,
+        data: Vec<u8>,
+    },
+    /// The Joy-Con acknowledged enabling replies.
+    ResponseSubscribed(Id),
+    Response {
+        id: Id,
+        data: Vec<u8>,
+    },
     SystemConnected(Vec<Id>),
 }
 
@@ -87,10 +109,35 @@ pub enum Output<Id> {
     Disconnect(Id),
     DiscoverServices(Id),
     Subscribe(Id),
-    Write { id: Id, data: Vec<u8> },
-    Status { status: Status, name: Option<String> },
-    Report { report: Report, data: Vec<u8> },
-    Paired { id: Id, name: Option<String> },
+    SubscribeResponse(Id),
+    Write {
+        id: Id,
+        data: Vec<u8>,
+    },
+    Status {
+        status: Status,
+        name: Option<String>,
+    },
+    Report {
+        report: Report,
+        data: Vec<u8>,
+    },
+    /// `host`: the Joy-Con was vendor-paired to it and reconnects on a button press.
+    Paired {
+        id: Id,
+        name: Option<String>,
+        host: Option<HostAddress>,
+    },
+    Log(String),
+}
+
+#[derive(Debug)]
+struct VendorRun {
+    pairing: Pairing,
+    host: HostAddress,
+    /// Nothing is written until the Joy-Con acknowledged enabling replies.
+    subscribed: bool,
+    deadline: f64,
 }
 
 #[derive(Debug)]
@@ -103,6 +150,7 @@ struct Link<Id> {
     pairing: bool,
     /// Both characteristics were found; until then no report becomes input.
     confirmed: bool,
+    vendor: Option<VendorRun>,
 }
 
 #[derive(Debug)]
@@ -123,6 +171,8 @@ pub struct Receiver<Id> {
     rescan_at: Option<f64>,
     paired: Option<String>,
     pairing_until: Option<f64>,
+    /// Spent by the first Joy-Con to pair in this window, so its blocks are never reused.
+    vendor_offer: Option<Secrets>,
     held_elsewhere: bool,
 }
 
@@ -137,6 +187,7 @@ impl<Id> Default for Receiver<Id> {
             rescan_at: None,
             paired: None,
             pairing_until: None,
+            vendor_offer: None,
             held_elsewhere: false,
         }
     }
@@ -176,12 +227,14 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
 
     /// Opens a pairing window, letting go of any Joy-Con linked now so a new
     /// one can connect. Ignored while suspended, which never connects.
-    pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
+    /// With `vendor`, the Joy-Con is also asked to reconnect to that host on a button press.
+    pub fn start_pairing(&mut self, now: f64, vendor: Option<Secrets>) -> Vec<Output<Id>> {
         let mut out = Vec::new();
         if self.suspended {
             return out;
         }
         self.pairing_until = Some(now + PAIRING_WINDOW);
+        self.vendor_offer = vendor;
         self.held_elsewhere = false;
         let dropped: Vec<Id> = self.connecting.drain().map(|(id, _)| id).collect();
         out.extend(dropped.into_iter().map(Output::Disconnect));
@@ -199,6 +252,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
     /// Closes the pairing window, dropping an accepted Joy-Con not yet confirmed, even one still finishing.
     pub fn cancel_pairing(&mut self) -> Vec<Output<Id>> {
         let mut out = Vec::new();
+        self.vendor_offer = None;
         let window_open = self.pairing_until.take().is_some();
         if !self.drop_unconfirmed(&mut out) && !window_open {
             return out;
@@ -336,6 +390,7 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     resubscribe_at: None,
                     pairing,
                     confirmed: false,
+                    vendor: None,
                 });
                 Self::status(&mut out, Status::Connected, name);
                 out.push(Output::DiscoverServices(id));
@@ -359,26 +414,58 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
                     self.rescan_at = Some(now + RESCAN_AFTER_FAILURE);
                 }
             }
-            Input::CharacteristicsFound { id, write, notify } => {
+            Input::CharacteristicsFound { id, write, notify, response } => {
                 let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
-                if !(write && notify) {
+                if !(write && notify) || link.vendor.is_some() {
                     // Without both there is no data, and the data timeout reconnects.
                     return out;
                 }
-                link.confirmed = true;
-                if link.pairing {
-                    link.pairing = false;
-                    self.pairing_until = None;
-                    self.paired = Some(id.to_string());
-                    out.push(Output::Paired { id: id.clone(), name: link.name.clone() });
+                if link.pairing
+                    && let Some(secrets) = self.vendor_offer.take()
+                {
+                    if response {
+                        let host = secrets.host;
+                        let pairing = Pairing::new(secrets);
+                        let deadline = now + VENDOR_STEP_TIMEOUT;
+                        link.vendor =
+                            Some(VendorRun { pairing, host, subscribed: false, deadline });
+                        out.push(Output::SubscribeResponse(id));
+                        return out;
+                    }
+                    out.push(Output::Log("no reply characteristic; pairing for SYNC only".into()));
                 }
-                out.push(Output::Subscribe(id));
-                link.pending_writes = INIT_COMMANDS
-                    .iter()
-                    .enumerate()
-                    .map(|(i, cmd)| (now + INIT_DELAY + i as f64 * INIT_SPACING, cmd.to_vec()))
-                    .collect();
-                link.resubscribe_at = Some(now + RESUBSCRIBE_DELAY);
+                self.confirm(None, now, &mut out);
+            }
+            Input::ResponseSubscribed(id) => {
+                let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
+                let Some(run) = link.vendor.as_mut().filter(|run| !run.subscribed) else {
+                    return out;
+                };
+                run.subscribed = true;
+                run.deadline = now + VENDOR_STEP_TIMEOUT;
+                out.push(Output::Write { id, data: run.pairing.first() });
+            }
+            Input::Response { id, data } => {
+                let Some(link) = self.link.as_mut().filter(|l| l.id == id) else { return out };
+                let Some(run) = link.vendor.as_mut().filter(|run| run.subscribed) else {
+                    return out;
+                };
+                match run.pairing.receive(&data) {
+                    Progress::Ignored => {}
+                    Progress::Send(data) => {
+                        run.deadline = now + VENDOR_STEP_TIMEOUT;
+                        out.push(Output::Write { id, data });
+                    }
+                    Progress::Done => {
+                        let host = run.host;
+                        out.push(Output::Log(format!("vendor-paired to {host}")));
+                        self.confirm(Some(host), now, &mut out);
+                    }
+                    Progress::Failed(why) => {
+                        out.push(Output::Log(format!("vendor pairing failed: {why}")));
+                        self.confirm(None, now, &mut out);
+                    }
+                }
             }
             Input::SystemConnected(ids) => {
                 if !self.wants_presence_check() {
@@ -407,6 +494,30 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         out
     }
 
+    /// Starts streaming from the link, and finishes its pairing if it was pairing.
+    fn confirm(&mut self, host: Option<HostAddress>, now: f64, out: &mut Vec<Output<Id>>) {
+        let Some(link) = self.link.as_mut() else { return };
+        let id = link.id.clone();
+        if link.vendor.take().is_some() {
+            link.data_deadline = now + DATA_TIMEOUT;
+        }
+        link.confirmed = true;
+        if link.pairing {
+            link.pairing = false;
+            self.pairing_until = None;
+            self.vendor_offer = None;
+            self.paired = Some(id.to_string());
+            out.push(Output::Paired { id: id.clone(), name: link.name.clone(), host });
+        }
+        out.push(Output::Subscribe(id));
+        link.pending_writes = INIT_COMMANDS
+            .iter()
+            .enumerate()
+            .map(|(i, cmd)| (now + INIT_DELAY + i as f64 * INIT_SPACING, cmd.to_vec()))
+            .collect();
+        link.resubscribe_at = Some(now + RESUBSCRIBE_DELAY);
+    }
+
     pub fn tick(&mut self, now: f64) -> Vec<Output<Id>> {
         let mut out = Vec::new();
 
@@ -426,7 +537,14 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
         // A Joy-Con already accepted by the window may still finish connecting.
         if self.pairing_until.is_some_and(|until| until <= now) {
             self.pairing_until = None;
+            self.vendor_offer = None;
             self.pairing_ended(&mut out);
+        }
+
+        if self.link.as_ref().and_then(|l| l.vendor.as_ref()).is_some_and(|run| run.deadline <= now)
+        {
+            out.push(Output::Log("vendor pairing failed: no reply in time".into()));
+            self.confirm(None, now, &mut out);
         }
 
         if let Some(link) = self.link.as_mut() {

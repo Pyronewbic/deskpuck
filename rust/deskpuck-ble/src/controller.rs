@@ -6,6 +6,7 @@ use crate::receiver::{
     Input, MANUFACTURER_ID, NOTIFY_CHARACTERISTIC, Output, Receiver, SERVICE, Status,
     WRITE_CHARACTERISTIC, device_name,
 };
+use crate::vendor::{RESPONSE_CHARACTERISTIC, Secrets};
 use btleplug::api::{
     Central, CentralEvent, CentralState, Characteristic, Manager as _, Peripheral as _,
     RetrievePeripheralsOptions, ScanFilter, WriteType,
@@ -14,7 +15,7 @@ use btleplug::platform::{Adapter, Manager, PeripheralId};
 use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::packet::Report;
-use deskpuck_core::pairing::PairedDevice;
+use deskpuck_core::pairing::{HostAddress, PairedDevice};
 use deskpuck_inject::Sink;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -110,9 +111,28 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         self.receiver.wants_presence_check()
     }
 
-    pub fn start_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
-        let out = self.receiver.start_pairing(now);
+    pub fn start_pairing(&mut self, now: f64, request: PairingRequest) -> Vec<Output<Id>> {
+        let vendor = request.button_reconnect.then(|| self.secrets(request.host)).flatten();
+        let out = self.receiver.start_pairing(now, vendor);
         self.route(out, now)
+    }
+
+    fn secrets(&self, host: Option<HostAddress>) -> Option<Secrets> {
+        let Some(host) = host else {
+            (self.hooks.error)(
+                "This computer's Bluetooth address is unknown, so the Joy-Con cannot learn to \
+                 reconnect on a button press; hold SYNC to reconnect it.",
+            );
+            return None;
+        };
+        let (mut a1, mut a2) = ([0u8; 16], [0u8; 16]);
+        if let Err(e) = getrandom::fill(&mut a1).and_then(|()| getrandom::fill(&mut a2)) {
+            (self.hooks.error)(&format!(
+                "No randomness for button-press reconnect ({e}); hold SYNC to reconnect it."
+            ));
+            return None;
+        }
+        Some(Secrets { host, a1, a2 })
     }
 
     pub fn cancel_pairing(&mut self, now: f64) -> Vec<Output<Id>> {
@@ -218,7 +238,8 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
                         (self.hooks.error)(&e.to_string());
                     }
                 }
-                Output::Paired { id, name } => self.remember(&id, name.as_deref()),
+                Output::Paired { id, name, host } => self.remember(&id, name.as_deref(), host),
+                Output::Log(message) => self.log(|| message),
                 command => commands.push(command),
             }
         }
@@ -226,10 +247,11 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
         commands
     }
 
-    fn remember(&self, id: &Id, name: Option<&str>) {
+    fn remember(&self, id: &Id, name: Option<&str>, host: Option<HostAddress>) {
         self.log(|| format!("paired with {id}"));
         let Some(path) = &self.pairing_file else { return };
-        let Some(device) = PairedDevice::new(&id.to_string(), name) else {
+        let Some(device) = PairedDevice::new(&id.to_string(), name).map(|d| d.with_host(host))
+        else {
             (self.hooks.error)("This Joy-Con's id cannot be saved; it stays paired until quit.");
             return;
         };
@@ -242,15 +264,23 @@ impl<Id: Clone + Eq + Hash + Display, S: Sink> Hub<Id, S> {
 enum Command {
     SetPaused(bool),
     Apply(EngineSettings),
-    StartPairing,
+    StartPairing(PairingRequest),
     CancelPairing,
     Shutdown,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PairingRequest {
+    /// The `buttonReconnect` setting.
+    pub button_reconnect: bool,
+    /// This computer's address when the caller knows it; otherwise the adapter is asked.
+    pub host: Option<HostAddress>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct PairingSetup {
     pub file: Option<PathBuf>,
-    pub pair_at_start: bool,
+    pub pair_at_start: Option<PairingRequest>,
 }
 
 /// A running connection. Dropping it releases held input, disconnects the
@@ -291,8 +321,8 @@ impl Controller {
         let _ = self.tx.send(Command::Apply(settings));
     }
 
-    pub fn start_pairing(&self) {
-        let _ = self.tx.send(Command::StartPairing);
+    pub fn start_pairing(&self, request: PairingRequest) {
+        let _ = self.tx.send(Command::StartPairing(request));
     }
 
     pub fn cancel_pairing(&self) {
@@ -320,7 +350,7 @@ async fn idle<S: Sink>(
                 hub.set_paused(paused, start.elapsed().as_secs_f64());
             }
             Command::Apply(settings) => hub.apply_settings(settings),
-            Command::StartPairing | Command::CancelPairing => {}
+            Command::StartPairing(_) | Command::CancelPairing => {}
             Command::Shutdown => break,
         }
     }
@@ -330,7 +360,7 @@ async fn idle<S: Sink>(
 async fn run<S: Sink>(
     mut hub: Hub<PeripheralId, S>,
     mut rx: UnboundedReceiver<Command>,
-    pair_at_start: bool,
+    pair_at_start: Option<PairingRequest>,
 ) {
     let start = Instant::now();
     let now = || start.elapsed().as_secs_f64();
@@ -379,7 +409,13 @@ async fn run<S: Sink>(
     };
 
     // Before the first status, so a pairing run never reports NotPaired first.
-    let mut commands = if pair_at_start { hub.start_pairing(now()) } else { Vec::new() };
+    let mut commands = match pair_at_start {
+        Some(request) => {
+            let request = with_adapter_address(request, &adapter).await;
+            hub.start_pairing(now(), request)
+        }
+        None => Vec::new(),
+    };
     commands.extend(hub.start(now()));
     match adapter.adapter_state().await {
         Ok(CentralState::PoweredOn) => commands.extend(hub.input(Input::AdapterPoweredOn, now())),
@@ -400,7 +436,10 @@ async fn run<S: Sink>(
                     hub.apply_settings(settings);
                     Vec::new()
                 }
-                Some(Command::StartPairing) => hub.start_pairing(now()),
+                Some(Command::StartPairing(request)) => {
+                    let request = with_adapter_address(request, &adapter).await;
+                    hub.start_pairing(now(), request)
+                }
                 Some(Command::CancelPairing) => hub.cancel_pairing(now()),
                 Some(Command::Shutdown) | None => break,
             },
@@ -433,9 +472,28 @@ async fn run<S: Sink>(
     }
 }
 
+/// BlueZ and WinRT know the adapter's address; CoreBluetooth does not, so the Mac app passes it.
+async fn with_adapter_address(mut request: PairingRequest, adapter: &Adapter) -> PairingRequest {
+    if request.button_reconnect && request.host.is_none() {
+        request.host = adapter.adapter_address().await.ok().flatten().and_then(|address| {
+            let mut wire = address.into_inner();
+            wire.reverse();
+            HostAddress::from_wire(wire)
+        });
+    }
+    request
+}
+
 const PRESENCE_POLL: Duration = Duration::from_secs(3);
 
-type Characteristics = Arc<Mutex<HashMap<PeripheralId, (Characteristic, Characteristic)>>>;
+#[derive(Clone)]
+struct Found {
+    write: Characteristic,
+    notify: Characteristic,
+    response: Option<Characteristic>,
+}
+
+type Characteristics = Arc<Mutex<HashMap<PeripheralId, Found>>>;
 
 #[cfg(windows)]
 type FastLinks = Arc<Mutex<HashMap<PeripheralId, Option<crate::winrt::FastLink>>>>;
@@ -613,22 +671,25 @@ impl Driver {
                     let found = p.characteristics();
                     let find = |want: &str| found.iter().find(|c| c.uuid == uuid(want)).cloned();
                     let (write, notify) = (find(WRITE_CHARACTERISTIC), find(NOTIFY_CHARACTERISTIC));
-                    let both = (write.is_some(), notify.is_some());
-                    if let (Some(w), Some(n)) = (write, notify)
+                    let response = find(RESPONSE_CHARACTERISTIC);
+                    let (has_write, has_notify) = (write.is_some(), notify.is_some());
+                    let has_response = response.is_some();
+                    if let (Some(write), Some(notify)) = (write, notify)
                         && let Ok(mut map) = characteristics.lock()
                     {
-                        map.insert(id.clone(), (w, n));
+                        map.insert(id.clone(), Found { write, notify, response });
                     }
-                    let found = Input::CharacteristicsFound { id, write: both.0, notify: both.1 };
+                    let found = Input::CharacteristicsFound {
+                        id,
+                        write: has_write,
+                        notify: has_notify,
+                        response: has_response,
+                    };
                     let _ = tx.send(found.into());
                 });
             }
             Output::Subscribe(id) => {
-                let Some((write, notify)) =
-                    self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
-                else {
-                    return;
-                };
+                let Some(Found { write, notify, .. }) = self.found(id) else { return };
                 hub.log(|| {
                     format!(
                         "services: write {}, notify {}",
@@ -636,22 +697,7 @@ impl Driver {
                     )
                 });
                 let Ok(peripheral) = self.adapter.peripheral(id).await else { return };
-                if !self.streams.contains_key(id) {
-                    // One reader per connection, started before notifications are enabled.
-                    let (p, tx, id2, want) =
-                        (peripheral.clone(), self.tx.clone(), id.clone(), notify.uuid);
-                    let reader = tokio::spawn(async move {
-                        let Ok(mut stream) = p.notifications().await else { return };
-                        while let Some(n) = stream.next().await {
-                            if n.uuid == want {
-                                let _ = tx.send(
-                                    Input::Notification { id: id2.clone(), data: n.value }.into(),
-                                );
-                            }
-                        }
-                    });
-                    self.streams.insert(id.clone(), reader);
-                }
+                self.read_notifications(id, &peripheral);
                 hub.log(|| "enabling notifications".into());
                 #[cfg(windows)]
                 if let Some(ms) = self.fast_link_interval(id) {
@@ -661,13 +707,24 @@ impl Driver {
                     let _ = peripheral.subscribe(&notify).await;
                 });
             }
+            Output::SubscribeResponse(id) => {
+                let Some(response) = self.found(id).and_then(|f| f.response) else { return };
+                let Ok(peripheral) = self.adapter.peripheral(id).await else { return };
+                self.read_notifications(id, &peripheral);
+                hub.log(|| "enabling replies".into());
+                let (tx, id) = (self.tx.clone(), id.clone());
+                tokio::spawn(async move {
+                    // Resolves once the Joy-Con acknowledged, so a command sent next is answered.
+                    let back = match peripheral.subscribe(&response).await {
+                        Ok(()) => Input::ResponseSubscribed(id).into(),
+                        Err(e) => Back::Log(format!("enabling replies failed: {e}")),
+                    };
+                    let _ = tx.send(back);
+                });
+            }
             Output::Write { id, data } => {
-                let Some((write, _)) =
-                    self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
-                else {
-                    return;
-                };
-                hub.log(|| format!("init command {data:02X?}"));
+                let Some(Found { write, .. }) = self.found(id) else { return };
+                hub.log(|| format!("write {data:02X?}"));
                 let (adapter, id, data) = (self.adapter.clone(), id.clone(), data.clone());
                 tokio::spawn(async move {
                     if let Ok(p) = adapter.peripheral(&id).await {
@@ -675,8 +732,44 @@ impl Driver {
                     }
                 });
             }
-            Output::Status { .. } | Output::Report { .. } | Output::Paired { .. } => {}
+            Output::Status { .. }
+            | Output::Report { .. }
+            | Output::Paired { .. }
+            | Output::Log(_) => {}
         }
+    }
+
+    fn found(&self, id: &PeripheralId) -> Option<Found> {
+        self.characteristics.lock().ok().and_then(|m| m.get(id).cloned())
+    }
+
+    /// One reader per connection, started before notifications are enabled; input and replies
+    /// come through the same stream and are told apart by characteristic.
+    fn read_notifications(
+        &mut self,
+        id: &PeripheralId,
+        peripheral: &btleplug::platform::Peripheral,
+    ) {
+        if self.streams.contains_key(id) {
+            return;
+        }
+        let (p, tx, id2) = (peripheral.clone(), self.tx.clone(), id.clone());
+        let (input, reply) = (uuid(NOTIFY_CHARACTERISTIC), uuid(RESPONSE_CHARACTERISTIC));
+        let reader = tokio::spawn(async move {
+            let Ok(mut stream) = p.notifications().await else { return };
+            while let Some(n) = stream.next().await {
+                let (id, data) = (id2.clone(), n.value);
+                let back = if n.uuid == input {
+                    Input::Notification { id, data }
+                } else if n.uuid == reply {
+                    Input::Response { id, data }
+                } else {
+                    continue;
+                };
+                let _ = tx.send(back.into());
+            }
+        });
+        self.streams.insert(id.clone(), reader);
     }
 }
 
@@ -761,8 +854,12 @@ impl Driver {
                 hub.log(|| "enabling notifications".into());
                 send(&self.links, id, Command::Subscribe);
             }
+            Output::SubscribeResponse(id) => {
+                hub.log(|| "enabling replies".into());
+                send(&self.links, id, Command::SubscribeResponse);
+            }
             Output::Write { id, data } => {
-                hub.log(|| format!("init command {data:02X?}"));
+                hub.log(|| format!("write {data:02X?}"));
                 send(&self.links, id, Command::Write(data.clone()));
             }
             _ => return false,
@@ -808,14 +905,16 @@ async fn direct_link(
     };
     let _ = tx.send(Input::Connected(id.clone()).into());
     let u = |s| uuid_le(s).unwrap_or_default();
-    let client = Client::new(u(SERVICE), u(NOTIFY_CHARACTERISTIC), u(WRITE_CHARACTERISTIC));
+    let client = Client::new(u(SERVICE), u(NOTIFY_CHARACTERISTIC), u(WRITE_CHARACTERISTIC))
+        .with_response(u(RESPONSE_CHARACTERISTIC));
     let why = crate::l2cap::run(socket, client, commands, |event| {
         let back = match event {
-            Event::Discovered { write, notify, .. } => {
-                Input::CharacteristicsFound { id: id.clone(), write, notify }.into()
+            Event::Discovered { write, notify, response } => {
+                Input::CharacteristicsFound { id: id.clone(), write, notify, response }.into()
             }
             Event::Notification(data) => Input::Notification { id: id.clone(), data }.into(),
-            Event::Response(_) | Event::ResponseSubscribed => return,
+            Event::Response(data) => Input::Response { id: id.clone(), data }.into(),
+            Event::ResponseSubscribed => Input::ResponseSubscribed(id.clone()).into(),
             Event::Log(message) => Back::Log(format!("{id}: {message}")),
         };
         let _ = tx.send(back);
@@ -839,7 +938,7 @@ mod tests {
 
         // The race: a stale BlueZ signal arriving after the link came up.
         let mut hub = hub_logging_to(Arc::default());
-        hub.start_pairing(0.0);
+        hub.start_pairing(0.0, PairingRequest::default());
         hub.start(0.0);
         hub.input(Input::AdapterPoweredOn, 0.0);
         hub.input(Input::Discovered { id: 7, name: None, manufacturer_ids: vec![0x0553] }, 0.1);
@@ -871,11 +970,11 @@ mod tests {
 
         // A pairing window gives powering on something to do: start scanning.
         let mut direct = hub_logging_to(Arc::default());
-        direct.start_pairing(0.0);
+        direct.start_pairing(0.0, PairingRequest::default());
         direct.start(0.0);
         let want = direct.input(Input::AdapterPoweredOn, 0.0);
         assert_eq!(want, [Output::StartScan], "control");
-        hub.start_pairing(0.0);
+        hub.start_pairing(0.0, PairingRequest::default());
         hub.start(0.0);
         assert_eq!(deliver(&mut hub, Input::AdapterPoweredOn.into(), 0.0), want);
     }

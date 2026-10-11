@@ -857,6 +857,7 @@ dependencies = [
  "deskpuck-inject",
  "embed-resource",
  "futures",
+ "getrandom 0.4.3",
  "libc",
  "tempfile",
  "tokio",

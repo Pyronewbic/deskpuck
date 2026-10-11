@@ -145,6 +145,7 @@ pub async fn connect_retrying<T, F: Future<Output = io::Result<T>>>(
 pub enum Command {
     Discover,
     Subscribe,
+    SubscribeResponse,
     Write(Vec<u8>),
 }
 
@@ -217,6 +218,7 @@ pub async fn run(
                     Vec::new()
                 }
                 Some(Command::Subscribe) => client.subscribe(now()),
+                Some(Command::SubscribeResponse) => client.subscribe_response(now()),
                 Some(Command::Write(data)) => client.write(&data),
                 None => return "closed by Deskpuck".into(),
             },
