@@ -57,6 +57,7 @@ fn round_trip() {
         scroll_enabled: false,
         appearance: Appearance::Dark,
         check_updates: false,
+        button_reconnect: true,
     };
     let (back, warnings) = Config::from_json(&config.to_json().expect("valid config serializes"));
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -196,6 +197,15 @@ fn other_fields() {
     for bad in ["0", r#""false""#, r#""true""#, "null"] {
         let (c, w) = parse(&format!(r#"{{"version": 1, "checkUpdates": {bad}}}"#));
         assert!(!c.check_updates && warned(&w, "checkUpdates"), "{bad}");
+    }
+
+    // Off by default and on a bad value: it unpairs the Joy-Con from a Switch 2.
+    assert!(!Config::default().button_reconnect);
+    let (c, w) = parse(r#"{"version": 1, "buttonReconnect": true}"#);
+    assert!(c.button_reconnect && w.is_empty(), "{w:?}");
+    for bad in ["1", r#""true""#, "null", "[]"] {
+        let (c, w) = parse(&format!(r#"{{"version": 1, "buttonReconnect": {bad}}}"#));
+        assert!(!c.button_reconnect && warned(&w, "buttonReconnect"), "{bad}");
     }
 
     for appearance in Appearance::ALL {

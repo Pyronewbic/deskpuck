@@ -213,6 +213,14 @@ struct SettingsView: View {
         }
 
         Section {
+            Toggle("Reconnect with a button press", isOn: $model.buttonReconnect)
+        } header: {
+            Text("Joy-Con")
+        } footer: {
+            Text("Takes effect when you pair a Joy-Con. It then reconnects when you press a button, without SYNC, but is unpaired from a Switch 2: attach it to the console to use it there again.")
+        }
+
+        Section {
             Toggle("Check for updates daily", isOn: $model.checkUpdates)
         } header: {
             Text("Updates")

@@ -11,6 +11,8 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 - **Update Available** in the menu on every platform: once a day Deskpuck asks github.com for the latest release, and choosing the line opens the release page. Turn it off under **General > Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`. On Linux, installs under `/usr` (such as the AUR package) are told to update through their package manager.
 - **Update to X.Y.Z** in the menu installs the update for you: Deskpuck downloads it, checks its minisign signature and checksum, installs it and restarts, keeping Accessibility on the Mac. Portable copies keep opening the release page, and `/usr` installs keep using the package manager.
 
+- **Reconnect with a button press** under **General > Joy-Con** in Settings: a Joy-Con paired with it on reconnects when you press a button, without SYNC. It unpairs the Joy-Con from a Switch 2.
+
 ### Changed
 
 - Settings has two tabs, **Buttons** and **General**, with the buttons in two columns, so the window fits a laptop screen.

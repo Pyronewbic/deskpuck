@@ -1,18 +1,19 @@
 //! Settings cross as JSON so the Rust validator stays the only one.
 
 use deskpuck_ble::controller::{
-    Controller, Hooks, LatchHook, LinkStatus, PairingSetup, StatusHook,
+    Controller, Hooks, LatchHook, LinkStatus, PairingRequest, PairingSetup, StatusHook,
 };
 use deskpuck_core::config::Config;
-use deskpuck_core::pairing::PairedDevice;
+use deskpuck_core::pairing::{HostAddress, PairedDevice};
 use deskpuck_core::release::{self, Package, Release};
 use deskpuck_core::{update, window};
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub const DP_ABI_VERSION: u32 = 7;
+pub const DP_ABI_VERSION: u32 = 9;
 
 pub type StatusCallback =
     extern "C" fn(context: *mut c_void, status: i32, device_name: *const c_char);
@@ -30,6 +31,7 @@ pub fn status_code(status: LinkStatus) -> i32 {
         LinkStatus::NotPaired => 6,
         LinkStatus::Pairing => 7,
         LinkStatus::InUseElsewhere => 8,
+        LinkStatus::AwaitingButton => 9,
     }
 }
 
@@ -274,6 +276,8 @@ pub unsafe extern "C" fn dp_release_verify(
 
 pub struct DpController {
     controller: Controller,
+    /// The buttonReconnect setting as last started or applied.
+    button_reconnect: AtomicBool,
 }
 
 /// # Safety
@@ -302,9 +306,12 @@ pub unsafe extern "C" fn dp_controller_start(
         let sink = deskpuck_inject::macos::MacSink::unchecked();
         #[cfg(not(target_os = "macos"))]
         let Ok(sink) = deskpuck_inject::platform_sink() else { return ptr::null_mut() };
-        let pairing = PairingSetup { file: PairedDevice::default_path(), pair_at_start: false };
+        let pairing = PairingSetup { file: PairedDevice::default_path(), pair_at_start: None };
+        let button_reconnect = AtomicBool::new(config.button_reconnect);
         match Controller::start(config.engine_settings(), sink, hooks, pairing) {
-            Ok(controller) => Box::into_raw(Box::new(DpController { controller })),
+            Ok(controller) => {
+                Box::into_raw(Box::new(DpController { controller, button_reconnect }))
+            }
             Err(_) => ptr::null_mut(),
         }
     })
@@ -334,15 +341,33 @@ pub unsafe extern "C" fn dp_controller_is_paused(controller: *const DpController
 }
 
 /// # Safety
-/// `controller` must be NULL or a live pointer from `dp_controller_start`.
+/// `host_address` must be NULL or a NUL-terminated string valid for the call.
+pub unsafe fn pairing_request(
+    button_reconnect: bool,
+    host_address: *const c_char,
+) -> PairingRequest {
+    // SAFETY: forwarded from the caller's contract; NULL is an error here.
+    let host = unsafe { from_c(host_address) }.ok().and_then(HostAddress::parse);
+    PairingRequest { button_reconnect, host }
+}
+
+/// # Safety
+/// `controller` must be NULL or a live pointer from `dp_controller_start`;
+/// `host_address` as for `pairing_request`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn dp_controller_start_pairing(controller: *mut DpController) {
+pub unsafe extern "C" fn dp_controller_start_pairing(
+    controller: *mut DpController,
+    host_address: *const c_char,
+) {
     guard(
         || (),
         || {
             // SAFETY: live per the caller's contract.
             if let Some(c) = unsafe { controller.as_ref() } {
-                c.controller.start_pairing();
+                let button_reconnect = c.button_reconnect.load(Ordering::SeqCst);
+                // SAFETY: forwarded from the caller's contract.
+                c.controller
+                    .start_pairing(unsafe { pairing_request(button_reconnect, host_address) });
             }
         },
     )
@@ -380,6 +405,7 @@ pub unsafe extern "C" fn dp_controller_apply_config(
             // SAFETY: forwarded from the caller's contract.
             match unsafe { from_c(config_json) }.map_err(|e| vec![e]).and_then(parse_config) {
                 Ok(config) => {
+                    c.button_reconnect.store(config.button_reconnect, Ordering::SeqCst);
                     c.controller.apply_settings(config.engine_settings());
                     ptr::null_mut()
                 }

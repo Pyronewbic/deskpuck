@@ -1,5 +1,6 @@
 import DeskpuckFFI
 import Foundation
+import IOBluetooth
 
 /// What a button does, as config.json stores it: a bare key code, a
 /// shortcut {"key", "modifiers"}, or a modifier button {"modifier", "latch"}.
@@ -49,6 +50,7 @@ struct DeskpuckConfig: Codable, Equatable {
     var scrollEnabled: Bool
     var appearance: String
     var checkUpdates: Bool
+    var buttonReconnect: Bool
 }
 
 struct ReleasePlan: Decodable {
@@ -100,7 +102,7 @@ enum Core {
 
     static var defaults: DeskpuckConfig {
         decode(DeskpuckConfig.self, take(dp_config_defaults()))
-            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true)
+            ?? DeskpuckConfig(keyMappings: [:], pointerSpeed: 1, repeatDelay: 0.4, repeatInterval: 0.06, scrollEnabled: true, appearance: "system", checkUpdates: true, buttonReconnect: false)
     }
 
     static func load(from url: URL) -> (DeskpuckConfig, [String]) {
@@ -170,7 +172,7 @@ enum Core {
 }
 
 enum ConnectionState {
-    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, inUseElsewhere, connecting, connected
+    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, awaitingButton, inUseElsewhere, connecting, connected
 
     init(_ status: dp_status) {
         switch status {
@@ -179,6 +181,7 @@ enum ConnectionState {
         case DP_STATUS_NOT_PAIRED: self = .notPaired
         case DP_STATUS_PAIRING: self = .pairing
         case DP_STATUS_SEARCHING: self = .searching
+        case DP_STATUS_AWAITING_BUTTON: self = .awaitingButton
         case DP_STATUS_IN_USE_ELSEWHERE: self = .inUseElsewhere
         case DP_STATUS_CONNECTING: self = .connecting
         case DP_STATUS_CONNECTED: self = .connected
@@ -263,7 +266,13 @@ final class Controller {
         guard handle != nil, !paused else { return }
         pairingEndsAt = Date().addingTimeInterval(TimeInterval(DP_PAIRING_SECONDS))
         isPairing = true
-        dp_controller_start_pairing(handle)
+        // CoreBluetooth never tells the address, and button reconnect needs it; the Rust side
+        // treats nil or zeros (Bluetooth off) as unknown.
+        if let host = IOBluetoothHostController.default()?.addressAsString() {
+            dp_controller_start_pairing(handle, host)
+        } else {
+            dp_controller_start_pairing(handle, nil)
+        }
     }
 
     func cancelPairing() {

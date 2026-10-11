@@ -145,6 +145,7 @@ pub async fn connect_retrying<T, F: Future<Output = io::Result<T>>>(
 pub enum Command {
     Discover,
     Subscribe,
+    SubscribeResponse,
     Write(Vec<u8>),
 }
 
@@ -217,6 +218,7 @@ pub async fn run(
                     Vec::new()
                 }
                 Some(Command::Subscribe) => client.subscribe(now()),
+                Some(Command::SubscribeResponse) => client.subscribe_response(now()),
                 Some(Command::Write(data)) => client.write(&data),
                 None => return "closed by Deskpuck".into(),
             },
@@ -314,7 +316,10 @@ mod tests {
         let why = why.await;
         joycon.join().unwrap();
         assert_eq!(why, "the Joy-Con closed the link");
-        assert!(events.contains(&Event::Discovered { write: true, notify: true }), "{events:?}");
+        assert!(
+            events.contains(&Event::Discovered { write: true, notify: true, response: false }),
+            "{events:?}"
+        );
         assert_eq!(events.last(), Some(&Event::Notification(vec![7, 8, 9])));
     }
 

@@ -151,3 +151,57 @@ fn names_lose_hidden_characters_and_are_capped() {
         Some("Joylortnocx[2J")
     );
 }
+
+#[test]
+fn host_addresses_parse_strictly_and_travel_least_significant_byte_first() {
+    let host = HostAddress::parse("FC:B2:14:D1:5C:A1").expect("valid");
+    assert_eq!(host.wire(), [0xA1, 0x5C, 0xD1, 0x14, 0xB2, 0xFC]);
+    assert_eq!(host.to_string(), "FC:B2:14:D1:5C:A1");
+    assert_eq!(HostAddress::parse("fc:b2:14:d1:5c:a1"), Some(host));
+    assert_eq!(HostAddress::from_wire(host.wire()), Some(host));
+    for bad in [
+        "",
+        "00:00:00:00:00:00",
+        "FC:B2:14:D1:5C",
+        "FC:B2:14:D1:5C:A1:00",
+        "FC-B2-14-D1-5C-A1",
+        "FC:B2:14:D1:5C:+1",
+        "FC:B2:14:D1:5C:G1",
+        " FC:B2:14:D1:5C:A1",
+        "FCB2:14:D1:5C:A1:",
+        "FC:B2:14:D1:5C:A\u{e9}",
+    ] {
+        assert_eq!(HostAddress::parse(bad), None, "{bad:?}");
+    }
+    assert_eq!(
+        HostAddress::from_wire([0; 6]),
+        None,
+        "zero is what macOS reports with Bluetooth off"
+    );
+}
+
+#[test]
+fn a_vendor_pairing_keeps_its_host_and_an_old_file_still_loads() {
+    let host = HostAddress::parse("14:AC:60:2B:4C:EA").unwrap();
+    let device = PairedDevice::new(UUID, Some("Joy-Con 2 (R)")).unwrap().with_host(Some(host));
+    let json = String::from_utf8(device.to_json()).unwrap();
+    assert!(json.contains(r#""host": "14:AC:60:2B:4C:EA""#), "{json}");
+    assert_eq!(PairedDevice::from_json(json.as_bytes()), Ok(device));
+
+    let plain = PairedDevice::new(UUID, None).unwrap();
+    let json = String::from_utf8(plain.to_json()).unwrap();
+    assert!(!json.contains("host"), "an older app rejects unknown fields: {json}");
+
+    let old = format!(r#"{{"version": 1, "id": "{UUID}", "name": "Joy-Con 2 (R)"}}"#);
+    let loaded =
+        PairedDevice::from_json(old.as_bytes()).expect("a file from before vendor pairing");
+    assert_eq!(loaded.host, None);
+    let null = r#"{"version": 1, "id": "a", "host": null}"#;
+    assert_eq!(PairedDevice::from_json(null.as_bytes()).unwrap().host, None);
+
+    for bad in [r#""00:00:00:00:00:00""#, r#""14:AC:60""#, "5", r#""14:ac:60:2b:4c:ea\u0000""#] {
+        let json = format!(r#"{{"version": 1, "id": "a", "host": {bad}}}"#);
+        let err = PairedDevice::from_json(json.as_bytes()).expect_err(&json);
+        assert!(err.contains("invalid host"), "{json}: {err}");
+    }
+}

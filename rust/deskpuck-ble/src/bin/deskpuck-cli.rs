@@ -1,10 +1,9 @@
 use deskpuck_ble::Monitor;
 use deskpuck_ble::controller::{
-    Controller, Hooks, LinkStatus, MessageHook, PairingSetup, ReportHook,
+    Controller, Hooks, LinkStatus, MessageHook, PairingRequest, PairingSetup, ReportHook,
 };
 use deskpuck_ble::receiver::PAIRING_WINDOW;
 use deskpuck_core::config::Config;
-use deskpuck_core::engine::EngineSettings;
 use deskpuck_core::mapping::Modifiers;
 use deskpuck_core::pairing::PairedDevice;
 use deskpuck_inject::InjectError;
@@ -24,7 +23,8 @@ Usage: deskpuck-cli [--pair] [--config PATH] [--verbose] [--monitor]
 
 Connects to a Joy-Con 2 over Bluetooth and uses it as a mouse and keyboard.
 Only the paired Joy-Con connects; pair one first with --pair. Hold SYNC on
-the Joy-Con to connect. Ctrl+C releases any held input and quits.
+the Joy-Con to connect, or press a button if it was paired with the app's
+buttonReconnect setting on. Ctrl+C releases any held input and quits.
 Quit the Deskpuck app first: only one program can connect at a time. The
 app and this tool share the pairing.
 
@@ -72,10 +72,10 @@ fn banner() -> String {
     )
 }
 
-fn load_settings(path: Option<PathBuf>) -> Result<EngineSettings, String> {
+fn load_config(path: Option<PathBuf>) -> Result<Config, String> {
     let explicit = path.is_some();
     let Some(path) = path.or_else(Config::default_path) else {
-        return Ok(EngineSettings::default());
+        return Ok(Config::default());
     };
     // Config::load treats a missing file as "use defaults"; an explicit path must exist.
     if explicit && !path.exists() {
@@ -85,7 +85,7 @@ fn load_settings(path: Option<PathBuf>) -> Result<EngineSettings, String> {
     for warning in warnings {
         note!("config: {warning}");
     }
-    Ok(config.engine_settings())
+    Ok(config)
 }
 
 const NOT_PAIRED: &str =
@@ -117,6 +117,7 @@ fn status_line(status: LinkStatus, name: Option<&str>) -> String {
             format!("Pairing for {PAIRING_WINDOW:.0} seconds: hold SYNC on the Joy-Con to use")
         }
         LinkStatus::Searching => "Searching: hold SYNC on the paired Joy-Con".into(),
+        LinkStatus::AwaitingButton => "Searching: press a button on the paired Joy-Con".into(),
         LinkStatus::InUseElsewhere => {
             "The paired Joy-Con is in use by another app; quit it to connect here".into()
         }
@@ -162,8 +163,8 @@ fn main() -> ExitCode {
     if args.verbose {
         note!("{}", banner());
     }
-    let settings = match load_settings(args.config.clone()) {
-        Ok(settings) => settings,
+    let config = match load_config(args.config.clone()) {
+        Ok(config) => config,
         Err(problem) => {
             note!("deskpuck-cli: {problem}");
             return ExitCode::from(2);
@@ -235,8 +236,11 @@ fn main() -> ExitCode {
         quit.await;
         let _ = quit_tx.send(0);
     });
-    let pairing = PairingSetup { file: pairing_file, pair_at_start: args.pair };
-    let controller = match Controller::start(settings, sink, hooks, pairing) {
+    let pair_at_start = args
+        .pair
+        .then_some(PairingRequest { button_reconnect: config.button_reconnect, host: None });
+    let pairing = PairingSetup { file: pairing_file, pair_at_start };
+    let controller = match Controller::start(config.engine_settings(), sink, hooks, pairing) {
         Ok(controller) => controller,
         Err(e) => {
             note!("deskpuck-cli: could not start: {e}");

@@ -1,5 +1,10 @@
+mod common;
+
+use common::capture::{self, ALLY, MAC};
 use deskpuck_ble::receiver::*;
+use deskpuck_ble::vendor::Addressee;
 use deskpuck_core::packet::{REPORT_MIN_SIZE, Report, encode_report};
+use deskpuck_core::pairing::HostAddress;
 
 type R = Receiver<u32>;
 
@@ -11,6 +16,7 @@ fn discovered(id: u32) -> Input<u32> {
         id,
         name: Some("Joy-Con 2 (R)".into()),
         manufacturer_ids: vec![MANUFACTURER_ID],
+        addressee: Addressee::Unknown,
     }
 }
 
@@ -24,7 +30,7 @@ fn has(out: &[Output<u32>], want: &Output<u32>) -> bool {
 
 fn paired() -> R {
     let mut r = R::default();
-    r.set_paired(Some(JOYCON.to_string()));
+    r.set_paired(Some(JOYCON.to_string()), None);
     r
 }
 
@@ -40,7 +46,10 @@ fn linked() -> R {
     let mut r = ready(false);
     r.handle(discovered(JOYCON), 0.5);
     r.handle(Input::Connected(JOYCON), 1.0);
-    r.handle(Input::CharacteristicsFound { id: JOYCON, write: true, notify: true }, 2.0);
+    r.handle(
+        Input::CharacteristicsFound { id: JOYCON, write: true, notify: true, response: false },
+        2.0,
+    );
     r
 }
 
@@ -131,11 +140,24 @@ fn pause_and_resume() {
 #[test]
 fn only_joycons_are_connected_one_at_a_time() {
     let mut r = ready(false);
-    let not_nintendo = Input::Discovered { id: OTHER, name: None, manufacturer_ids: vec![0x004C] };
+    let not_nintendo = Input::Discovered {
+        id: OTHER,
+        name: None,
+        manufacturer_ids: vec![0x004C],
+        addressee: Addressee::Unknown,
+    };
     assert!(r.handle(not_nintendo, 0.0).is_empty());
     assert!(
-        r.handle(Input::Discovered { id: OTHER, name: None, manufacturer_ids: vec![] }, 0.0)
-            .is_empty()
+        r.handle(
+            Input::Discovered {
+                id: OTHER,
+                name: None,
+                manufacturer_ids: vec![],
+                addressee: Addressee::Unknown
+            },
+            0.0
+        )
+        .is_empty()
     );
 
     let out = r.handle(discovered(JOYCON), 0.0);
@@ -198,7 +220,10 @@ fn init_sequence_timing() {
     let mut r = ready(false);
     r.handle(discovered(JOYCON), 0.0);
     r.handle(Input::Connected(JOYCON), 1.0);
-    let out = r.handle(Input::CharacteristicsFound { id: JOYCON, write: true, notify: true }, 2.0);
+    let out = r.handle(
+        Input::CharacteristicsFound { id: JOYCON, write: true, notify: true, response: false },
+        2.0,
+    );
     assert_eq!(out, [Output::Subscribe(JOYCON)]);
 
     assert!(r.tick(2.0 + INIT_DELAY - 0.01).is_empty());
@@ -219,7 +244,11 @@ fn missing_characteristics_send_nothing() {
         r.handle(discovered(JOYCON), 0.0);
         r.handle(Input::Connected(JOYCON), 1.0);
         assert!(
-            r.handle(Input::CharacteristicsFound { id: JOYCON, write, notify }, 2.0).is_empty()
+            r.handle(
+                Input::CharacteristicsFound { id: JOYCON, write, notify, response: false },
+                2.0
+            )
+            .is_empty()
         );
         assert!(r.tick(5.0).is_empty(), "write={write} notify={notify}");
     }
@@ -230,11 +259,14 @@ fn an_unconfirmed_link_injects_nothing_and_times_out() {
     let reports_until_timeout = |found: Option<(bool, bool)>| {
         // A pairing window accepts any device; both characteristics confirm it.
         let mut r = unpaired();
-        r.start_pairing(0.0);
+        r.start_pairing(0.0, None);
         r.handle(discovered(OTHER), 0.5);
         r.handle(Input::Connected(OTHER), 1.0);
         if let Some((write, notify)) = found {
-            r.handle(Input::CharacteristicsFound { id: OTHER, write, notify }, 2.0);
+            r.handle(
+                Input::CharacteristicsFound { id: OTHER, write, notify, response: false },
+                2.0,
+            );
         }
         let reports = (3..30)
             .flat_map(|t| {
@@ -343,13 +375,17 @@ fn control_characters_are_removed_from_device_names() {
                 id: JOYCON,
                 name: Some(advertised.into()),
                 manufacturer_ids: vec![MANUFACTURER_ID],
+                addressee: Addressee::Unknown,
             },
             0.5,
         );
         let want = Output::Status { status: Status::Connecting, name: shown.map(Into::into) };
         assert!(has(&out, &want), "{advertised:?}: {out:?}");
         r.handle(Input::Connected(JOYCON), 1.0);
-        r.handle(Input::CharacteristicsFound { id: JOYCON, write: true, notify: true }, 2.0);
+        r.handle(
+            Input::CharacteristicsFound { id: JOYCON, write: true, notify: true, response: false },
+            2.0,
+        );
         assert_eq!(r.linked().map(|(_, n)| n.map(str::to_owned)), Some(shown.map(Into::into)));
     }
 }
@@ -396,14 +432,17 @@ fn outside_a_window_only_the_paired_joycon_connects() {
 #[test]
 fn pairing_window_pairs_the_first_joycon_and_remembers_it() {
     let mut r = unpaired();
-    let out = r.start_pairing(10.0);
+    let out = r.start_pairing(10.0, None);
     assert_eq!((status(&out), scans(&out)), (Some(Status::Pairing), 1));
     assert!(r.is_pairing());
 
     assert!(has(&r.handle(discovered(OTHER), 20.0), &Output::Connect(OTHER)));
     r.handle(Input::Connected(OTHER), 21.0);
     assert_eq!(r.paired(), None);
-    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 22.0);
+    let out = r.handle(
+        Input::CharacteristicsFound { id: OTHER, write: true, notify: true, response: false },
+        22.0,
+    );
     assert_eq!(paired_output(&out), Some(OTHER));
     assert!(has(&out, &Output::Subscribe(OTHER)));
     assert_eq!((r.paired(), r.is_pairing()), (Some("8"), false));
@@ -414,17 +453,23 @@ fn pairing_window_pairs_the_first_joycon_and_remembers_it() {
     assert!(r.handle(discovered(JOYCON), 34.0).is_empty(), "the old id is no longer paired");
     assert!(has(&r.handle(discovered(OTHER), 34.0), &Output::Connect(OTHER)));
     r.handle(Input::Connected(OTHER), 35.0);
-    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 36.0);
+    let out = r.handle(
+        Input::CharacteristicsFound { id: OTHER, write: true, notify: true, response: false },
+        36.0,
+    );
     assert_eq!(paired_output(&out), None, "a reconnect is not a new pairing");
 }
 
 #[test]
 fn a_link_without_the_characteristics_is_not_paired() {
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), 1.0);
     r.handle(Input::Connected(OTHER), 2.0);
-    let out = r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: false }, 3.0);
+    let out = r.handle(
+        Input::CharacteristicsFound { id: OTHER, write: true, notify: false, response: false },
+        3.0,
+    );
     assert_eq!((paired_output(&out), r.paired()), (None, None));
     assert!(r.is_pairing(), "the window stays open for a real Joy-Con");
 }
@@ -432,10 +477,10 @@ fn a_link_without_the_characteristics_is_not_paired() {
 #[test]
 fn pairing_window_expires() {
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     assert!(has(&r.handle(discovered(OTHER), PAIRING_WINDOW - 0.01), &Output::Connect(OTHER)));
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     assert!(r.tick(PAIRING_WINDOW - 0.01).is_empty());
     assert!(r.handle(discovered(OTHER), PAIRING_WINDOW).is_empty(), "window is half-open");
     let out = r.tick(PAIRING_WINDOW);
@@ -444,7 +489,7 @@ fn pairing_window_expires() {
     assert!(!r.is_pairing());
 
     let mut r = ready(false);
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     let out = r.tick(PAIRING_WINDOW);
     assert_eq!(status(&out), Some(Status::Searching));
     assert!(!has(&out, &Output::StopScan));
@@ -454,13 +499,13 @@ fn pairing_window_expires() {
 #[test]
 fn a_joycon_accepted_in_the_window_may_finish_after_it() {
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), PAIRING_WINDOW - 1.0);
     let out = r.tick(PAIRING_WINDOW);
     assert_eq!(status(&out), None, "still connecting, so no idle status");
     r.handle(Input::Connected(OTHER), PAIRING_WINDOW + 1.0);
     let out = r.handle(
-        Input::CharacteristicsFound { id: OTHER, write: true, notify: true },
+        Input::CharacteristicsFound { id: OTHER, write: true, notify: true, response: false },
         PAIRING_WINDOW + 2.0,
     );
     assert_eq!(paired_output(&out), Some(OTHER));
@@ -469,7 +514,7 @@ fn a_joycon_accepted_in_the_window_may_finish_after_it() {
 #[test]
 fn starting_a_window_lets_go_of_the_linked_joycon() {
     let mut r = linked();
-    let out = r.start_pairing(5.0);
+    let out = r.start_pairing(5.0, None);
     assert!(has(&out, &Output::Disconnect(JOYCON)));
     assert_eq!(status(&out), Some(Status::Pairing));
     assert_eq!(r.linked(), None);
@@ -478,7 +523,7 @@ fn starting_a_window_lets_go_of_the_linked_joycon() {
 
     let mut r = ready(false);
     r.handle(discovered(JOYCON), 1.0);
-    assert!(has(&r.start_pairing(2.0), &Output::Disconnect(JOYCON)));
+    assert!(has(&r.start_pairing(2.0, None), &Output::Disconnect(JOYCON)));
     assert!(has(&r.handle(Input::Connected(JOYCON), 3.0), &Output::Disconnect(JOYCON)));
 }
 
@@ -487,7 +532,7 @@ fn cancel_pairing() {
     assert!(unpaired().cancel_pairing().is_empty(), "no window, nothing to cancel");
 
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), 1.0);
     let out = r.cancel_pairing();
     assert!(has(&out, &Output::Disconnect(OTHER)));
@@ -496,14 +541,14 @@ fn cancel_pairing() {
     assert!(has(&r.handle(Input::Connected(OTHER), 2.0), &Output::Disconnect(OTHER)));
 
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), 1.0);
     r.handle(Input::Connected(OTHER), 2.0);
     assert!(has(&r.cancel_pairing(), &Output::Disconnect(OTHER)));
     assert_eq!(r.linked(), None);
 
     let mut r = ready(false);
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     let out = r.cancel_pairing();
     assert_eq!((status(&out), scans(&out)), (Some(Status::Searching), 1));
     assert!(!has(&out, &Output::StopScan));
@@ -513,11 +558,11 @@ fn cancel_pairing() {
 fn suspend_blocks_pairing_too() {
     let mut r = unpaired();
     r.set_suspended(true);
-    assert!(r.start_pairing(0.0).is_empty());
+    assert!(r.start_pairing(0.0, None).is_empty());
     assert!(!r.is_pairing());
 
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     assert_eq!(r.set_suspended(true), [Output::StopScan]);
     assert!(r.handle(discovered(OTHER), 1.0).is_empty());
     assert_eq!(scans(&r.tick(1.0)), 0);
@@ -529,7 +574,7 @@ fn suspend_blocks_pairing_too() {
 #[test]
 fn a_failed_connect_inside_the_window_keeps_pairing() {
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), 1.0);
     assert_eq!(status(&r.handle(Input::ConnectFailed(OTHER), 2.0)), Some(Status::Pairing));
     assert_eq!(scans(&r.tick(2.0 + RESCAN_AFTER_FAILURE)), 1);
@@ -581,7 +626,7 @@ fn a_joycon_held_by_another_program_shows_as_in_use() {
 fn presence_is_only_checked_while_searching_for_the_paired_joycon() {
     let suspended = ready(true);
     let mut pairing = ready(false);
-    pairing.start_pairing(0.0);
+    pairing.start_pairing(0.0, None);
     let mut connecting = ready(false);
     connecting.handle(discovered(JOYCON), 0.0);
     let mut off = paired();
@@ -606,14 +651,14 @@ fn presence_is_only_checked_while_searching_for_the_paired_joycon() {
 fn starting_a_window_clears_in_use() {
     let mut r = ready(false);
     r.handle(Input::SystemConnected(vec![JOYCON]), 1.0);
-    assert_eq!(status(&r.start_pairing(2.0)), Some(Status::Pairing));
+    assert_eq!(status(&r.start_pairing(2.0, None)), Some(Status::Pairing));
     assert_eq!(status(&r.cancel_pairing()), Some(Status::Searching));
 }
 
 #[test]
 fn cancel_drops_a_joycon_still_finishing_after_the_window() {
     let mut r = unpaired();
-    r.start_pairing(0.0);
+    r.start_pairing(0.0, None);
     r.handle(discovered(OTHER), PAIRING_WINDOW - 0.1);
     r.tick(PAIRING_WINDOW + 1.0);
     assert!(!r.is_pairing(), "the window has expired");
@@ -627,7 +672,7 @@ fn cancel_drops_a_joycon_still_finishing_after_the_window() {
     assert_eq!(r.paired(), None);
     // Positive control: with nothing in flight, a cancel after expiry does nothing.
     let mut idle = unpaired();
-    idle.start_pairing(0.0);
+    idle.start_pairing(0.0, None);
     idle.tick(PAIRING_WINDOW);
     assert!(idle.cancel_pairing().is_empty());
 }
@@ -636,7 +681,7 @@ fn cancel_drops_a_joycon_still_finishing_after_the_window() {
 fn pausing_drops_an_unconfirmed_pairing() {
     for confirm_step in [false, true] {
         let mut r = unpaired();
-        r.start_pairing(0.0);
+        r.start_pairing(0.0, None);
         r.handle(discovered(OTHER), 1.0);
         if confirm_step {
             r.handle(Input::Connected(OTHER), 2.0);
@@ -645,8 +690,10 @@ fn pausing_drops_an_unconfirmed_pairing() {
         assert!(has(&out, &Output::Disconnect(OTHER)), "connected={confirm_step}: {out:?}");
         assert_eq!(status(&out), Some(Status::Pairing), "the window is paused, not closed");
         r.handle(Input::Connected(OTHER), 3.0);
-        let late =
-            r.handle(Input::CharacteristicsFound { id: OTHER, write: true, notify: true }, 4.0);
+        let late = r.handle(
+            Input::CharacteristicsFound { id: OTHER, write: true, notify: true, response: false },
+            4.0,
+        );
         assert_eq!((paired_output(&late), r.paired()), (None, None), "connected={confirm_step}");
     }
     let mut r = linked();
@@ -659,7 +706,12 @@ fn advertised_names_are_cleaned_and_capped() {
     let mut r = ready(false);
     let long = format!("Joy\u{202E}Con\u{200B}{}", "x".repeat(300));
     let out = r.handle(
-        Input::Discovered { id: JOYCON, name: Some(long), manufacturer_ids: vec![MANUFACTURER_ID] },
+        Input::Discovered {
+            id: JOYCON,
+            name: Some(long),
+            manufacturer_ids: vec![MANUFACTURER_ID],
+            addressee: Addressee::Unknown,
+        },
         1.0,
     );
     let shown = out.iter().find_map(|o| match o {
@@ -697,4 +749,304 @@ fn the_model_name_wins_over_an_address_shaped_name() {
     assert_eq!(device_name(bluez_alias.clone(), Some(&unknown)), bluez_alias);
     assert_eq!(device_name(Some("Joy-Con 2 (R)".into()), None).as_deref(), Some("Joy-Con 2 (R)"));
     assert_eq!(device_name(None, None), None);
+}
+
+fn writes(out: &[Output<u32>]) -> Vec<Vec<u8>> {
+    out.iter()
+        .filter_map(|o| match o {
+            Output::Write { data, .. } => Some(data.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn paired_host(out: &[Output<u32>]) -> Option<Option<HostAddress>> {
+    out.iter().find_map(|o| match o {
+        Output::Paired { host, .. } => Some(*host),
+        _ => None,
+    })
+}
+
+fn found(id: u32, response: bool) -> Input<u32> {
+    Input::CharacteristicsFound { id, write: true, notify: true, response }
+}
+
+fn reply(t: &capture::Transcript, step: usize) -> Input<u32> {
+    Input::Response { id: OTHER, data: capture::answer(t, step) }
+}
+
+/// A pairing window offering vendor pairing to MAC's host, with OTHER connected and its
+/// characteristics, the reply one included, just found at 3.0.
+fn vendor_pairing() -> (R, Vec<Output<u32>>) {
+    let mut r = unpaired();
+    r.start_pairing(0.0, Some(capture::secrets(&MAC)));
+    r.handle(discovered(OTHER), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    let out = r.handle(found(OTHER, true), 3.0);
+    (r, out)
+}
+
+#[test]
+fn vendor_pairing_replays_a_real_exchange_then_streams_as_before() {
+    let (mut r, out) = vendor_pairing();
+    assert_eq!(out, [Output::SubscribeResponse(OTHER)], "nothing is sent before replies are on");
+    assert_eq!(r.paired(), None);
+
+    let out = r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    assert_eq!(writes(&out), [capture::request(&MAC, 0)]);
+    for step in 0..3 {
+        let out = r.handle(reply(&MAC, step), 3.2 + step as f64 * 0.1);
+        assert_eq!(writes(&out), [capture::request(&MAC, step + 1)], "step {step}");
+        assert_eq!(paired_output(&out), None, "step {step}");
+    }
+
+    let out = r.handle(reply(&MAC, 3), 3.6);
+    assert_eq!(paired_host(&out), Some(Some(HostAddress::parse(MAC.host).unwrap())));
+    assert!(has(&out, &Output::Subscribe(OTHER)));
+    assert_eq!((r.paired(), r.is_pairing()), (Some("8"), false));
+
+    let init = r.tick(3.6 + INIT_DELAY + 2.0 * INIT_SPACING);
+    assert_eq!(writes(&init), INIT_COMMANDS.map(<[u8]>::to_vec), "then the usual init");
+    let report = Input::Notification { id: OTHER, data: report_bytes(1) };
+    assert!(matches!(r.handle(report, 4.0)[..], [Output::Report { .. }]));
+}
+
+#[test]
+fn input_is_ignored_while_vendor_pairing_runs() {
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    let report = Input::Notification { id: OTHER, data: report_bytes(1) };
+    assert!(r.handle(report, 3.2).is_empty());
+}
+
+#[test]
+fn a_wrong_challenge_answer_never_commits_and_falls_back_to_sync_pairing() {
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    r.handle(reply(&MAC, 0), 3.2);
+    r.handle(reply(&MAC, 1), 3.3);
+    let out = r.handle(reply(&ALLY, 2), 3.4);
+    assert!(writes(&out).iter().all(|w| w[..4] != [0x15, 0x91, 0x01, 0x03]), "{out:?}");
+    assert_eq!(paired_host(&out), Some(None), "paired, without the button-press reconnect");
+    assert!(out.iter().any(|o| matches!(o, Output::Log(m) if m.contains("answer"))), "{out:?}");
+    assert!(has(&out, &Output::Subscribe(OTHER)), "input still works");
+    assert_eq!(r.paired(), Some("8"));
+}
+
+#[test]
+fn a_refused_or_malformed_reply_falls_back() {
+    for step in 0..4 {
+        let (mut r, _) = vendor_pairing();
+        r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+        for i in 0..step {
+            r.handle(reply(&MAC, i), 3.2);
+        }
+        let mut refused = capture::answer(&MAC, step);
+        refused[1] = 0x00;
+        let out = r.handle(Input::Response { id: OTHER, data: refused }, 3.5);
+        assert_eq!(paired_host(&out), Some(None), "step {step}");
+    }
+}
+
+#[test]
+fn replies_for_another_step_another_joycon_or_before_subscribing_are_ignored() {
+    let (mut r, _) = vendor_pairing();
+    assert!(r.handle(reply(&MAC, 0), 3.05).is_empty(), "replies are not on yet");
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    assert!(r.handle(Input::ResponseSubscribed(OTHER), 3.15).is_empty(), "sent once");
+    assert!(r.handle(reply(&MAC, 2), 3.2).is_empty());
+    let stranger = Input::Response { id: JOYCON, data: capture::answer(&MAC, 0) };
+    assert!(r.handle(stranger, 3.2).is_empty());
+    assert!(r.handle(Input::Response { id: OTHER, data: vec![] }, 3.2).is_empty());
+    assert_eq!(writes(&r.handle(reply(&MAC, 0), 3.3)), [capture::request(&MAC, 1)], "control");
+}
+
+#[test]
+fn a_silent_joycon_times_out_into_sync_pairing() {
+    // No acknowledgement of the subscription at all.
+    let (mut r, _) = vendor_pairing();
+    assert!(r.tick(3.0 + VENDOR_STEP_TIMEOUT - 0.01).is_empty());
+    let out = r.tick(3.0 + VENDOR_STEP_TIMEOUT);
+    assert_eq!(paired_host(&out), Some(None));
+    assert!(has(&out, &Output::Subscribe(OTHER)));
+
+    // A step with no reply; each reply restarts the clock.
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    r.handle(reply(&MAC, 0), 3.1 + VENDOR_STEP_TIMEOUT - 0.1);
+    assert_eq!(paired_host(&r.tick(3.1 + VENDOR_STEP_TIMEOUT + 0.5)), None, "clock restarted");
+    let out = r.tick(3.1 + 2.0 * VENDOR_STEP_TIMEOUT);
+    assert_eq!(paired_host(&out), Some(None));
+    assert!(out.iter().any(|o| matches!(o, Output::Log(m) if m.contains("no reply"))), "{out:?}");
+}
+
+#[test]
+fn without_an_offer_or_a_reply_characteristic_pairing_is_as_before() {
+    let mut r = unpaired();
+    r.start_pairing(0.0, None);
+    r.handle(discovered(OTHER), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    let out = r.handle(found(OTHER, true), 3.0);
+    assert_eq!(paired_host(&out), Some(None));
+    assert!(!has(&out, &Output::SubscribeResponse(OTHER)));
+
+    let mut r = unpaired();
+    r.start_pairing(0.0, Some(capture::secrets(&MAC)));
+    r.handle(discovered(OTHER), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    let out = r.handle(found(OTHER, false), 3.0);
+    assert_eq!(paired_host(&out), Some(None));
+    assert!(out.iter().any(|o| matches!(o, Output::Log(_))), "says why: {out:?}");
+}
+
+#[test]
+fn a_reconnect_never_vendor_pairs() {
+    let mut r = ready(false);
+    r.handle(discovered(JOYCON), 0.5);
+    r.handle(Input::Connected(JOYCON), 1.0);
+    let out = r.handle(found(JOYCON, true), 2.0);
+    assert!(!has(&out, &Output::SubscribeResponse(JOYCON)));
+    assert_eq!(paired_output(&out), None);
+}
+
+#[test]
+fn an_offer_is_spent_by_one_pairing_and_dropped_with_the_window() {
+    let (mut r, _) = vendor_pairing();
+    r.tick(3.0 + VENDOR_STEP_TIMEOUT);
+    // A second window without an offer must not reuse the first one's blocks.
+    r.start_pairing(10.0, None);
+    r.handle(discovered(OTHER), 11.0);
+    r.handle(Input::Connected(OTHER), 12.0);
+    assert!(!has(&r.handle(found(OTHER, true), 13.0), &Output::SubscribeResponse(OTHER)));
+
+    let mut r = unpaired();
+    r.start_pairing(0.0, Some(capture::secrets(&MAC)));
+    r.cancel_pairing();
+    r.start_pairing(1.0, None);
+    r.handle(discovered(OTHER), 2.0);
+    r.handle(Input::Connected(OTHER), 3.0);
+    assert!(!has(&r.handle(found(OTHER, true), 4.0), &Output::SubscribeResponse(OTHER)));
+}
+
+#[test]
+fn cancelling_pausing_or_losing_the_link_mid_pairing_pairs_nothing() {
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    assert!(has(&r.cancel_pairing(), &Output::Disconnect(OTHER)));
+    assert_eq!(paired_output(&r.handle(reply(&MAC, 0), 3.2)), None);
+    assert_eq!(r.paired(), None);
+
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    assert!(has(&r.set_suspended(true), &Output::Disconnect(OTHER)));
+    assert_eq!(r.paired(), None);
+
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    r.handle(Input::Disconnected(OTHER), 3.2);
+    assert_eq!(paired_output(&r.tick(3.0 + VENDOR_STEP_TIMEOUT)), None);
+    assert_eq!(r.paired(), None);
+}
+
+#[test]
+fn a_pairing_that_outlives_its_window_still_finishes() {
+    let mut r = unpaired();
+    r.start_pairing(0.0, Some(capture::secrets(&MAC)));
+    r.handle(discovered(OTHER), PAIRING_WINDOW - 2.0);
+    r.handle(Input::Connected(OTHER), PAIRING_WINDOW - 1.5);
+    r.handle(found(OTHER, true), PAIRING_WINDOW - 1.0);
+    r.handle(Input::ResponseSubscribed(OTHER), PAIRING_WINDOW - 0.9);
+    r.tick(PAIRING_WINDOW);
+    for step in 0..3 {
+        r.handle(reply(&MAC, step), PAIRING_WINDOW + 0.1);
+    }
+    let out = r.handle(reply(&MAC, 3), PAIRING_WINDOW + 0.2);
+    assert_eq!(paired_host(&out), Some(Some(HostAddress::parse(MAC.host).unwrap())));
+}
+
+fn advert(id: u32, addressee: Addressee) -> Input<u32> {
+    Input::Discovered { id, name: None, manufacturer_ids: vec![MANUFACTURER_ID], addressee }
+}
+
+fn host(t: &capture::Transcript) -> Addressee {
+    Addressee::Host(HostAddress::parse(t.host).unwrap())
+}
+
+fn connects(r: &mut R, input: Input<u32>) -> bool {
+    r.handle(input, 1.0).iter().any(|o| matches!(o, Output::Connect(_)))
+}
+
+fn vendor_paired_to(t: &capture::Transcript) -> R {
+    let mut r = R::default();
+    r.set_paired(Some(JOYCON.to_string()), Some(HostAddress::parse(t.host).unwrap()));
+    r.handle(Input::AdapterPoweredOn, 0.0);
+    r.start();
+    r
+}
+
+#[test]
+fn a_vendor_paired_joycon_connects_when_it_calls_this_host_or_is_in_sync_mode() {
+    for (addressee, want) in [
+        (host(&MAC), true),
+        (Addressee::Anyone, true),
+        (Addressee::Unknown, true),
+        (host(&ALLY), false),
+    ] {
+        let mut r = vendor_paired_to(&MAC);
+        assert_eq!(connects(&mut r, advert(JOYCON, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn a_plainly_paired_joycon_calling_some_host_is_left_alone() {
+    for (addressee, want) in [(host(&MAC), false), (Addressee::Anyone, true)] {
+        let mut r = ready(false);
+        assert_eq!(connects(&mut r, advert(JOYCON, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn a_pairing_window_takes_only_joycons_in_sync_mode() {
+    for (addressee, want) in [(host(&ALLY), false), (Addressee::Anyone, true)] {
+        let mut r = unpaired();
+        r.start_pairing(0.0, None);
+        assert_eq!(connects(&mut r, advert(OTHER, addressee)), want, "{addressee:?}");
+    }
+}
+
+#[test]
+fn pairing_sets_or_clears_the_host_adverts_are_checked_against() {
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    for step in 0..4 {
+        r.handle(reply(&MAC, step), 3.2);
+    }
+    r.handle(Input::Disconnected(OTHER), 10.0);
+    r.tick(10.0 + RESCAN_AFTER_DISCONNECT);
+    assert!(connects(&mut r, advert(OTHER, host(&MAC))), "the new host is used at once");
+
+    let mut r = vendor_paired_to(&MAC);
+    r.start_pairing(0.0, None);
+    r.handle(advert(OTHER, Addressee::Anyone), 1.0);
+    r.handle(Input::Connected(OTHER), 2.0);
+    r.handle(found(OTHER, true), 3.0);
+    r.handle(Input::Disconnected(OTHER), 10.0);
+    r.tick(10.0 + RESCAN_AFTER_DISCONNECT);
+    assert!(!connects(&mut r, advert(OTHER, host(&MAC))), "a plain pairing has no host");
+}
+
+#[test]
+fn a_vendor_paired_joycon_is_awaited_by_button_not_sync() {
+    let mut r = R::default();
+    r.set_paired(Some(JOYCON.to_string()), Some(HostAddress::parse(MAC.host).unwrap()));
+    r.start();
+    assert_eq!(status(&r.handle(Input::AdapterPoweredOn, 0.0)), Some(Status::AwaitingButton));
+    assert_eq!(status(&ready(false).handle(Input::AdapterPoweredOn, 0.0)), Some(Status::Searching));
+
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    for step in 0..4 {
+        r.handle(reply(&MAC, step), 3.2);
+    }
+    assert_eq!(status(&r.handle(Input::Disconnected(OTHER), 10.0)), Some(Status::AwaitingButton));
 }
