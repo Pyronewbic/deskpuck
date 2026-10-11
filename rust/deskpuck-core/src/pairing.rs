@@ -1,9 +1,12 @@
 //! Kept out of config.json so a settings save can never race a newly paired id.
 //! The id is a per-machine Bluetooth peripheral id; it identifies a device, not authenticates it.
+//! A host address means the Joy-Con was vendor-paired to that computer and reconnects to it on a
+//! button press.
 
 use crate::config::Config;
 use crate::files;
 use serde_json::{Value, json};
+use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -13,10 +16,54 @@ pub const MAX_NAME_CHARS: usize = 64;
 
 const VERSION: f64 = 1.0;
 
+/// A Bluetooth address as displayed, most significant byte first. Never all zeros, which is what
+/// macOS reports while Bluetooth is off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct HostAddress([u8; 6]);
+
+impl HostAddress {
+    /// Only `AA:BB:CC:DD:EE:FF`, in either case.
+    pub fn parse(text: &str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        if bytes.len() != 17 {
+            return None;
+        }
+        let mut address = [0u8; 6];
+        for (i, byte) in address.iter_mut().enumerate() {
+            let pair = &bytes[i * 3..i * 3 + 2];
+            if !pair.iter().all(u8::is_ascii_hexdigit) || (i < 5 && bytes[i * 3 + 2] != b':') {
+                return None;
+            }
+            *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+        }
+        (address != [0; 6]).then_some(Self(address))
+    }
+
+    /// Least significant byte first, as the address travels over the air.
+    pub fn wire(self) -> [u8; 6] {
+        let mut bytes = self.0;
+        bytes.reverse();
+        bytes
+    }
+
+    pub fn from_wire(mut bytes: [u8; 6]) -> Option<Self> {
+        bytes.reverse();
+        (bytes != [0; 6]).then_some(Self(bytes))
+    }
+}
+
+impl fmt::Display for HostAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [a, b, c, d, e, g] = self.0;
+        write!(f, "{a:02X}:{b:02X}:{c:02X}:{d:02X}:{e:02X}:{g:02X}")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PairedDevice {
     pub id: String,
     pub name: Option<String>,
+    pub host: Option<HostAddress>,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -48,7 +95,11 @@ impl PairedDevice {
             return None;
         }
         let name = name.and_then(clean_name);
-        Some(Self { id: id.to_owned(), name })
+        Some(Self { id: id.to_owned(), name, host: None })
+    }
+
+    pub fn with_host(self, host: Option<HostAddress>) -> Self {
+        Self { host, ..self }
     }
 
     pub fn default_path() -> Option<PathBuf> {
@@ -59,7 +110,7 @@ impl PairedDevice {
     pub fn from_json(bytes: &[u8]) -> Result<Self, String> {
         let value: Value = serde_json::from_slice(bytes).map_err(|_| "is not valid JSON")?;
         let dict = value.as_object().ok_or("is not a JSON object")?;
-        if dict.keys().any(|k| !["version", "id", "name"].contains(&k.as_str())) {
+        if dict.keys().any(|k| !["version", "id", "name", "host"].contains(&k.as_str())) {
             return Err("has an unknown field".into());
         }
         if dict.get("version").and_then(Value::as_f64) != Some(VERSION) {
@@ -72,11 +123,22 @@ impl PairedDevice {
             Some(Value::String(name)) if valid_name(name) => Some(name.clone()),
             Some(_) => return Err("has an invalid name".into()),
         };
-        Ok(Self { id: id.to_owned(), name })
+        let host = match dict.get("host") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(host)) => {
+                Some(HostAddress::parse(host).ok_or("has an invalid host")?)
+            }
+            Some(_) => return Err("has an invalid host".into()),
+        };
+        Ok(Self { id: id.to_owned(), name, host })
     }
 
+    /// Without a host the record is as before vendor pairing, so an older app still loads it.
     pub fn to_json(&self) -> Vec<u8> {
-        let value = json!({ "version": VERSION as u8, "id": self.id, "name": self.name });
+        let mut value = json!({ "version": VERSION as u8, "id": self.id, "name": self.name });
+        if let (Some(host), Some(dict)) = (self.host, value.as_object_mut()) {
+            dict.insert("host".into(), host.to_string().into());
+        }
         serde_json::to_vec_pretty(&value).unwrap_or_default()
     }
 
