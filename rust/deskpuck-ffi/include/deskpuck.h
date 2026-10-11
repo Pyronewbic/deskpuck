@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 // Bumped on any change to this header; the app checks it at startup.
-#define DP_ABI_VERSION 8
+#define DP_ABI_VERSION 9
 
 uint32_t dp_abi_version(void);
 void dp_string_free(char *string);
@@ -69,6 +69,8 @@ typedef enum {
     DP_STATUS_NOT_PAIRED = 6,
     DP_STATUS_PAIRING = 7,
     DP_STATUS_IN_USE_ELSEWHERE = 8,
+    // Searching for a Joy-Con that reconnects on a button press.
+    DP_STATUS_AWAITING_BUTTON = 9,
 } dp_status;
 
 #define DP_PAIRING_SECONDS 60

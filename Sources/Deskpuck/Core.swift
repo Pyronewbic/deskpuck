@@ -172,7 +172,7 @@ enum Core {
 }
 
 enum ConnectionState {
-    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, inUseElsewhere, connecting, connected
+    case bluetoothOff, bluetoothUnauthorized, unavailable, notPaired, pairing, searching, awaitingButton, inUseElsewhere, connecting, connected
 
     init(_ status: dp_status) {
         switch status {
@@ -181,6 +181,7 @@ enum ConnectionState {
         case DP_STATUS_NOT_PAIRED: self = .notPaired
         case DP_STATUS_PAIRING: self = .pairing
         case DP_STATUS_SEARCHING: self = .searching
+        case DP_STATUS_AWAITING_BUTTON: self = .awaitingButton
         case DP_STATUS_IN_USE_ELSEWHERE: self = .inUseElsewhere
         case DP_STATUS_CONNECTING: self = .connecting
         case DP_STATUS_CONNECTED: self = .connected

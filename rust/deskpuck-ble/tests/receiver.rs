@@ -1034,3 +1034,19 @@ fn pairing_sets_or_clears_the_host_adverts_are_checked_against() {
     r.tick(10.0 + RESCAN_AFTER_DISCONNECT);
     assert!(!connects(&mut r, advert(OTHER, host(&MAC))), "a plain pairing has no host");
 }
+
+#[test]
+fn a_vendor_paired_joycon_is_awaited_by_button_not_sync() {
+    let mut r = R::default();
+    r.set_paired(Some(JOYCON.to_string()), Some(HostAddress::parse(MAC.host).unwrap()));
+    r.start();
+    assert_eq!(status(&r.handle(Input::AdapterPoweredOn, 0.0)), Some(Status::AwaitingButton));
+    assert_eq!(status(&ready(false).handle(Input::AdapterPoweredOn, 0.0)), Some(Status::Searching));
+
+    let (mut r, _) = vendor_pairing();
+    r.handle(Input::ResponseSubscribed(OTHER), 3.1);
+    for step in 0..4 {
+        r.handle(reply(&MAC, step), 3.2);
+    }
+    assert_eq!(status(&r.handle(Input::Disconnected(OTHER), 10.0)), Some(Status::AwaitingButton));
+}

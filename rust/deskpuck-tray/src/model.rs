@@ -168,10 +168,13 @@ impl Model {
                 }
                 None => "Pairing: hold SYNC on the Joy-Con".into(),
             },
-            LinkStatus::Searching | LinkStatus::InUseElsewhere if paused => {
+            LinkStatus::Searching | LinkStatus::AwaitingButton | LinkStatus::InUseElsewhere
+                if paused =>
+            {
                 "Paused: not looking for a Joy-Con".into()
             }
             LinkStatus::Searching => "Searching: hold SYNC on the paired Joy-Con".into(),
+            LinkStatus::AwaitingButton => "Searching: press a button on the paired Joy-Con".into(),
             LinkStatus::InUseElsewhere => "Joy-Con is in use by another app".into(),
             LinkStatus::Connecting if paused => format!("Connecting to {name}... (paused)"),
             LinkStatus::Connecting => format!("Connecting to {name}..."),
@@ -323,6 +326,9 @@ mod tests {
         assert!(!model.pair_enabled());
         model.set_host(true);
         assert_eq!(model.status_text(0.0), "Searching: hold SYNC on the paired Joy-Con");
+        model.status(LinkStatus::AwaitingButton, None);
+        assert_eq!(model.status_text(0.0), "Searching: press a button on the paired Joy-Con");
+        model.status(LinkStatus::Searching, None);
         assert!(model.pair_enabled());
         model.set_host(false);
         assert_eq!(model.status_text(0.0), WAITING);
@@ -381,6 +387,7 @@ mod tests {
         model.set_paused(true);
         for (status, text) in [
             (LinkStatus::Searching, "Paused: not looking for a Joy-Con"),
+            (LinkStatus::AwaitingButton, "Paused: not looking for a Joy-Con"),
             (LinkStatus::InUseElsewhere, "Paused: not looking for a Joy-Con"),
             (LinkStatus::Connecting, "Connecting to Joy-Con... (paused)"),
             (LinkStatus::Connected, "Connected to Joy-Con (paused)"),

@@ -64,6 +64,8 @@ pub enum Status {
     NotPaired,
     Pairing,
     Searching,
+    /// Searching for a Joy-Con vendor-paired here, which reconnects on a button press.
+    AwaitingButton,
     InUseElsewhere,
     Connecting,
     Connected,
@@ -335,6 +337,8 @@ impl<Id: Clone + Eq + Hash + Display> Receiver<Id> {
             Status::Pairing
         } else if self.paired.is_some() && self.held_elsewhere {
             Status::InUseElsewhere
+        } else if self.paired.is_some() && self.paired_host.is_some() {
+            Status::AwaitingButton
         } else if self.paired.is_some() {
             Status::Searching
         } else {

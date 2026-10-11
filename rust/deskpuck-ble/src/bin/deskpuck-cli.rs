@@ -116,6 +116,7 @@ fn status_line(status: LinkStatus, name: Option<&str>) -> String {
             format!("Pairing for {PAIRING_WINDOW:.0} seconds: hold SYNC on the Joy-Con to use")
         }
         LinkStatus::Searching => "Searching: hold SYNC on the paired Joy-Con".into(),
+        LinkStatus::AwaitingButton => "Searching: press a button on the paired Joy-Con".into(),
         LinkStatus::InUseElsewhere => {
             "The paired Joy-Con is in use by another app; quit it to connect here".into()
         }
