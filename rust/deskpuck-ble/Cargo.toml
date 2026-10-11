@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+aes = "0.9.3"
 btleplug = "0.13.4"
 deskpuck-core = { path = "../deskpuck-core" }
 deskpuck-inject = { path = "../deskpuck-inject" }
