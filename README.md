@@ -75,6 +75,22 @@ Change the key mappings, pointer speed, scrolling, key repeat and theme in **Set
 
 Once a day Deskpuck asks github.com for the latest release, sending only its version number (github.com sees your IP address, as with any request). **Update to X.Y.Z** in the menu downloads a newer one, checks the maintainer's signature, installs it and restarts Deskpuck. Turn the check off under **General > Updates** in Settings, or set `DESKPUCK_NO_UPDATE_CHECK=1`.
 
+With **Reconnect with a button press** on under **General > Joy-Con** in Settings, the next **Pair New Joy-Con...** teaches the Joy-Con this computer, and it then reconnects when you press a button instead of SYNC. The Joy-Con remembers one computer or console at a time, so this unpairs it from a Switch 2; attach it to the console to use it there again.
+
+<details>
+<summary>Is the Joy-Con in the system's Bluetooth settings?</summary>
+
+Not as a paired device: a Joy-Con 2 refuses the pairing that Bluetooth settings start, so Deskpuck pairs it in the app and the Joy-Con itself remembers the computer. A Mac does not list it; a Linux Bluetooth panel may show it, unpaired, while Deskpuck looks for it or is connected. Do not pair or connect it from there.
+
+</details>
+
+<details>
+<summary>A button press does not reconnect it?</summary>
+
+Pair it again with the setting on if it has since been used with a console or another computer. Button reconnect is not yet tested on Windows, and on Linux only with BlueZ's default settings: with LE privacy on, the computer's address changes and it may not work.
+
+</details>
+
 <details>
 <summary>Only Update Available, which opens the release page?</summary>
 

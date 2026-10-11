@@ -23,7 +23,8 @@ Usage: deskpuck-cli [--pair] [--config PATH] [--verbose] [--monitor]
 
 Connects to a Joy-Con 2 over Bluetooth and uses it as a mouse and keyboard.
 Only the paired Joy-Con connects; pair one first with --pair. Hold SYNC on
-the Joy-Con to connect. Ctrl+C releases any held input and quits.
+the Joy-Con to connect, or press a button if it was paired with the app's
+buttonReconnect setting on. Ctrl+C releases any held input and quits.
 Quit the Deskpuck app first: only one program can connect at a time. The
 app and this tool share the pairing.
 
