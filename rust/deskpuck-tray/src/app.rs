@@ -277,6 +277,7 @@ pub fn run() -> ExitCode {
         }
     }
 
+    close_window(&mut window);
     controller.borrow_mut().take();
     drop(tray);
     // The new copy would find this one still running while the lock is held.
@@ -459,6 +460,14 @@ fn open_window(
         .map_err(|e| format!("Could not open the settings window ({}): {e}", program.display()))?;
     *window = Some(child);
     Ok(())
+}
+
+/// Left open, the window outlives the tray, and after an update a save from the old
+/// version drops settings it does not know. Saves are atomic, so a kill loses none.
+fn close_window(window: &mut Option<Child>) -> Option<std::process::ExitStatus> {
+    let mut child = window.take()?;
+    let _ = child.kill();
+    child.wait().ok()
 }
 
 fn open_settings(path: Option<&Path>, wake: &Wake) -> Result<(), String> {
@@ -767,5 +776,19 @@ mod tests {
 
         let mut window = Some(child);
         assert!(open_window(&missing, None, &mut window).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exiting_closes_an_open_settings_window() {
+        use std::os::unix::process::ExitStatusExt;
+        const SIGKILL: i32 = 9;
+        let mut window = Some(Command::new("sleep").arg("30").spawn().unwrap());
+        let started = Instant::now();
+        let status = close_window(&mut window).expect("the window was reaped");
+        assert_eq!(status.signal(), Some(SIGKILL), "{status:?}");
+        assert!(started.elapsed() < Duration::from_secs(10), "it was killed, not waited out");
+        assert!(window.is_none());
+        assert_eq!(close_window(&mut window), None, "no window, nothing to close");
     }
 }
