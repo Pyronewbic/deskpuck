@@ -92,7 +92,9 @@ pub async fn connect(device: [u8; 6], random: bool) -> io::Result<AsyncFd<OwnedF
         }
     }
 
-    let fd = AsyncFd::new(fd)?;
+    // SAFETY: the AsyncFd takes the OwnedFd, so nothing else can close or replace the
+    // descriptor while it is registered.
+    let fd = unsafe { AsyncFd::register(fd) }?;
     let _ready = fd.writable().await?;
     let mut error: libc::c_int = 0;
     let mut error_len = size_of::<libc::c_int>() as libc::socklen_t;
@@ -266,7 +268,8 @@ mod tests {
             unsafe { (OwnedFd::from_raw_fd(fds[0]), UnixStream::from_raw_fd(fds[1])) };
         // SAFETY: setting O_NONBLOCK on a descriptor this test owns.
         unsafe { libc::fcntl(link.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) };
-        (AsyncFd::new(link).unwrap(), joycon)
+        // SAFETY: as in `connect`, the AsyncFd takes the OwnedFd.
+        (unsafe { AsyncFd::register(link) }.unwrap(), joycon)
     }
 
     fn expect(joycon: &mut UnixStream, want: &[u8], answer: &[u8]) {
