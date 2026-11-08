@@ -1,5 +1,12 @@
 [advisories]
 yanked = "deny"
+# Unmaintained, not vulnerable: folded into zbus 6, but eframe's accessibility
+# (accesskit_unix) still needs zbus 5. Drop these once it moves to zbus 6.
+ignore = [
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: merged into zbus 6, needed by eframe via zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: merged into zbus 6, needed by eframe via zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: merged into zbus 6, needed by eframe via zbus 5" },
+]
 
 [licenses]
 allow = [
