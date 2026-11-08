@@ -87,7 +87,7 @@ Not as a paired device: a Joy-Con 2 refuses the pairing that Bluetooth settings 
 <details>
 <summary>A button press does not reconnect it?</summary>
 
-Pair it again with the setting on if it has since been used with a console or another computer. Button reconnect is not yet tested on Windows, and on Linux only with BlueZ's default settings: with LE privacy on, the computer's address changes and it may not work.
+Pair it again with the setting on if it has since been used with a console or another computer. On Linux, with BlueZ's LE privacy on, the computer's address changes and button reconnect may not work.
 
 </details>
 
