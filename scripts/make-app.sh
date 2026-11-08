@@ -5,7 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 IDENTITY="${DESKPUCK_SIGN_IDENTITY:-Deskpuck Dev}"
 APP="dist/Deskpuck.app"
 

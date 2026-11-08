@@ -71,6 +71,8 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=uinput
 
 Change the key mappings, pointer speed, scrolling, key repeat and theme in **Settings...**, from the menu bar icon on a Mac or a left click on the tray icon elsewhere. A button can also press a recorded shortcut such as Control+C, or act as a modifier: held, or latched on with one tap and off with the next. Settings are saved in `config.json` (modifier names keep the Mac spelling: `option` is Alt, `command` the Super or Windows key), with the pairing beside it: in `~/Library/Application Support/Deskpuck` on a Mac, `%APPDATA%\Deskpuck` on Windows and `~/.config/deskpuck` on Linux.
 
+![Deskpuck's settings on a Mac: the Buttons tab maps each Joy-Con button to a key or shortcut, and the General tab sets pointer speed, scrolling, key repeat, theme, button reconnect and the update check](docs/settings.png)
+
 **Pause Mouse Control** stops all input from the Joy-Con but keeps it connected, so resuming is instant; quit Deskpuck to release it completely. **Start at Login** starts Deskpuck when you log in. To use a different Joy-Con, choose **Pair New Joy-Con...** again; it replaces the paired one.
 
 Once a day Deskpuck asks github.com for the latest release, sending only its version number (github.com sees your IP address, as with any request). **Update to X.Y.Z** in the menu downloads a newer one, checks the maintainer's signature, installs it and restarts Deskpuck. Turn the check off under **General > Updates** in Settings, or set `DESKPUCK_NO_UPDATE_CHECK=1`.
@@ -87,14 +89,14 @@ Not as a paired device: a Joy-Con 2 refuses the pairing that Bluetooth settings 
 <details>
 <summary>A button press does not reconnect it?</summary>
 
-Pair it again with the setting on if it has since been used with a console or another computer. Button reconnect is not yet tested on Windows, and on Linux only with BlueZ's default settings: with LE privacy on, the computer's address changes and it may not work.
+Pair it again with the setting on if it has since been used with a console or another computer. On Linux, with BlueZ's LE privacy on, the computer's address changes and button reconnect may not work.
 
 </details>
 
 <details>
 <summary>Only Update Available, which opens the release page?</summary>
 
-That copy cannot replace itself: a portable Windows copy, a Linux copy not installed by `install.sh`, or an app folder you cannot write to. Installs under `/usr`, such as the AUR package, update through your package manager.
+That copy cannot replace itself: a portable Windows copy, a Linux copy not installed by `install.sh`, or an app folder you cannot write to. Installs under `/usr`, such as a distribution package, update through your package manager.
 
 </details>
 
