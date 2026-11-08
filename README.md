@@ -69,7 +69,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=uinput
 | Stick click          | Return                          |
 | X / B / Y / A        | Up / Down / Left / Right arrows |
 
-Change the key mappings, pointer speed, scrolling, key repeat and theme in **Settings...**, from the menu bar icon on a Mac or a left click on the tray icon elsewhere. A button can also press a recorded shortcut such as Control+C, or act as a modifier: held, or latched on with one tap and off with the next. Settings are saved in `config.json` (modifier names keep the Mac spelling: `option` is Alt, `command` the Super or Windows key), with the pairing beside it: in `~/Library/Application Support/Deskpuck` on a Mac, `%APPDATA%\Deskpuck` on Windows and `~/.config/deskpuck` on Linux.
+Change the key mappings, pointer speed, scrolling, key repeat and theme in **Settings...**, from the menu bar icon on a Mac or a left click on the tray icon elsewhere. A button can also press a recorded shortcut such as Control+C, or act as a modifier: held, or latched on with one tap and off with the next.
 
 ![Deskpuck's settings on a Mac: the Buttons tab maps each Joy-Con button to a key or shortcut, and the General tab sets pointer speed, scrolling, key repeat, theme, button reconnect and the update check](docs/settings.png)
 
@@ -78,6 +78,13 @@ Change the key mappings, pointer speed, scrolling, key repeat and theme in **Set
 Once a day Deskpuck asks github.com for the latest release, sending only its version number (github.com sees your IP address, as with any request). **Update to X.Y.Z** in the menu downloads a newer one, checks the maintainer's signature, installs it and restarts Deskpuck. Turn the check off under **General > Updates** in Settings, or set `DESKPUCK_NO_UPDATE_CHECK=1`.
 
 With **Reconnect with a button press** on under **General > Joy-Con** in Settings, the next **Pair New Joy-Con...** teaches the Joy-Con this computer, and it then reconnects when you press a button instead of SYNC. The Joy-Con remembers one computer or console at a time, so this unpairs it from a Switch 2; attach it to the console to use it there again.
+
+<details>
+<summary>Where are the settings saved?</summary>
+
+In `config.json`, with the pairing beside it: in `~/Library/Application Support/Deskpuck` on a Mac, `%APPDATA%\Deskpuck` on Windows and `~/.config/deskpuck` on Linux. Modifier names keep the Mac spelling: `option` is Alt, `command` the Super or Windows key.
+
+</details>
 
 <details>
 <summary>Is the Joy-Con in the system's Bluetooth settings?</summary>
