@@ -4,7 +4,7 @@ Use a Nintendo Switch 2 Joy-Con (R) as a mouse and keyboard on a Mac, Windows or
 
 ![A Joy-Con sliding on a desk draws a face in a paint program, undoes a stroke, scrolls a web page and opens Mission Control](docs/demo.gif)
 
-It runs as a normal app, with no driver, kernel extension or root access.
+It runs as a normal app, with no driver, kernel extension or root access. What it can do with its permissions, and what is not protected: [SECURITY.md](SECURITY.md).
 
 ## Install
 
