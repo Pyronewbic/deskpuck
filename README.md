@@ -94,7 +94,7 @@ Pair it again with the setting on if it has since been used with a console or an
 <details>
 <summary>Only Update Available, which opens the release page?</summary>
 
-That copy cannot replace itself: a portable Windows copy, a Linux copy not installed by `install.sh`, or an app folder you cannot write to. Installs under `/usr`, such as the AUR package, update through your package manager.
+That copy cannot replace itself: a portable Windows copy, a Linux copy not installed by `install.sh`, or an app folder you cannot write to. Installs under `/usr`, such as a distribution package, update through your package manager.
 
 </details>
 
