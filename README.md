@@ -2,7 +2,7 @@
 
 Use a Nintendo Switch 2 Joy-Con (R) as a mouse and keyboard on a Mac, Windows or Linux: slide it on a desk to move the pointer, click with the shoulder buttons, scroll with the stick, and map the other buttons to keys.
 
-<!-- demo: 5-10 s GIF of a Joy-Con sliding on a desk, pointer following -->
+![A Joy-Con sliding on a desk draws a face in a paint program, undoes a stroke, scrolls a web page and opens Mission Control](docs/demo.gif)
 
 It runs as a normal app, with no driver, kernel extension or root access.
 
