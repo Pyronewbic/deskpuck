@@ -4,13 +4,16 @@ Notable changes to Deskpuck. The format follows [Keep a Changelog](https://keepa
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
 ### Added
 
-- The Mac app includes `deskpuck-cli`, for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`.
-- `deskpuck-cli --verbose` first prints the version and platform, then the Bluetooth adapter once it is found.
-- **Update Available** in the menu on every platform: once a day Deskpuck asks github.com for the latest release, and choosing the line opens the release page. Turn it off under **General > Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`. On Linux, installs under `/usr` (such as the AUR package) are told to update through their package manager.
-- **Update to X.Y.Z** in the menu installs the update for you: Deskpuck downloads it, checks its minisign signature and checksum, installs it and restarts, keeping Accessibility on the Mac. Portable copies keep opening the release page, and `/usr` installs keep using the package manager.
-- **Reconnect with a button press** under **General > Joy-Con** in Settings: a Joy-Con paired with it on reconnects when you press a button, without SYNC. It unpairs the Joy-Con from a Switch 2.
+- **Reconnect with a button press.** Turn it on under **General > Joy-Con** in Settings, then choose **Pair New Joy-Con...** once more: from then on the Joy-Con reconnects when you press a button, as on a Switch 2, instead of needing SYNC. The Joy-Con remembers one computer or console at a time, so this unpairs it from a Switch 2.
+  - Tested on macOS, Linux (CachyOS, KDE Plasma on Wayland) and Windows 11.
+- **Updates from the menu.** Once a day Deskpuck asks github.com for the latest release. When there is one, **Update to X.Y.Z** downloads it, checks its signature and checksum, installs it and restarts Deskpuck, keeping Accessibility on the Mac.
+  - A portable Windows copy, or any copy that cannot replace itself, shows **Update Available** instead, which opens the release page. Installs under `/usr` are told to update through their package manager.
+  - Turn the check off under **General > Updates** in Settings, `"checkUpdates": false` in `config.json`, or `DESKPUCK_NO_UPDATE_CHECK=1`.
+- The Mac app includes `deskpuck-cli` for bug reports: `/Applications/Deskpuck.app/Contents/MacOS/deskpuck-cli --verbose`. With `--verbose` it first prints the version, platform and Bluetooth adapter.
 
 ### Changed
 
@@ -82,7 +85,8 @@ First release. Apple Silicon Macs only, macOS 13 or later (tested on macOS 26).
 - Signed with the hardened runtime and a stable certificate, so the Accessibility permission carries over to later versions.
 - Known limitation: Deskpuck connects to any nearby device that advertises as a Joy-Con 2. See [SECURITY.md](https://github.com/Pyronewbic/deskpuck/blob/main/SECURITY.md).
 
-[Unreleased]: https://github.com/Pyronewbic/deskpuck/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Pyronewbic/deskpuck/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Pyronewbic/deskpuck/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Pyronewbic/deskpuck/releases/tag/v0.1.0
